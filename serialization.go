@@ -2,6 +2,7 @@ package hierkeys
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -184,4 +185,35 @@ func (ik *IntermediateKeys) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 
 	return
+}
+
+// MarshalBinary encodes the TransmissionKeys into a byte slice.
+func (tk *TransmissionKeys) MarshalBinary() ([]byte, error) {
+	buf := make([]byte, 0, tk.BinarySize())
+	w := bytes.NewBuffer(buf)
+	if _, err := tk.WriteTo(w); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+// UnmarshalBinary decodes TransmissionKeys from a byte slice.
+func (tk *TransmissionKeys) UnmarshalBinary(p []byte) error {
+	_, err := tk.ReadFrom(bytes.NewReader(p))
+	return err
+}
+
+// MarshalBinary encodes the IntermediateKeys into a byte slice.
+func (ik *IntermediateKeys) MarshalBinary() ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	if _, err := ik.WriteTo(buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// UnmarshalBinary decodes IntermediateKeys from a byte slice.
+func (ik *IntermediateKeys) UnmarshalBinary(p []byte) error {
+	_, err := ik.ReadFrom(bytes.NewReader(p))
+	return err
 }
