@@ -6,8 +6,9 @@ package hierkeys
 // For base=4, nSlots=32768: returns {1, 4, 16, 64, 256, 1024, 4096, 16384}.
 // These are powers of base up to nSlots/2 (since rotations are mod nSlots).
 //
-// With these master keys, any rotation can be decomposed as a sum of at most
-// ceil(log_base(nSlots)) master rotations via RotToRot.
+// With these master keys, any rotation in [1, nSlots/2] can be decomposed as a
+// sum of at most ceil(log_base(nSlots)) master rotations via RotToRot.
+// Negative rotations are normalized to positive equivalents by DeriveGaloisKeys.
 func MasterRotationsForBase(base, nSlots int) []int {
 	if base < 2 || nSlots < 1 {
 		return nil

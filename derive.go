@@ -67,14 +67,24 @@ func (eval *Evaluator) ExpandInRPrime(tk *TransmissionKeys, targetRotations []in
 	cache := make(map[int]*rlwe.GaloisKey)
 	cache[0] = tk.Shift0Key // seed
 
+	// Normalize negative rotations: CKKS rotation by -k = rotation by nSlots-k.
+	nSlots := eval.params.Eval.N() / 2
+
 	for _, target := range targetRotations {
-		if _, ok := cache[target]; ok {
-			continue // already computed (as intermediate for a previous target)
+		// Normalize to positive
+		normalized := ((target % nSlots) + nSlots) % nSlots
+		if normalized == 0 {
+			continue // identity rotation, skip
 		}
 
-		steps := decomposeRotation(target, masterRots)
+		if _, ok := cache[normalized]; ok {
+			continue // already computed
+		}
+
+		steps := decomposeRotation(normalized, masterRots)
 		if steps == nil {
-			return nil, fmt.Errorf("cannot decompose rotation %d from available masters", target)
+			return nil, fmt.Errorf("cannot decompose rotation %d (normalized from %d) from available masters",
+				normalized, target)
 		}
 
 		currentRot := 0
@@ -96,10 +106,15 @@ func (eval *Evaluator) ExpandInRPrime(tk *TransmissionKeys, targetRotations []in
 		}
 	}
 
-	// Extract only the requested targets
+	// Extract requested targets (use original rotation index as key,
+	// normalized index for cache lookup)
 	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
 	for _, target := range targetRotations {
-		result.Keys[target] = cache[target]
+		normalized := ((target % nSlots) + nSlots) % nSlots
+		if normalized == 0 {
+			continue
+		}
+		result.Keys[target] = cache[normalized]
 	}
 	return result, nil
 }
