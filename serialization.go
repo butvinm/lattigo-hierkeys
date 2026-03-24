@@ -11,18 +11,20 @@ import (
 
 // BinarySize returns the serialized size of the TransmissionKeys in bytes.
 func (tk *TransmissionKeys) BinarySize() int {
-	size := 8 // number of master keys (uint64)
+	size := 0
 
 	if tk.HomingKey != nil {
-		size += 8 + tk.HomingKey.BinarySize() // length prefix + data
+		size += tk.HomingKey.BinarySize()
 	}
 
 	if tk.Shift0Key != nil {
-		size += 8 + tk.Shift0Key.BinarySize()
+		size += tk.Shift0Key.BinarySize()
 	}
 
+	size += 8 // number of master keys (uint64)
+
 	for _, gk := range tk.MasterRotKeys {
-		size += 8 + 8 + gk.BinarySize() // rotation index (int64) + length prefix + data
+		size += 8 + gk.BinarySize() // rotation index (int64) + data
 	}
 
 	return size
