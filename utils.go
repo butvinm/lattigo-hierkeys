@@ -1,7 +1,5 @@
 package hierkeys
 
-import "sort"
-
 // MasterRotationsForBase returns the set of master rotation indices for a
 // p-ary number system with the given base and number of slots.
 //
@@ -22,38 +20,46 @@ func MasterRotationsForBase(base, nSlots int) []int {
 }
 
 // decomposeRotation decomposes a target rotation as a sum of available master
-// rotation indices. It uses a greedy approach: repeatedly subtract the largest
-// master rotation that fits.
+// rotation indices, minimizing the number of steps (= RotToRot operations).
+//
+// Uses dynamic programming (unbounded knapsack / coin change). This handles
+// non-canonical master sets correctly, e.g., decomposeRotation(6, [3, 5]) = [3, 3].
 //
 // Returns a sequence of master rotation indices whose sum equals target.
-// For example, decomposeRotation(7, []int{1, 4}) returns [4, 1, 1, 1].
-//
-// Returns nil if target cannot be decomposed (e.g., target < 0 or no masters).
+// Returns nil if target cannot be decomposed (e.g., target <= 0 or no masters).
 func decomposeRotation(target int, masterRots []int) []int {
 	if target <= 0 || len(masterRots) == 0 {
 		return nil
 	}
 
-	// Sort descending for greedy
-	sorted := make([]int, len(masterRots))
-	copy(sorted, masterRots)
-	sort.Sort(sort.Reverse(sort.IntSlice(sorted)))
+	// dp[i] = minimum number of steps to reach rotation i, or -1 if unreachable
+	// parent[i] = which master rotation was used to reach i
+	dp := make([]int, target+1)
+	parent := make([]int, target+1)
+	for i := range dp {
+		dp[i] = -1
+		parent[i] = -1
+	}
+	dp[0] = 0
 
-	var result []int
-	remaining := target
-	for remaining > 0 {
-		found := false
-		for _, m := range sorted {
-			if m <= remaining {
-				result = append(result, m)
-				remaining -= m
-				found = true
-				break
+	for i := 1; i <= target; i++ {
+		for _, m := range masterRots {
+			prev := i - m
+			if prev >= 0 && dp[prev] >= 0 && (dp[i] < 0 || dp[prev]+1 < dp[i]) {
+				dp[i] = dp[prev] + 1
+				parent[i] = m
 			}
 		}
-		if !found {
-			return nil // cannot decompose
-		}
+	}
+
+	if dp[target] < 0 {
+		return nil // unreachable
+	}
+
+	// Reconstruct path
+	result := make([]int, 0, dp[target])
+	for pos := target; pos > 0; pos -= parent[pos] {
+		result = append(result, parent[pos])
 	}
 	return result
 }

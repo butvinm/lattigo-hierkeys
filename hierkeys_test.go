@@ -698,6 +698,24 @@ func testMasterRotationsForBase(t *testing.T) {
 
 		require.Nil(t, MasterRotationsForBase(1, 16))
 		require.Nil(t, MasterRotationsForBase(4, 0))
+
+		// decomposeRotation: non-canonical master set (greedy would fail)
+		steps := decomposeRotation(6, []int{3, 5})
+		require.NotNil(t, steps, "6 = 3+3 should be decomposable")
+		sum := 0
+		for _, s := range steps {
+			sum += s
+		}
+		require.Equal(t, 6, sum)
+
+		// decomposeRotation: standard case
+		steps2 := decomposeRotation(7, []int{1, 4})
+		require.NotNil(t, steps2)
+		sum2 := 0
+		for _, s := range steps2 {
+			sum2 += s
+		}
+		require.Equal(t, 7, sum2)
 	})
 }
 
