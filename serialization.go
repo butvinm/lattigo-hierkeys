@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
@@ -56,8 +57,15 @@ func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 	}
 	n += 8
 
-	// Write each master key with its rotation index
-	for rot, gk := range tk.MasterRotKeys {
+	// Write each master key with its rotation index (sorted for determinism)
+	masterRotsSorted := make([]int, 0, len(tk.MasterRotKeys))
+	for rot := range tk.MasterRotKeys {
+		masterRotsSorted = append(masterRotsSorted, rot)
+	}
+	sort.Ints(masterRotsSorted)
+
+	for _, rot := range masterRotsSorted {
+		gk := tk.MasterRotKeys[rot]
 		if err = binary.Write(bw, binary.LittleEndian, int64(rot)); err != nil {
 			return n, fmt.Errorf("write rotation index: %w", err)
 		}
@@ -136,7 +144,15 @@ func (ik *IntermediateKeys) WriteTo(w io.Writer) (n int64, err error) {
 	}
 	n += 8
 
-	for rot, gk := range ik.Keys {
+	keyRotsSorted := make([]int, 0, len(ik.Keys))
+	for rot := range ik.Keys {
+		keyRotsSorted = append(keyRotsSorted, rot)
+	}
+	sort.Ints(keyRotsSorted)
+
+	for _, rot := range keyRotsSorted {
+		gk := ik.Keys[rot]
+
 		if err = binary.Write(bw, binary.LittleEndian, int64(rot)); err != nil {
 			return n, fmt.Errorf("write rotation index: %w", err)
 		}
