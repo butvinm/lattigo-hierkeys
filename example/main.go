@@ -41,9 +41,7 @@ func main() {
 	slots := params.MaxSlots()
 	fmt.Printf("CKKS: LogN=%d, %d slots, %d Q primes\n", params.LogN(), slots, params.QCount())
 
-	// =================================================================
 	// CLIENT: generate and send master keys
-	// =================================================================
 
 	kgen := hierkeys.NewKeyGenerator(hkParams)
 	sk := kgen.GenSecretKeyNew()
@@ -62,9 +60,7 @@ func main() {
 	}
 	fmt.Printf("Client: transmitted %d bytes (%.1f KB)\n", tkBuf.Len(), float64(tkBuf.Len())/1024)
 
-	// =================================================================
 	// SERVER (inactive phase): expand and store intermediates
-	// =================================================================
 
 	// Deserialize transmission keys
 	tk2 := new(hierkeys.TransmissionKeys)
@@ -90,9 +86,7 @@ func main() {
 	}
 	fmt.Printf("Server (inactive): stored %d bytes (%.1f KB) to disk\n", ikBuf.Len(), float64(ikBuf.Len())/1024)
 
-	// =================================================================
 	// SERVER (active phase): finalize on demand when service requested
-	// =================================================================
 
 	// Load intermediates from "disk"
 	intermediate2 := new(hierkeys.IntermediateKeys)
@@ -108,9 +102,7 @@ func main() {
 	fmt.Printf("\nServer (active): finalized %d evaluation keys from stored intermediates\n",
 		len(evk.GetGaloisKeysList()))
 
-	// =================================================================
 	// SERVER: use derived keys with standard CKKS evaluator
-	// =================================================================
 
 	skEval := kgen.ProjectToEvalKey(sk)
 	ecd := ckks.NewEncoder(params)
