@@ -2,6 +2,7 @@ package hierkeys
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
@@ -57,11 +58,12 @@ func (eval *Evaluator) ExpandInRPrime(tk *TransmissionKeys, targetRotations []in
 		return nil, fmt.Errorf("transmission keys and shift-0 key must not be nil")
 	}
 
-	// Extract available master rotation indices
+	// Extract available master rotation indices (sorted ascending for greedy decomposition)
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
 	for rot := range tk.MasterRotKeys {
 		masterRots = append(masterRots, rot)
 	}
+	sort.Ints(masterRots)
 
 	// Cache: rotation index -> R' level-0 key
 	cache := make(map[int]*rlwe.GaloisKey)

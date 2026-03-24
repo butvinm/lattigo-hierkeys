@@ -20,11 +20,12 @@ func MasterRotationsForBase(base, nSlots int) []int {
 	return rots
 }
 
-// decomposeRotation decomposes a target rotation as a sum of available master
-// rotation indices, minimizing the number of steps (= RotToRot operations).
+// decomposeRotation decomposes a target rotation as a sum of master rotation
+// indices using greedy p-ary decomposition (largest master first).
 //
-// Uses dynamic programming (unbounded knapsack / coin change). This handles
-// non-canonical master sets correctly, e.g., decomposeRotation(6, [3, 5]) = [3, 3].
+// masterRots must be a p-ary set (powers of some base p) as produced by
+// [MasterRotationsForBase]. The function greedily subtracts the largest
+// fitting master at each step, which is optimal for p-ary sets.
 //
 // Returns a sequence of master rotation indices whose sum equals target.
 // Returns nil if target cannot be decomposed (e.g., target <= 0 or no masters).
@@ -33,34 +34,20 @@ func decomposeRotation(target int, masterRots []int) []int {
 		return nil
 	}
 
-	// dp[i] = minimum number of steps to reach rotation i, or -1 if unreachable
-	// parent[i] = which master rotation was used to reach i
-	dp := make([]int, target+1)
-	parent := make([]int, target+1)
-	for i := range dp {
-		dp[i] = -1
-		parent[i] = -1
-	}
-	dp[0] = 0
+	result := make([]int, 0)
+	remaining := target
 
-	for i := 1; i <= target; i++ {
-		for _, m := range masterRots {
-			prev := i - m
-			if prev >= 0 && dp[prev] >= 0 && (dp[i] < 0 || dp[prev]+1 < dp[i]) {
-				dp[i] = dp[prev] + 1
-				parent[i] = m
-			}
+	// Greedy from largest to smallest master rotation
+	for i := len(masterRots) - 1; i >= 0 && remaining > 0; i-- {
+		m := masterRots[i]
+		for remaining >= m {
+			result = append(result, m)
+			remaining -= m
 		}
 	}
 
-	if dp[target] < 0 {
-		return nil // unreachable
-	}
-
-	// Reconstruct path
-	result := make([]int, 0, dp[target])
-	for pos := target; pos > 0; pos -= parent[pos] {
-		result = append(result, parent[pos])
+	if remaining != 0 {
+		return nil // cannot fully decompose
 	}
 	return result
 }
