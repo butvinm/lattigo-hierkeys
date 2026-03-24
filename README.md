@@ -17,7 +17,9 @@ derived keys are standard `rlwe.GaloisKey` objects, compatible with `rlwe.Evalua
 ## Quick Start
 
 ```go
-// Standard CKKS evaluation parameters
+// CKKS evaluation parameters. All Q and P primes must be NTT-friendly for
+// degree 2N (q ≡ 1 mod 4N), not just N. Use explicit primes or generate
+// with LogN+1 to ensure compatibility.
 paramsEval, _ := ckks.NewParametersFromLiteral(ckks.ParametersLiteral{...})
 
 // Derive hierarchical key parameters (adds one auxiliary prime for ring switching)
