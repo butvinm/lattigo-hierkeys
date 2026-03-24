@@ -1,4 +1,4 @@
-package hierkeys
+package kgplus
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/stretchr/testify/require"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
@@ -55,9 +56,9 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
-// TestHierKeys is the main entry point, iterating over parameter sets
+// TestKGPlus is the main entry point, iterating over parameter sets
 // and running all individual test functions.
-func TestHierKeys(t *testing.T) {
+func TestKGPlus(t *testing.T) {
 
 	for _, paramsLit := range testInsecure {
 
@@ -290,7 +291,7 @@ func testRotToRot(tc *testContext, t *testing.T) {
 		rsGK, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rotKey, homingKey, galElR)
 		require.NoError(t, err)
 
-		require.NoError(t, convertToLattigoConvention(paramsEval, rsGK))
+		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK))
 
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK, rot, float64(1<<25))
 	})
@@ -373,14 +374,14 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		galElR1 := paramsEval.GaloisElement(rot1)
 		rsGK1, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rot1Key, homingKey, galElR1)
 		require.NoError(t, err)
-		require.NoError(t, convertToLattigoConvention(paramsEval, rsGK1))
+		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK1))
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1, rot1, float64(1<<25))
 
 		// Ring-switch and verify rot-5
 		galElR5 := paramsEval.GaloisElement(rot5)
 		rsGK5, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rot5Key, homingKey, galElR5)
 		require.NoError(t, err)
-		require.NoError(t, convertToLattigoConvention(paramsEval, rsGK5))
+		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK5))
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5, rot5, float64(1<<25))
 	})
 }
@@ -656,24 +657,24 @@ func testSerialization(tc *testContext, t *testing.T) {
 func testMasterRotationsForBase(t *testing.T) {
 
 	t.Run("MasterRotationsForBase", func(t *testing.T) {
-		rots := MasterRotationsForBase(4, 32768)
+		rots := hierkeys.MasterRotationsForBase(4, 32768)
 		require.Equal(t, []int{1, 4, 16, 64, 256, 1024, 4096, 16384}, rots)
 
-		rots2 := MasterRotationsForBase(2, 16)
+		rots2 := hierkeys.MasterRotationsForBase(2, 16)
 		require.Equal(t, []int{1, 2, 4, 8}, rots2)
 
-		require.Nil(t, MasterRotationsForBase(1, 16))
-		require.Nil(t, MasterRotationsForBase(4, 0))
+		require.Nil(t, hierkeys.MasterRotationsForBase(1, 16))
+		require.Nil(t, hierkeys.MasterRotationsForBase(4, 0))
 
 		// decomposeRotation: p-ary decomposition
-		steps := decomposeRotation(7, []int{1, 4})
+		steps := hierkeys.DecomposeRotation(7, []int{1, 4})
 		require.Equal(t, []int{4, 1, 1, 1}, steps)
 
-		steps2 := decomposeRotation(21, []int{1, 4, 16})
+		steps2 := hierkeys.DecomposeRotation(21, []int{1, 4, 16})
 		require.Equal(t, []int{16, 4, 1}, steps2)
 
-		require.Nil(t, decomposeRotation(0, []int{1, 4}))
-		require.Nil(t, decomposeRotation(5, nil))
+		require.Nil(t, hierkeys.DecomposeRotation(0, []int{1, 4}))
+		require.Nil(t, hierkeys.DecomposeRotation(5, nil))
 	})
 }
 
@@ -789,7 +790,7 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		sk := kgen.GenSecretKeyNew()
 		skEval := kgen.ProjectToEvalKey(sk)
 
-		masterRots := MasterRotationsForBase(4, paramsEval.N()/2)
+		masterRots := hierkeys.MasterRotationsForBase(4, paramsEval.N()/2)
 		t.Logf("master rotations (base-4): %v (%d keys)", masterRots, len(masterRots))
 
 		tk, err := kgen.GenTransmissionKeys(sk, masterRots)

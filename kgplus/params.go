@@ -1,13 +1,14 @@
-package hierkeys
+package kgplus
 
 import (
 	"fmt"
 
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
+	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// Parameters bundles the four-tier parameter sets needed for hierarchical
-// rotation key generation via ring switching.
+// Parameters bundles the four-tier parameter sets needed for KG+
+// hierarchical rotation key generation via ring switching.
 //
 // Three tiers of primes:
 //   - Q_eval, P_eval: standard evaluation parameters (computation + key-switching)
@@ -18,6 +19,9 @@ import (
 //   - HK:           Q = Q_eval ∪ P_eval, P = P_hk, degree N — for homing key operations
 //   - RPrime:       Q = Q_eval, P = P_eval, degree 2N — level-0 keys in extension ring R'
 //   - RPrimeMaster: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N — master keys in extension ring R'
+//
+// KG+ only supports the Standard ring type (not ConjugateInvariant),
+// because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
 	Eval         rlwe.Parameters
 	HK           rlwe.Parameters
@@ -25,20 +29,19 @@ type Parameters struct {
 	RPrimeMaster rlwe.Parameters
 }
 
-// NewParameters constructs hierarchical key parameters from standard evaluation
+// NewParameters constructs KG+ hierarchical key parameters from standard evaluation
 // parameters and auxiliary prime bit-sizes for the homing key.
 //
 // The auxiliary primes (logPHK) are additional special primes consumed during
 // ring switching. They must be NTT-friendly for degree 2N. Typically one 61-bit
 // prime suffices.
 //
-// Example:
-//
-//	paramsEval, _ := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
-//	    LogN: 16, LogQ: []int{55, 45, 45, 45}, LogP: []int{61}, NTTFlag: true,
-//	})
-//	hkParams, _ := hierkeys.NewParameters(paramsEval, []int{61})
+// Returns an error if the evaluation parameters use the ConjugateInvariant ring type.
 func NewParameters(eval rlwe.Parameters, logPHK []int) (Parameters, error) {
+
+	if eval.RingType() == ring.ConjugateInvariant {
+		return Parameters{}, fmt.Errorf("KG+ does not support ConjugateInvariant ring type; use the llkn package instead")
+	}
 
 	if len(logPHK) == 0 {
 		return Parameters{}, fmt.Errorf("logPHK must have at least one element")

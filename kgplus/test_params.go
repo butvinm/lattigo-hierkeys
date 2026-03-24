@@ -1,4 +1,4 @@
-package hierkeys
+package kgplus
 
 import "github.com/tuneinsight/lattigo/v6/core/rlwe"
 

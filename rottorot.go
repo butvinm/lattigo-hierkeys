@@ -7,55 +7,61 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// RotToRot is a convenience wrapper that creates a temporary Evaluator
-// internally. For repeated calls, use [Evaluator.RotToRot].
-// RotToRot is a convenience wrapper that creates a temporary Evaluator.
-// For repeated calls, use [Evaluator.RotToRot].
-//
-// Note: allocates a full Evaluator with buffers for all parameter sets.
-// Eval/HK placeholders mean some buffers are over-sized but unused.
-func RotToRot(
-	paramsLow rlwe.Parameters,
-	paramsHigh rlwe.Parameters,
-	inputKey *rlwe.GaloisKey,
-	masterKey *rlwe.GaloisKey,
-	combinedGalEl uint64,
-) (*rlwe.GaloisKey, error) {
-	params := Parameters{
-		Eval:         paramsLow, // placeholder — ring-switch buffers unused by RotToRot
-		HK:           paramsLow, // placeholder
-		RPrime:       paramsLow,
-		RPrimeMaster: paramsHigh,
-	}
-	eval := NewEvaluator(params)
-	return eval.RotToRot(inputKey, masterKey, combinedGalEl)
+// RotToRotBuffers holds pre-allocated buffers for the [RotToRot] operation.
+// Create with [NewRotToRotBuffers]. Not safe for concurrent use; create one
+// per goroutine.
+type RotToRotBuffers struct {
+	// Combined Q+P at high level
+	BCombined, ACombined ring.Poly
+	// Automorphed at high level
+	BAut, AAut ring.Poly
+	// Key-switch output
+	CtKS *rlwe.Ciphertext
+	// Evaluator at paramsHigh level for GadgetProduct
+	Eval *rlwe.Evaluator
 }
 
-// RotToRot generates a combined rotation key from a level-0 key and a master
-// key in the extension ring R', implementing Algorithm 2 from the Lee-Lee-Kim-No
-// paper "Rotation Key Reduction for Client-Server Systems of Deep Neural Networks."
+// NewRotToRotBuffers allocates buffers for RotToRot between the given
+// parameter pairs. paramsLow is the output level, paramsHigh is the master level.
+func NewRotToRotBuffers(paramsLow, paramsHigh rlwe.Parameters) *RotToRotBuffers {
+	ringQHigh := paramsHigh.RingQ()
+	ctKS := rlwe.NewCiphertext(paramsHigh, 1, paramsHigh.MaxLevel())
+	ctKS.IsNTT = true
+
+	return &RotToRotBuffers{
+		BCombined: ringQHigh.NewPoly(),
+		ACombined: ringQHigh.NewPoly(),
+		BAut:      ringQHigh.NewPoly(),
+		AAut:      ringQHigh.NewPoly(),
+		CtKS:      ctKS,
+		Eval:      rlwe.NewEvaluator(paramsHigh, nil),
+	}
+}
+
+// RotToRot generates a combined rotation key from a low-level key and a master
+// key, implementing Algorithm 2 from the Lee-Lee-Kim-No paper
+// "Rotation Key Reduction for Client-Server Systems of Deep Neural Networks."
 //
 // Given:
-//   - inputKey: a level-0 rotation key for shift r (at RPrime: Q=Q_eval, P=P_eval, degree 2N)
-//   - masterKey: a master rotation key for shift r' (at RPrimeMaster: Q=Q_eval|P_eval, P=P_hk, degree 2N)
+//   - inputKey: a low-level rotation key for shift r (at paramsLow)
+//   - masterKey: a master rotation key for shift r' (at paramsHigh)
 //
-// Produces: a level-0 rotation key for shift r+r' (at RPrime).
+// Produces: a low-level rotation key for shift r+r' (at paramsLow).
 //
 // The operation treats each GadgetCiphertext component (b_i, a_i) of inputKey
 // as a ciphertext and applies: automorph by master's Galois element, then
 // key-switch using masterKey's GadgetCiphertext.
 //
 // PARAMETER REQUIREMENTS:
-//   - params.RPrime.LogN() == params.RPrimeMaster.LogN() (both degree 2N)
-//   - params.RPrimeMaster.QCount() == params.RPrime.QCount() + params.RPrime.PCount()
-func (eval *Evaluator) RotToRot(
+//   - paramsLow.LogN() == paramsHigh.LogN()
+//   - paramsHigh.QCount() == paramsLow.QCount() + paramsLow.PCount()
+func RotToRot(
+	buf *RotToRotBuffers,
+	paramsLow, paramsHigh rlwe.Parameters,
 	inputKey *rlwe.GaloisKey,
 	masterKey *rlwe.GaloisKey,
 	combinedGalEl uint64,
 ) (*rlwe.GaloisKey, error) {
-
-	paramsLow := eval.params.RPrime
-	paramsHigh := eval.params.RPrimeMaster
 
 	// --- Input validation ---
 	if inputKey == nil || masterKey == nil {
@@ -82,7 +88,7 @@ func (eval *Evaluator) RotToRot(
 	ringPLow := paramsLow.RingP()
 	ringQHigh := paramsHigh.RingQ()
 
-	// --- Output key at level-0 ---
+	// --- Output key at low level ---
 	outputKey := &rlwe.GaloisKey{
 		EvaluationKey: rlwe.EvaluationKey{
 			GadgetCiphertext: *rlwe.NewGadgetCiphertext(
@@ -99,53 +105,46 @@ func (eval *Evaluator) RotToRot(
 		return nil, fmt.Errorf("AutomorphismNTTIndex: %w", err)
 	}
 
-	// Use pre-allocated buffers
-	bCombined := eval.bCombined
-	aCombined := eval.aCombined
-	bAut := eval.bAut
-	aAut := eval.aAut
-	ctKS := eval.ctKSRot
-
-	// Index where P_eval primes start in Q_hk
+	// Index where P primes start in Q_high
 	pIdx := levelQLow + 1
 
 	for i := 0; i < nRNS; i++ {
 		for j := 0; j < len(gc.Value[i]); j++ {
 			component := gc.Value[i][j]
 
-			// Step 1: IMForm (strip Montgomery) and combine Q+P into Q_hk
+			// Step 1: IMForm (strip Montgomery) and combine Q+P into Q_high
 			for m := 0; m <= levelQLow; m++ {
 				s := ringQLow.SubRings[m]
-				s.IMForm(component[0].Q.Coeffs[m], bCombined.Coeffs[m])
-				s.IMForm(component[1].Q.Coeffs[m], aCombined.Coeffs[m])
+				s.IMForm(component[0].Q.Coeffs[m], buf.BCombined.Coeffs[m])
+				s.IMForm(component[1].Q.Coeffs[m], buf.ACombined.Coeffs[m])
 			}
 			for m := 0; m <= levelPLow; m++ {
 				s := ringPLow.SubRings[m]
-				s.IMForm(component[0].P.Coeffs[m], bCombined.Coeffs[pIdx+m])
-				s.IMForm(component[1].P.Coeffs[m], aCombined.Coeffs[pIdx+m])
+				s.IMForm(component[0].P.Coeffs[m], buf.BCombined.Coeffs[pIdx+m])
+				s.IMForm(component[1].P.Coeffs[m], buf.ACombined.Coeffs[pIdx+m])
 			}
 
 			// Step 2: Automorph by master's Galois element
-			ringQHigh.AutomorphismNTTWithIndex(bCombined, autIdx, bAut)
-			ringQHigh.AutomorphismNTTWithIndex(aCombined, autIdx, aAut)
+			ringQHigh.AutomorphismNTTWithIndex(buf.BCombined, autIdx, buf.BAut)
+			ringQHigh.AutomorphismNTTWithIndex(buf.ACombined, autIdx, buf.AAut)
 
 			// Step 3: GadgetProduct(aAut, masterKey) at paramsHigh
-			eval.evalRot.GadgetProduct(levelQHigh, aAut, &masterKey.GadgetCiphertext, ctKS)
+			buf.Eval.GadgetProduct(levelQHigh, buf.AAut, &masterKey.GadgetCiphertext, buf.CtKS)
 
 			// Step 4: Add automorphed b component
-			ringQHigh.Add(bAut, ctKS.Value[0], ctKS.Value[0])
+			ringQHigh.Add(buf.BAut, buf.CtKS.Value[0], buf.CtKS.Value[0])
 
-			// Step 5: Split Q_hk back into Q_eval and P_eval, apply MForm
+			// Step 5: Split Q_high back into Q_low and P_low, apply MForm
 			for m := 0; m <= levelQLow; m++ {
 				s := ringQLow.SubRings[m]
-				s.MForm(ctKS.Value[0].Coeffs[m], outputKey.Value[i][j][0].Q.Coeffs[m])
-				s.MForm(ctKS.Value[1].Coeffs[m], outputKey.Value[i][j][1].Q.Coeffs[m])
+				s.MForm(buf.CtKS.Value[0].Coeffs[m], outputKey.Value[i][j][0].Q.Coeffs[m])
+				s.MForm(buf.CtKS.Value[1].Coeffs[m], outputKey.Value[i][j][1].Q.Coeffs[m])
 			}
 			for m := 0; m <= levelPLow; m++ {
 				s := ringPLow.SubRings[m]
 				srcIdx := pIdx + m
-				s.MForm(ctKS.Value[0].Coeffs[srcIdx], outputKey.Value[i][j][0].P.Coeffs[m])
-				s.MForm(ctKS.Value[1].Coeffs[srcIdx], outputKey.Value[i][j][1].P.Coeffs[m])
+				s.MForm(buf.CtKS.Value[0].Coeffs[srcIdx], outputKey.Value[i][j][0].P.Coeffs[m])
+				s.MForm(buf.CtKS.Value[1].Coeffs[srcIdx], outputKey.Value[i][j][1].P.Coeffs[m])
 			}
 		}
 	}
