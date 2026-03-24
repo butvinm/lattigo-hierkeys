@@ -131,47 +131,13 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 // constructExtendedSKForParams builds s_tilde = s + Y*s1 in R' for a specific
 // R' parameter set. This is a test helper that generalizes the KeyGenerator's
 // constructExtendedSK to work with arbitrary R' params.
+// constructExtendedSKForParams delegates to the exported ConstructExtendedSK.
 func constructExtendedSKForParams(
 	paramsHK rlwe.Parameters,
 	paramsRP rlwe.Parameters,
 	skS, skS1 *rlwe.SecretKey,
 ) *rlwe.SecretKey {
-	N := paramsHK.N()
-	ringQHK := paramsHK.RingQ()
-	ringQRP := paramsRP.RingQ()
-
-	skTilde := rlwe.NewSecretKey(paramsRP)
-
-	sCoeffs := ringQHK.NewPoly()
-	s1Coeffs := ringQHK.NewPoly()
-	ringQHK.IMForm(skS.Value.Q, sCoeffs)
-	ringQHK.INTT(sCoeffs, sCoeffs)
-	ringQHK.IMForm(skS1.Value.Q, s1Coeffs)
-	ringQHK.INTT(s1Coeffs, s1Coeffs)
-
-	sTildeCoeffs := ringQRP.NewPoly()
-	nQ := paramsRP.QCount()
-	if nQ > paramsHK.QCount() {
-		nQ = paramsHK.QCount()
-	}
-	for m := 0; m < nQ; m++ {
-		for j := 0; j < N; j++ {
-			sTildeCoeffs.Coeffs[m][2*j] = sCoeffs.Coeffs[m][j]
-			sTildeCoeffs.Coeffs[m][2*j+1] = s1Coeffs.Coeffs[m][j]
-		}
-	}
-
-	ringQRP.NTT(sTildeCoeffs, skTilde.Value.Q)
-	ringQRP.MForm(skTilde.Value.Q, skTilde.Value.Q)
-
-	if paramsRP.PCount() > 0 {
-		ringQP := paramsRP.RingQP().AtLevel(skTilde.LevelQ(), skTilde.LevelP())
-		ringQP.ExtendBasisSmallNormAndCenter(sTildeCoeffs, skTilde.LevelP(), sTildeCoeffs, skTilde.Value.P)
-		paramsRP.RingP().NTT(skTilde.Value.P, skTilde.Value.P)
-		paramsRP.RingP().MForm(skTilde.Value.P, skTilde.Value.P)
-	}
-
-	return skTilde
+	return ConstructExtendedSK(paramsHK, paramsRP, skS, skS1)
 }
 
 // verifyRotationKey verifies a derived GaloisKey against a reference key

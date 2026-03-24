@@ -127,11 +127,20 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 	}, nil
 }
 
-// constructExtendedSKForParams builds s̃ = s + Y·s̃₁ in R' from s and s̃₁ at HK level,
-// for the given R' parameter set (either RPrime or RPrimeMaster).
+// constructExtendedSKForParams builds s̃ = s + Y·s̃₁ in R' for the given R' parameter set.
 func (kgen *KeyGenerator) constructExtendedSKForParams(paramsRP rlwe.Parameters, skS, skS1 *rlwe.SecretKey) *rlwe.SecretKey {
-	N := kgen.params.Eval.N()
-	ringQHK := kgen.params.HK.RingQ()
+	return ConstructExtendedSK(kgen.params.HK, paramsRP, skS, skS1)
+}
+
+// ConstructExtendedSK builds the extended secret key s̃ = s + Y·s̃₁ in the
+// extension ring R' (degree 2N) from two secret keys at the homing-key level.
+//
+// paramsHK: the homing-key parameters (Q = Q_eval ∪ P_eval)
+// paramsRP: the target R' parameters (degree 2N)
+// skS, skS1: secret keys at paramsHK level
+func ConstructExtendedSK(paramsHK, paramsRP rlwe.Parameters, skS, skS1 *rlwe.SecretKey) *rlwe.SecretKey {
+	N := paramsHK.N()
+	ringQHK := paramsHK.RingQ()
 	ringQRP := paramsRP.RingQ()
 
 	skTilde := rlwe.NewSecretKey(paramsRP)
@@ -149,8 +158,8 @@ func (kgen *KeyGenerator) constructExtendedSKForParams(paramsRP rlwe.Parameters,
 	// Use min(paramsRP.QCount(), paramsHK.QCount()) primes from HK coefficients
 	sTildeCoeffs := ringQRP.NewPoly()
 	nQ := paramsRP.QCount()
-	if nQ > kgen.params.HK.QCount() {
-		nQ = kgen.params.HK.QCount()
+	if nQ > paramsHK.QCount() {
+		nQ = paramsHK.QCount()
 	}
 	for m := 0; m < nQ; m++ {
 		for j := 0; j < N; j++ {
