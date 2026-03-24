@@ -194,4 +194,3 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 
 	return targetGK, nil
 }
-

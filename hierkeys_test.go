@@ -8,10 +8,10 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
-	"github.com/stretchr/testify/require"
 )
 
 func testString(params Parameters, opname string) string {
@@ -23,12 +23,12 @@ func testString(params Parameters, opname string) string {
 }
 
 type testContext struct {
-	params   Parameters
-	kgen     *KeyGenerator
-	sk       *rlwe.SecretKey // at HK level
-	skEval   *rlwe.SecretKey // projected to eval level
-	tk       *TransmissionKeys
-	hkEval   *Evaluator
+	params     Parameters
+	kgen       *KeyGenerator
+	sk         *rlwe.SecretKey // at HK level
+	skEval     *rlwe.SecretKey // projected to eval level
+	tk         *TransmissionKeys
+	hkEval     *Evaluator
 	masterRots []int
 }
 
