@@ -9,6 +9,11 @@ import (
 
 // RotToRot is a convenience wrapper that creates a temporary Evaluator
 // internally. For repeated calls, use [Evaluator.RotToRot].
+// RotToRot is a convenience wrapper that creates a temporary Evaluator.
+// For repeated calls, use [Evaluator.RotToRot].
+//
+// Note: allocates a full Evaluator with buffers for all parameter sets.
+// Eval/HK placeholders mean some buffers are over-sized but unused.
 func RotToRot(
 	paramsLow rlwe.Parameters,
 	paramsHigh rlwe.Parameters,
@@ -16,12 +21,8 @@ func RotToRot(
 	masterKey *rlwe.GaloisKey,
 	combinedGalEl uint64,
 ) (*rlwe.GaloisKey, error) {
-	// Build a minimal Parameters. We need Eval/HK for RingSwitchGaloisKey
-	// buffers, but RotToRot only uses RPrime/RPrimeMaster buffers.
-	// Use paramsLow as both Eval and HK placeholders since those buffers
-	// won't be touched.
 	params := Parameters{
-		Eval:         paramsLow, // placeholder
+		Eval:         paramsLow, // placeholder — ring-switch buffers unused by RotToRot
 		HK:           paramsLow, // placeholder
 		RPrime:       paramsLow,
 		RPrimeMaster: paramsHigh,

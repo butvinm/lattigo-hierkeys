@@ -12,6 +12,9 @@ import (
 
 // RingSwitchGaloisKey is a convenience wrapper that creates a temporary
 // Evaluator internally. For repeated calls, use [Evaluator.RingSwitchGaloisKey].
+//
+// Note: allocates a full Evaluator with buffers for all parameter sets.
+// The RPrimeMaster placeholder means some buffers are over-sized but unused.
 func RingSwitchGaloisKey(
 	paramsEval rlwe.Parameters,
 	paramsHK rlwe.Parameters,
@@ -20,15 +23,11 @@ func RingSwitchGaloisKey(
 	homingKey *rlwe.EvaluationKey,
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
-	// Build a minimal Parameters to construct a temporary evaluator.
-	// We need RPrimeMaster for RotToRot buffers too, but RingSwitchGaloisKey
-	// only uses HK/RPrime/Eval buffers. We reuse paramsHK as RPrimeMaster
-	// placeholder since those buffers won't be touched.
 	params := Parameters{
 		Eval:         paramsEval,
 		HK:           paramsHK,
 		RPrime:       paramsRPrime,
-		RPrimeMaster: paramsHK, // placeholder — RotToRot buffers unused
+		RPrimeMaster: paramsHK, // placeholder — RotToRot buffers unused by RingSwitchGaloisKey
 	}
 	eval := NewEvaluator(params)
 	return eval.RingSwitchGaloisKey(masterKeyRPrime, homingKey, galoisElement)
