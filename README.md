@@ -52,27 +52,27 @@ All primes must be NTT-friendly for degree 2N (i.e., q ≡ 1 mod 4N).
 
 ## Key Derivation Pipeline
 
-```
-Client                          Server
-  │                               │
-  │  GenTransmissionKeys          │
-  │  ├─ Homing key (s̃₁ → s)      │
-  │  ├─ Shift-0 seed key          │
-  │  └─ Master rotation keys      │
-  │         │                     │
-  │         └────── tk ──────────►│
-  │                               │
-  │                    ExpandInRPrime (expensive, cacheable)
-  │                    ├─ RotToRot: shift0 + master(r) → rot(r)
-  │                    ├─ RotToRot: rot(r) + master(r') → rot(r+r')
-  │                    └─ ... (cached intermediates reused)
-  │                               │
-  │                    FinalizeKeys (cheaper, on-demand)
-  │                    ├─ Ring switch R' → R
-  │                    └─ Post-convert to lattigo convention
-  │                               │
-  │                    eval.Rotate(ct, k, out)
-```
+**Client** generates transmission keys and sends them to the server:
+
+1. `GenTransmissionKeys(sk, masterRotations)` produces:
+   - Homing key (switches s̃₁ → s)
+   - Shift-0 seed key (identity rotation in R')
+   - Master rotation keys (one per master index, in R')
+
+**Server** derives evaluation keys in two phases:
+
+2. `ExpandInRPrime(tk, targetRotations)` — expensive, cacheable:
+   - RotToRot: shift-0 + master(r) → intermediate key for rotation r
+   - RotToRot: rot(r) + master(r') → intermediate key for rotation r+r'
+   - Shared intermediates are computed once and reused
+
+3. `FinalizeKeys(tk, intermediate)` — cheap, on-demand:
+   - Ring switch each intermediate key from R' (degree 2N) to R (degree N)
+   - Post-convert from paper convention to lattigo convention (π⁻¹ automorphism)
+
+**Evaluation** uses standard lattigo — no special wrappers:
+
+4. `ckks.NewEvaluator(params, evk)` then `eval.Rotate(ct, k, out)`
 
 ## Key Management Use Cases
 
