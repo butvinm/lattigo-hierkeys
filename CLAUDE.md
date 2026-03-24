@@ -17,6 +17,7 @@ Reference papers are in `./papers/` (gitignored). Read them for algorithm detail
 
 ```bash
 go build ./...
+gofmt -w *.go                         # always format before commit
 go test -v -count=1 -short ./...     # skip LogN=14 test (~2min)
 go test -v -count=1 ./...            # full suite including LogN=14
 go test -run "TestHierKeys/CKKSRotation" ./...  # specific subtest
