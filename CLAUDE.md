@@ -9,6 +9,10 @@ Based on:
 - "Towards Lightweight CKKS" (Cheon, Kang, Park) — https://eprint.iacr.org/2025/720
 - "Rotation Key Reduction" (Lee, Lee, Kim, No) — https://eprint.iacr.org/2022/532
 
+## Papers
+
+Reference papers are in `./papers/` (gitignored). Read them for algorithm details.
+
 ## Build & Test
 
 ```bash
