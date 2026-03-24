@@ -10,7 +10,7 @@ import (
 //
 // Following lattigo's evaluator pattern, the struct separates read-only
 // state (params, rlwe evaluators) from mutable buffers so that
-// ShallowCopy can produce a concurrency-safe copy that shares the
+// ConcurrentCopy can produce a concurrency-safe copy that shares the
 // read-only parts.
 type Evaluator struct {
 	params Parameters
@@ -112,10 +112,10 @@ func newEvaluatorBuffers(params Parameters) *evaluatorBuffers {
 	return buf
 }
 
-// ShallowCopy creates a copy of this Evaluator that shares read-only
+// ConcurrentCopy creates a copy of this Evaluator that shares read-only
 // data (parameters) but has its own mutable buffers. The original and
 // the copy can be used concurrently.
-func (eval *Evaluator) ShallowCopy() *Evaluator {
+func (eval *Evaluator) ConcurrentCopy() *Evaluator {
 	return &Evaluator{
 		params:           eval.params,
 		evaluatorBuffers: newEvaluatorBuffers(eval.params),
