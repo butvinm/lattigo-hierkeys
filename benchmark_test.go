@@ -53,7 +53,7 @@ var benchScenarios = []benchScenario{
 }
 
 // BenchmarkKeySizes measures and reports transmission key sizes.
-// Run with: go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ -timeout 30m ./...
+// Run with: go test -bench BenchmarkKeySizes -benchtime 1x -run ^NONE -timeout 30m ./...
 func BenchmarkKeySizes(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -97,8 +97,9 @@ func BenchmarkKeySizes(b *testing.B) {
 					return
 				}
 
-				dnumMaster := params.RPrimeMaster.BaseRNSDecompositionVectorSize(
-					params.RPrimeMaster.MaxLevel(), params.RPrimeMaster.MaxLevelP())
+				topRP := params.RPrime[params.NumLevels()-1]
+				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
+					topRP.MaxLevel(), topRP.MaxLevelP())
 
 				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
@@ -118,13 +119,14 @@ func BenchmarkKeySizes(b *testing.B) {
 			})
 
 			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, sc.LogPHK)
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
 				if err != nil {
 					b.Fatal(err)
 				}
 
-				dnumMaster := params.Master.BaseRNSDecompositionVectorSize(
-					params.Master.MaxLevel(), params.Master.MaxLevelP())
+				topLevel := params.Top()
+				dnumMaster := topLevel.BaseRNSDecompositionVectorSize(
+					topLevel.MaxLevel(), topLevel.MaxLevelP())
 
 				kgen := llkn.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
@@ -133,16 +135,7 @@ func BenchmarkKeySizes(b *testing.B) {
 					b.Fatal(err)
 				}
 
-				// Compute LLKN transmission size
-				tkSize := 0
-				if tk.Shift0Key != nil {
-					tkSize += tk.Shift0Key.BinarySize()
-				}
-				tkSize += 8
-				for _, gk := range tk.MasterRotKeys {
-					tkSize += 8 + gk.BinarySize()
-				}
-
+				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
 				b.Logf("LLKN dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
@@ -203,7 +196,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 			})
 
 			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, sc.LogPHK)
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -264,7 +257,7 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 			})
 
 			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, sc.LogPHK)
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
 				if err != nil {
 					b.Fatal(err)
 				}

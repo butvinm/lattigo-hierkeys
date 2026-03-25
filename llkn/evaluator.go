@@ -13,8 +13,8 @@ type Evaluator struct {
 }
 
 type evaluatorBuffers struct {
-	// Shared RotToRot buffers
-	rotBuf *hierkeys.RotToRotBuffers
+	// rotBufs[i] is for RotToRot between Levels[i] and Levels[i+1]
+	rotBufs []*hierkeys.RotToRotBuffers
 }
 
 // NewEvaluator creates an Evaluator with pre-allocated buffers.
@@ -26,9 +26,12 @@ func NewEvaluator(params Parameters) *Evaluator {
 }
 
 func newEvaluatorBuffers(params Parameters) *evaluatorBuffers {
-	return &evaluatorBuffers{
-		rotBuf: hierkeys.NewRotToRotBuffers(params.Eval, params.Master),
+	k := params.NumLevels()
+	rotBufs := make([]*hierkeys.RotToRotBuffers, k-1)
+	for i := 0; i < k-1; i++ {
+		rotBufs[i] = hierkeys.NewRotToRotBuffers(params.Levels[i], params.Levels[i+1])
 	}
+	return &evaluatorBuffers{rotBufs: rotBufs}
 }
 
 // ConcurrentCopy creates a copy of this Evaluator that shares read-only
@@ -40,12 +43,20 @@ func (eval *Evaluator) ConcurrentCopy() *Evaluator {
 	}
 }
 
-// RotToRot generates a combined rotation key from a level-0 key and a master
-// key. See [hierkeys.RotToRot] for details.
+// RotToRot generates a combined rotation key from a level-i key and a
+// level-(i+1) key. See [hierkeys.RotToRot] for details.
 func (eval *Evaluator) RotToRot(
+	level int,
 	inputKey *rlwe.GaloisKey,
 	masterKey *rlwe.GaloisKey,
 	combinedGalEl uint64,
 ) (*rlwe.GaloisKey, error) {
-	return hierkeys.RotToRot(eval.rotBuf, eval.params.Eval, eval.params.Master, inputKey, masterKey, combinedGalEl)
+	return hierkeys.RotToRot(
+		eval.rotBufs[level],
+		eval.params.Levels[level],
+		eval.params.Levels[level+1],
+		inputKey,
+		masterKey,
+		combinedGalEl,
+	)
 }

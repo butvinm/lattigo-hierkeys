@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/cmplx"
 	"runtime"
+	"sort"
 	"testing"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
@@ -16,11 +17,12 @@ import (
 )
 
 func testString(params Parameters, opname string) string {
-	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d",
+	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/k=%d",
 		opname,
 		params.Eval.LogN(),
 		params.Eval.QCount(),
-		params.Eval.PCount())
+		params.Eval.PCount(),
+		params.NumLevels())
 }
 
 type testContext struct {
@@ -56,6 +58,27 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
+// expandAll cascades ExpandLevel through all levels, replicating what the
+// removed Expand method did. Used by tests that need level-0 IntermediateKeys.
+func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*IntermediateKeys, error) {
+	k := eval.params.NumLevels()
+	masterRots := make([]int, 0, len(tk.MasterRotKeys))
+	for rot := range tk.MasterRotKeys {
+		masterRots = append(masterRots, rot)
+	}
+	sort.Ints(masterRots)
+
+	currentMasters := tk.MasterRotKeys
+	for level := k - 2; level >= 1; level-- {
+		derived, err := eval.ExpandLevel(level, tk.Shift0Keys[level], currentMasters, masterRots)
+		if err != nil {
+			return nil, err
+		}
+		currentMasters = derived.Keys
+	}
+	return eval.ExpandLevel(0, tk.Shift0Keys[0], currentMasters, targetRots)
+}
+
 // TestKGPlus is the main entry point, iterating over parameter sets
 // and running all individual test functions.
 func TestKGPlus(t *testing.T) {
@@ -65,7 +88,7 @@ func TestKGPlus(t *testing.T) {
 		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
 		require.NoError(t, err)
 
-		params, err := NewParameters(paramsEval, paramsLit.LogPHK)
+		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra...)
 		require.NoError(t, err)
 
 		// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}
@@ -119,7 +142,10 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 		t.Run("GenTransmissionKeys", func(t *testing.T) {
 			tk := tc.tk
 			require.NotNil(t, tk.HomingKey)
-			require.NotNil(t, tk.Shift0Key)
+			require.Len(t, tk.Shift0Keys, params.NumLevels()-1)
+			for i, gk := range tk.Shift0Keys {
+				require.NotNil(t, gk, "shift-0 key at level %d is nil", i)
+			}
 			require.Equal(t, len(tc.masterRots), len(tk.MasterRotKeys))
 			for _, rot := range tc.masterRots {
 				_, ok := tk.MasterRotKeys[rot]
@@ -240,8 +266,8 @@ func testRotToRot(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "RotToRot/SingleStep"), func(t *testing.T) {
 
 		paramsEval := params.Eval
-		paramsRPLow := params.RPrime
-		paramsRPHigh := params.RPrimeMaster
+		paramsRPLow := params.RPrime[0]
+		paramsRPHigh := params.RPrime[1]
 		paramsHK := params.HK
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
@@ -293,7 +319,11 @@ func testRotToRot(tc *testContext, t *testing.T) {
 
 		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK))
 
-		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK, rot, float64(1<<25))
+		threshold := float64(1 << 25)
+		if params.NumLevels() > 2 {
+			threshold = float64(1 << 35)
+		}
+		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK, rot, threshold)
 	})
 }
 
@@ -306,8 +336,8 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "RotToRot/MultiStep"), func(t *testing.T) {
 
 		paramsEval := params.Eval
-		paramsRPLow := params.RPrime
-		paramsRPHigh := params.RPrimeMaster
+		paramsRPLow := params.RPrime[0]
+		paramsRPHigh := params.RPrime[1]
 		paramsHK := params.HK
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
@@ -370,19 +400,24 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		rot5Key, err := RotToRot(paramsRPLow, paramsRPHigh, rot1Key, masterKey4, galEl5Low)
 		require.NoError(t, err)
 
+		threshold := float64(1 << 25)
+		if params.NumLevels() > 2 {
+			threshold = float64(1 << 35)
+		}
+
 		// Ring-switch and verify rot-1
 		galElR1 := paramsEval.GaloisElement(rot1)
 		rsGK1, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rot1Key, homingKey, galElR1)
 		require.NoError(t, err)
 		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK1))
-		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1, rot1, float64(1<<25))
+		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1, rot1, threshold)
 
 		// Ring-switch and verify rot-5
 		galElR5 := paramsEval.GaloisElement(rot5)
 		rsGK5, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rot5Key, homingKey, galElR5)
 		require.NoError(t, err)
 		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK5))
-		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5, rot5, float64(1<<25))
+		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5, rot5, threshold)
 	})
 }
 
@@ -488,8 +523,13 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 		eval := rlwe.NewEvaluator(paramsEval, evk)
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
+		threshold := float64(1 << 25)
+		if params.NumLevels() > 2 {
+			threshold = float64(1 << 35)
+		}
+
 		for _, rot := range targetRots {
-			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, float64(1<<25))
+			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, threshold)
 		}
 	})
 }
@@ -512,8 +552,13 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 		eval := rlwe.NewEvaluator(paramsEval, evk)
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
+		threshold := float64(1 << 25)
+		if params.NumLevels() > 2 {
+			threshold = float64(1 << 35)
+		}
+
 		for _, rot := range targetRots {
-			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, float64(1<<25))
+			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, threshold)
 		}
 	})
 }
@@ -529,7 +574,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		targetRots := []int{1, 2, 3, 4, 5}
 
 		// Two-phase approach
-		intermediate, err := tc.hkEval.Expand(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
 		require.NoError(t, err)
 		require.Equal(t, len(targetRots), len(intermediate.Keys))
 
@@ -542,8 +587,13 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		eval := rlwe.NewEvaluator(paramsEval, evk)
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
+		threshold := float64(1 << 25)
+		if params.NumLevels() > 2 {
+			threshold = float64(1 << 35)
+		}
+
 		for _, rot := range targetRots {
-			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, float64(1<<25))
+			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, threshold)
 		}
 	})
 }
@@ -560,7 +610,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 		targetRots := []int{1, 2, 3, 4, 5}
 
 		// Derive all at once (with caching)
-		intermediate, err := tc.hkEval.Expand(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
 		require.NoError(t, err)
 
 		// Verify all requested keys are present
@@ -574,6 +624,11 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 		paramsEval := params.Eval
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
+		threshold := float64(1 << 25)
+		if params.NumLevels() > 2 {
+			threshold = float64(1 << 35)
+		}
+
 		for _, rot := range targetRots {
 			// Finalize the single key from the batch
 			singleIntermediate := &IntermediateKeys{
@@ -583,7 +638,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 			require.NoError(t, err)
 
 			eval := rlwe.NewEvaluator(paramsEval, evk)
-			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, float64(1<<25))
+			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, threshold)
 		}
 	})
 }
@@ -608,7 +663,10 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Verify structure
 		require.NotNil(t, tk2.HomingKey)
-		require.NotNil(t, tk2.Shift0Key)
+		require.Len(t, tk2.Shift0Keys, len(tc.tk.Shift0Keys))
+		for i, gk := range tk2.Shift0Keys {
+			require.NotNil(t, gk, "shift-0 key at level %d is nil after deserialization", i)
+		}
 		require.Equal(t, len(tc.tk.MasterRotKeys), len(tk2.MasterRotKeys))
 
 		for rot := range tc.tk.MasterRotKeys {
@@ -626,7 +684,7 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Expand to get intermediate keys
 		hkEval := NewEvaluator(params)
-		intermediate, err := hkEval.Expand(tc.tk, []int{1, 2, 3, 4, 5})
+		intermediate, err := expandAll(hkEval, tc.tk, []int{1, 2, 3, 4, 5})
 		require.NoError(t, err)
 
 		// Serialize

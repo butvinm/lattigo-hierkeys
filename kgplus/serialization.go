@@ -19,12 +19,12 @@ func (tk *TransmissionKeys) BinarySize() int {
 		size += tk.HomingKey.BinarySize()
 	}
 
-	if tk.Shift0Key != nil {
-		size += tk.Shift0Key.BinarySize()
+	size += 8 // shift-0 count
+	for _, gk := range tk.Shift0Keys {
+		size += gk.BinarySize()
 	}
 
 	size += 8 // number of master keys (uint64)
-
 	for _, gk := range tk.MasterRotKeys {
 		size += 8 + gk.BinarySize() // rotation index (int64) + data
 	}
@@ -43,11 +43,21 @@ func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 	}
 	n += written
 
-	if written, err = tk.Shift0Key.WriteTo(bw); err != nil {
-		return n, fmt.Errorf("write shift-0 key: %w", err)
+	// Write shift-0 keys
+	nShift0 := uint64(len(tk.Shift0Keys))
+	if err = binary.Write(bw, binary.LittleEndian, nShift0); err != nil {
+		return n, fmt.Errorf("write shift-0 count: %w", err)
 	}
-	n += written
+	n += 8
 
+	for i, gk := range tk.Shift0Keys {
+		if written, err = gk.WriteTo(bw); err != nil {
+			return n, fmt.Errorf("write shift-0 key %d: %w", i, err)
+		}
+		n += written
+	}
+
+	// Write master rotation keys
 	nMasters := uint64(len(tk.MasterRotKeys))
 	if err = binary.Write(bw, binary.LittleEndian, nMasters); err != nil {
 		return n, fmt.Errorf("write master key count: %w", err)
@@ -92,12 +102,24 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 	n += read
 
-	tk.Shift0Key = new(rlwe.GaloisKey)
-	if read, err = tk.Shift0Key.ReadFrom(br); err != nil {
-		return n, fmt.Errorf("read shift-0 key: %w", err)
+	// Read shift-0 keys
+	var nShift0 uint64
+	if err = binary.Read(br, binary.LittleEndian, &nShift0); err != nil {
+		return n, fmt.Errorf("read shift-0 count: %w", err)
 	}
-	n += read
+	n += 8
 
+	tk.Shift0Keys = make([]*rlwe.GaloisKey, nShift0)
+	for i := uint64(0); i < nShift0; i++ {
+		gk := new(rlwe.GaloisKey)
+		if read, err = gk.ReadFrom(br); err != nil {
+			return n, fmt.Errorf("read shift-0 key %d: %w", i, err)
+		}
+		n += read
+		tk.Shift0Keys[i] = gk
+	}
+
+	// Read master rotation keys
 	var nMasters uint64
 	if err = binary.Read(br, binary.LittleEndian, &nMasters); err != nil {
 		return n, fmt.Errorf("read master key count: %w", err)

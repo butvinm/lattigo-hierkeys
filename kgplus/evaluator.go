@@ -35,8 +35,8 @@ type evaluatorBuffers struct {
 	ctKSRS       *rlwe.Ciphertext
 	evalHK       *rlwe.Evaluator // evaluator at HK level for GadgetProduct
 
-	// --- Shared RotToRot buffers ---
-	rotBuf *hierkeys.RotToRotBuffers
+	// --- RotToRot buffers for each adjacent RPrime level pair ---
+	rotBufs []*hierkeys.RotToRotBuffers
 
 	// --- Buffers for convertToLattigoConvention ---
 	autTmpQ ring.Poly // at eval Q level
@@ -53,10 +53,17 @@ func NewEvaluator(params Parameters) *Evaluator {
 }
 
 func newEvaluatorBuffers(params Parameters) *evaluatorBuffers {
-	ringQRPrime := params.RPrime.RingQ()
-	ringPRPrime := params.RPrime.RingP()
+	ringQRPrime := params.RPrime[0].RingQ()
+	ringPRPrime := params.RPrime[0].RingP()
 	ringQHK := params.HK.RingQ()
 	ringQEval := params.Eval.RingQ()
+
+	// RotToRot buffers for each adjacent RPrime level pair
+	k := params.NumLevels()
+	rotBufs := make([]*hierkeys.RotToRotBuffers, k-1)
+	for i := 0; i < k-1; i++ {
+		rotBufs[i] = hierkeys.NewRotToRotBuffers(params.RPrime[i], params.RPrime[i+1])
+	}
 
 	buf := &evaluatorBuffers{
 		// RingSwitchGaloisKey buffers
@@ -78,7 +85,7 @@ func newEvaluatorBuffers(params Parameters) *evaluatorBuffers {
 		evalHK:   rlwe.NewEvaluator(params.HK, nil),
 
 		// Shared RotToRot buffers
-		rotBuf: hierkeys.NewRotToRotBuffers(params.RPrime, params.RPrimeMaster),
+		rotBufs: rotBufs,
 
 		// automorphInPlace buffers
 		autTmpQ: ringQEval.NewPoly(),
@@ -102,12 +109,13 @@ func (eval *Evaluator) ConcurrentCopy() *Evaluator {
 	}
 }
 
-// RotToRot generates a combined rotation key from a level-0 key and a master
-// key in the extension ring R'. See [hierkeys.RotToRot] for details.
+// RotToRot generates a combined rotation key from a level-i key and a
+// level-(i+1) key in the extension ring R'. See [hierkeys.RotToRot] for details.
 func (eval *Evaluator) RotToRot(
+	level int,
 	inputKey *rlwe.GaloisKey,
 	masterKey *rlwe.GaloisKey,
 	combinedGalEl uint64,
 ) (*rlwe.GaloisKey, error) {
-	return hierkeys.RotToRot(eval.rotBuf, eval.params.RPrime, eval.params.RPrimeMaster, inputKey, masterKey, combinedGalEl)
+	return hierkeys.RotToRot(eval.rotBufs[level], eval.params.RPrime[level], eval.params.RPrime[level+1], inputKey, masterKey, combinedGalEl)
 }
