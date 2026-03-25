@@ -114,23 +114,28 @@ go test -v -count=1 ./...                  # full suite
 
 ## Benchmarks
 
-Transmission key sizes and derivation speed (base-4 master set, 20 target rotations, Intel i7-1260P):
+Transmission key sizes (base-4 master set, Intel i7-1260P):
 
-| Scenario | LogN | Q primes | Conventional | KG+ TX | LLKN TX | KG+ Derive | LLKN Derive |
-| -------- | ---- | -------- | ------------ | ------ | ------- | ---------- | ----------- |
-| Small    | 10   | 5        | 7.0 MB       | 8.2 MB | 3.8 MB  | 630 ms     | 112 ms      |
-| Medium   | 12   | 7        | 63 MB        | 66 MB  | 31 MB   | 3.9 s      | 773 ms      |
-| Large    | 14   | 10       | 578 MB       | 550 MB | 259 MB  | —          | —           |
+| Scenario | LogN | Q   | P   | Targets | Conventional | KG+ TX        | LLKN TX      |
+| -------- | ---- | --- | --- | ------- | ------------ | ------------- | ------------ |
+| Toy      | 10   | 5   | 1   | 15      | 7 MB         | 8 MB (116%)   | 4 MB (53%)   |
+| Small    | 12   | 8   | 2   | 20      | 50 MB        | 94 MB (189%)  | 44 MB (88%)  |
+| Medium   | 14   | 14  | 3   | 50      | 1.1 GB       | 1.2 GB (112%) | 557 MB (52%) |
+| Large    | 15   | 22  | 5   | 100     | 6.8 GB       | 1.6 GB (23%)  | 740 MB (11%) |
 
-- "Conventional" = sending one standard GaloisKey per rotation
-- KG+ keys work with standard `ckks.Evaluator`; LLKN keys require `PaperConventionEvaluator`
-- LLKN is faster because it avoids ring switching (degree 2N → N conversion)
-- KG+ transmission advantage appears at larger parameters with more target rotations
+Percentages are vs conventional (one GaloisKey per rotation).
+
+**With our current parameters, LLKN produces smaller keys than KG+.** This is because KG+ master keys live in R' (degree 2N), doubling their polynomial size. KG+ only wins when the extension ring's larger modulus budget (`Q_max,2N ≈ 2·Q_max,N`) allows setting `P_hk ≈ Q` to reduce the gadget rank to 1. This regime (N ≥ 2^16, Q ≈ 1300+ bits, P_hk ≈ 1700 bits) is what the [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) benchmarks — they report 0.3-0.6 GB for ResNet-20 (265 rotations) vs 3.5 GB for LLKN.
+
+**Trade-offs:**
+
+- **LLKN**: smaller keys, faster derivation, supports CI ring, but requires `PaperConventionEvaluator`
+- **KG+**: larger keys at small parameters, but dramatically smaller at production scale (N ≥ 2^16); produces standard lattigo-convention keys
 
 Run benchmarks:
 
 ```bash
-go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ ./...
+go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ -timeout 30m ./...
 go test -bench BenchmarkDeriveGaloisKeys -benchtime 3x -run ^$ ./...
 ```
 
