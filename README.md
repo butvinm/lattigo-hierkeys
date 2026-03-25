@@ -114,7 +114,7 @@ go test -v -count=1 ./...                  # full suite
 
 ## Benchmarks
 
-Transmission key sizes for 256 derived rotation keys (base-4 master set, Intel i7-1260P):
+Transmission key sizes for 256 derived rotation keys from base-4 master set (Intel i7-1260P):
 
 | LogN | Q   | P   | Conventional | KG+ TX       | LLKN TX      |
 | ---- | --- | --- | ------------ | ------------ | ------------ |
@@ -123,14 +123,9 @@ Transmission key sizes for 256 derived rotation keys (base-4 master set, Intel i
 | 14   | 14  | 3   | 5.4 GB       | 1.2 GB (22%) | 557 MB (10%) |
 | 15   | 22  | 5   | 17.3 GB      | 1.6 GB (9%)  | 740 MB (4%)  |
 
-Percentages are vs conventional (one standard GaloisKey per rotation).
+Percentages are vs conventional (one standard GaloisKey per rotation). Both schemes use k=2 hierarchy (master → eval).
 
-KG+ master keys live in R' (degree 2N), so each polynomial is 2x larger than LLKN's. This makes KG+ larger at small-to-medium parameters with few P_hk primes (high gadget rank). KG+ becomes smaller when P_hk is large enough to reduce the gadget rank (`dnum`) to 1 — this requires the extension ring's doubled modulus budget (`Q_max,2N ≈ 2·Q_max,N`), which only has room at production scale. The [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) benchmarks this regime (N = 2^16, Q ≈ 1300 bits, P_hk ≈ 1700 bits, 265 rotations) and reports 0.3-0.6 GB for KG+ vs 3.5 GB for LLKN.
-
-**When to use which:**
-
-- **LLKN**: prototyping, small/medium N, ConjugateInvariant ring, or when simplicity matters. Requires `PaperConventionEvaluator` for automorphisms.
-- **KG+**: production PPML (N ≥ 2^16, hundreds of rotations) where the modulus budget allows dnum=1 master keys. Produces standard lattigo-convention keys.
+The [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) reports 0.3-0.6 GB for KG+ at N=2^16 with a k=3 hierarchy and dnum=1 master keys — a regime not yet implemented here.
 
 Run benchmarks:
 
