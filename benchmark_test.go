@@ -9,15 +9,15 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
+const benchNTargets = 256 // fixed number of derived rotation keys across all scenarios
+
 type benchScenario struct {
-	Name       string
-	LogN       int
-	LogQ       []int // Q prime bit-sizes
-	LogP       []int // P prime bit-sizes
-	LogPHK     []int // Homing key / master P prime bit-sizes
-	Base       int   // master rotation base
-	NTargets   int   // number of target rotations to derive
-	SkipKGPlus bool  // skip KG+ if primes aren't NTT-friendly for 2N
+	Name   string
+	LogN   int
+	LogQ   []int // Q prime bit-sizes
+	LogP   []int // P prime bit-sizes
+	LogPHK []int // Homing key / master P prime bit-sizes
+	Base   int   // master rotation base
 }
 
 // buildLogQ creates a slice of n copies of bitSize.
@@ -31,31 +31,24 @@ func buildLogQ(n, bitSize int) []int {
 
 var benchScenarios = []benchScenario{
 	{
-		Name: "Toy_LogN10",
+		Name: "LogN10_Q5_P1",
 		LogN: 10, LogQ: buildLogQ(5, 55), LogP: []int{56}, LogPHK: []int{56},
-		Base: 4, NTargets: 15,
+		Base: 4,
 	},
 	{
-		Name: "Small_LogN12",
+		Name: "LogN12_Q8_P2",
 		LogN: 12, LogQ: buildLogQ(8, 55), LogP: []int{56, 56}, LogPHK: []int{56},
-		Base: 4, NTargets: 20,
+		Base: 4,
 	},
 	{
-		// Approaching realistic: dnum_eval = ceil(14/3) = 5
-		Name: "Medium_LogN14",
+		Name: "LogN14_Q14_P3",
 		LogN: 14, LogQ: buildLogQ(14, 55), LogP: []int{56, 56, 56}, LogPHK: []int{56},
-		Base: 4, NTargets: 50,
+		Base: 4,
 	},
 	{
-		// Paper-like regime: many Q primes, large modulus chain
-		// dnum_eval = ceil(22/5) ≈ 5, but KG+ in R' gets dnum_master ~ 1-2
-		// because Q_R' = Q_eval ∪ P_eval = 27 primes, and P_hk can be large.
-		// We use 5 large P_hk primes so dnum_RPrimeMaster = ceil(27/5) = 6
-		// To truly get dnum=1 as in the paper, we'd need P_hk ≈ Q, which
-		// requires many more P_hk primes.
-		Name: "Large_LogN15",
+		Name: "LogN15_Q22_P5",
 		LogN: 15, LogQ: buildLogQ(22, 55), LogP: []int{56, 56, 56, 56, 56}, LogPHK: []int{56, 56, 56, 56, 56},
-		Base: 4, NTargets: 100,
+		Base: 4,
 	},
 }
 
@@ -78,8 +71,8 @@ func BenchmarkKeySizes(b *testing.B) {
 
 			slots := paramsEval.N() / 2
 			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
-			targetRots := make([]int, 0, sc.NTargets)
-			for i := 1; i <= sc.NTargets && i < slots; i++ {
+			targetRots := make([]int, 0, benchNTargets)
+			for i := 1; i <= benchNTargets && i < slots; i++ {
 				targetRots = append(targetRots, i)
 			}
 
@@ -183,8 +176,8 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 
 			slots := paramsEval.N() / 2
 			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
-			targetRots := make([]int, 0, sc.NTargets)
-			for i := 1; i <= sc.NTargets && i < slots; i++ {
+			targetRots := make([]int, 0, benchNTargets)
+			for i := 1; i <= benchNTargets && i < slots; i++ {
 				targetRots = append(targetRots, i)
 			}
 
