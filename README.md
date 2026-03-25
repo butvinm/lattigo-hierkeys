@@ -7,6 +7,11 @@ Hierarchical rotation key generation for [lattigo](https://github.com/tuneinsigh
 
 Instead of transmitting one rotation key per needed cyclic shift, the client generates a small set of master rotation keys and sends them to the server. The server expands these into all required evaluation keys via the RotToRot algorithm. Derived keys are standard `rlwe.GaloisKey` objects, compatible with `rlwe.Evaluator`, `ckks.Evaluator.Rotate`, and hoisted rotations.
 
+Based on:
+
+1. [Towards Lightweight CKKS: On Client Cost Efficiency](https://eprint.iacr.org/2025/720) (Cheon, Kang, Park)
+2. [Rotation Key Reduction for Client-Server Systems](https://eprint.iacr.org/2022/532) (Lee, Lee, Kim, No)
+
 ## Installation
 
 ```bash
