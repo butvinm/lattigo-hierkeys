@@ -2,10 +2,7 @@
 //
 // LLKN operates entirely in the evaluation ring (no extension ring, no ring
 // switching). This makes it simpler than KG+ and compatible with any ring type.
-// The trade-off is larger transmission keys compared to KG+.
-//
-// Note: LLKN produces paper convention keys, so automorphisms must be applied
-// via llkn.PaperConventionEvaluator rather than the standard ckks.Evaluator.
+// Derived keys work with standard ckks.Evaluator — no special wrappers needed.
 package main
 
 import (
@@ -61,13 +58,12 @@ func main() {
 	}
 	fmt.Printf("\nServer: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// SERVER: use derived keys with paper convention evaluator
-	// (LLKN keys are in paper convention, not lattigo convention)
+	// SERVER: use derived keys with standard CKKS evaluator
 	skEval := kgen.ProjectToEvalKey(sk)
 	ecd := ckks.NewEncoder(params)
 	enc := rlwe.NewEncryptor(params, skEval)
 	dec := rlwe.NewDecryptor(params, skEval)
-	paperEval := llkn.NewPaperConventionEvaluator(params.Parameters, evk)
+	ckksEval := ckks.NewEvaluator(params, evk)
 
 	// Encode [1, 2, 3, ..., N/2]
 	values := make([]complex128, slots)
@@ -85,13 +81,11 @@ func main() {
 		panic(err)
 	}
 
-	// Rotate and verify
+	// Rotate and verify — standard ckks.Evaluator, no special wrappers
 	fmt.Println()
 	for _, rot := range targetRots {
-		galEl := params.GaloisElement(rot)
-
-		ctRot := rlwe.NewCiphertext(params, 1, ct.Level())
-		if err = paperEval.Automorphism(ct, galEl, ctRot); err != nil {
+		ctRot := ckks.NewCiphertext(params, 1, ct.Level())
+		if err = ckksEval.Rotate(ct, rot, ctRot); err != nil {
 			panic(err)
 		}
 

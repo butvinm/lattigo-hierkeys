@@ -46,7 +46,7 @@ Two parameter tiers: Eval, Master — see `llkn/params.go`.
 
 Key pipeline: GenTransmissionKeys (client) → DeriveGaloisKeys (server) → paper convention rlwe.GaloisKey.
 
-**Important**: Output keys are in paper convention. Use `PaperConventionEvaluator` for automorphisms. `ConvertToLattigoConvention` does NOT work for LLKN (it only works combined with ring switching).
+Convention conversion is applied automatically in DeriveGaloisKeys. Output keys work with standard lattigo evaluators.
 
 Supports both Standard and ConjugateInvariant ring types.
 
@@ -56,7 +56,7 @@ Supports both Standard and ConjugateInvariant ring types.
 - **IMForm before INTT**: R' GadgetCiphertext is NTT+Montgomery. Must IMForm before INTT+extraction, or values mix with non-Montgomery GadgetProduct output.
 - **NTT prime constraint (KG+ only)**: All primes must satisfy q ≡ 1 mod 4N (NTT-friendly for degree 2N). LogQ-generated primes for degree N may fail.
 - **Convention mismatch (KG+)**: Ring switching produces paper-convention keys. Must post-convert (π⁻¹ automorphism) for standard lattigo evaluator compatibility.
-- **Paper convention (LLKN)**: RotToRot output is paper convention. ConvertToLattigoConvention does NOT work without ring switching. Must use PaperConventionEvaluator.
+- **Convention conversion**: Both KG+ and LLKN use ConvertToLattigoConvention (π⁻¹ automorphism) to convert RotToRot output from paper convention to lattigo convention.
 
 ## Code Style
 

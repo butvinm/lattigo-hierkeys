@@ -68,9 +68,9 @@ tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
 // SERVER: derive evaluation keys
 evk, _ := llkn.DeriveGaloisKeys(llknParams, tk, targetRotations)
 
-// Use PaperConventionEvaluator (keys are in paper convention)
-paperEval := llkn.NewPaperConventionEvaluator(paramsEval.Parameters, evk)
-paperEval.Automorphism(ct, galEl, ctRot)
+// Standard CKKS evaluator — keys are in lattigo convention
+eval := ckks.NewEvaluator(paramsEval, evk)
+eval.Rotate(ct, 3, ctRot) // just works
 ```
 
 ## Architecture
@@ -100,7 +100,7 @@ Two parameter tiers: Eval, Master (same degree N).
 
 Key pipeline: `GenTransmissionKeys` (client) → `DeriveGaloisKeys` (server) → paper convention `rlwe.GaloisKey`.
 
-Output keys use paper convention (automorph-then-keyswitch). Use `PaperConventionEvaluator` for automorphisms.
+Convention conversion (π⁻¹ automorphism) is applied automatically; output keys work with standard lattigo evaluators.
 
 ## Build & Test
 

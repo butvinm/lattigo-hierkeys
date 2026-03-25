@@ -125,10 +125,10 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 		require.NotNil(t, evk)
 
 		ct := prepareTestCiphertext(t, params.Eval, tc.skEval)
-		paperEval := NewPaperConventionEvaluator(params.Eval, evk)
+		stdEval := rlwe.NewEvaluator(params.Eval, evk)
 
 		for _, rot := range targetRots {
-			verifyDeriveRotation(t, params.Eval, tc.skEval, paperEval, ct, rot, float64(1<<25))
+			verifyDeriveRotation(t, params.Eval, tc.skEval, stdEval, ct, rot, float64(1<<25))
 		}
 	})
 }
@@ -144,10 +144,10 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 		require.NoError(t, err)
 
 		ct := prepareTestCiphertext(t, params.Eval, tc.skEval)
-		paperEval := NewPaperConventionEvaluator(params.Eval, evk)
+		stdEval := rlwe.NewEvaluator(params.Eval, evk)
 
 		for _, rot := range targetRots {
-			verifyDeriveRotation(t, params.Eval, tc.skEval, paperEval, ct, rot, float64(1<<25))
+			verifyDeriveRotation(t, params.Eval, tc.skEval, stdEval, ct, rot, float64(1<<25))
 		}
 	})
 }
@@ -199,13 +199,17 @@ func prepareTestCiphertext(t *testing.T, paramsEval rlwe.Parameters, skEval *rlw
 	return ct
 }
 
-// verifyDeriveRotation compares paper-convention automorphism output against
-// a reference automorphism computed using lattigo's own GenGaloisKeyNew.
+type automorphEvaluator interface {
+	Automorphism(ctIn *rlwe.Ciphertext, galEl uint64, opOut *rlwe.Ciphertext) error
+}
+
+// verifyDeriveRotation compares automorphism output from the given evaluator
+// against a reference automorphism computed using lattigo's own GenGaloisKeyNew.
 func verifyDeriveRotation(
 	t *testing.T,
 	paramsEval rlwe.Parameters,
 	skEval *rlwe.SecretKey,
-	paperEval *PaperConventionEvaluator,
+	derivedEval automorphEvaluator,
 	ct *rlwe.Ciphertext,
 	rot int,
 	noiseThreshold float64,
@@ -229,9 +233,9 @@ func verifyDeriveRotation(
 	decR.Decrypt(ctRef, ptRef)
 	ringQ.INTT(ptRef.Value, ptRef.Value)
 
-	// Derived: use paper convention evaluator
+	// Derived
 	ctDerived := rlwe.NewCiphertext(paramsEval, 1, paramsEval.MaxLevel())
-	require.NoError(t, paperEval.Automorphism(ct, galEl, ctDerived))
+	require.NoError(t, derivedEval.Automorphism(ct, galEl, ctDerived))
 	ptDerived := rlwe.NewPlaintext(paramsEval, paramsEval.MaxLevel())
 	decR.Decrypt(ctDerived, ptDerived)
 	ringQ.INTT(ptDerived.Value, ptDerived.Value)

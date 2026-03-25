@@ -16,12 +16,13 @@ func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations [
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
-// transmission keys. The returned keys work with lattigo's standard
-// rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.
+// transmission keys. The returned keys are in lattigo convention and work
+// directly with rlwe.Evaluator.Automorphism, ckks.Evaluator.Rotate, and
+// hoisted rotations.
 //
 // Unlike KG+, LLKN does not need ring switching — the RotToRot output
-// is already in the evaluation ring R. Post-convention conversion is
-// applied to produce lattigo-compatible keys.
+// is already in the evaluation ring R. Convention conversion (π⁻¹
+// automorphism) is applied to produce lattigo-compatible keys.
 //
 // The returned MemEvaluationKeySet can be passed directly to
 // rlwe.NewEvaluator or ckks.NewEvaluator.
@@ -79,7 +80,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 		}
 	}
 
-	// Collect keys (paper convention — use PaperConventionEvaluator for automorphisms)
+	// Convert from paper convention to lattigo convention and collect
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRotations))
 
 	for _, target := range targetRotations {
@@ -88,7 +89,13 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 			continue
 		}
 
-		galoisKeys = append(galoisKeys, cache[normalized])
+		gk := cache[normalized]
+
+		if err := hierkeys.ConvertToLattigoConvention(eval.params.Eval, gk); err != nil {
+			return nil, fmt.Errorf("convention conversion for rotation %d: %w", target, err)
+		}
+
+		galoisKeys = append(galoisKeys, gk)
 	}
 
 	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
