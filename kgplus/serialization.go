@@ -1,4 +1,4 @@
-package hierkeys
+package kgplus
 
 import (
 	"bufio"
@@ -38,26 +38,22 @@ func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 
 	var written int64
 
-	// Write homing key
 	if written, err = tk.HomingKey.WriteTo(bw); err != nil {
 		return n, fmt.Errorf("write homing key: %w", err)
 	}
 	n += written
 
-	// Write shift-0 key
 	if written, err = tk.Shift0Key.WriteTo(bw); err != nil {
 		return n, fmt.Errorf("write shift-0 key: %w", err)
 	}
 	n += written
 
-	// Write number of master keys
 	nMasters := uint64(len(tk.MasterRotKeys))
 	if err = binary.Write(bw, binary.LittleEndian, nMasters); err != nil {
 		return n, fmt.Errorf("write master key count: %w", err)
 	}
 	n += 8
 
-	// Write each master key with its rotation index (sorted for determinism)
 	masterRotsSorted := make([]int, 0, len(tk.MasterRotKeys))
 	for rot := range tk.MasterRotKeys {
 		masterRotsSorted = append(masterRotsSorted, rot)
@@ -90,28 +86,24 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 
 	var read int64
 
-	// Read homing key
 	tk.HomingKey = new(rlwe.EvaluationKey)
 	if read, err = tk.HomingKey.ReadFrom(br); err != nil {
 		return n, fmt.Errorf("read homing key: %w", err)
 	}
 	n += read
 
-	// Read shift-0 key
 	tk.Shift0Key = new(rlwe.GaloisKey)
 	if read, err = tk.Shift0Key.ReadFrom(br); err != nil {
 		return n, fmt.Errorf("read shift-0 key: %w", err)
 	}
 	n += read
 
-	// Read number of master keys
 	var nMasters uint64
 	if err = binary.Read(br, binary.LittleEndian, &nMasters); err != nil {
 		return n, fmt.Errorf("read master key count: %w", err)
 	}
 	n += 8
 
-	// Read each master key
 	tk.MasterRotKeys = make(map[int]*rlwe.GaloisKey, nMasters)
 	for i := uint64(0); i < nMasters; i++ {
 		var rot int64

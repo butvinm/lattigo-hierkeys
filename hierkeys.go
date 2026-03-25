@@ -1,0 +1,114 @@
+package hierkeys
+
+import (
+	"fmt"
+
+	"github.com/tuneinsight/lattigo/v6/core/rlwe"
+	"github.com/tuneinsight/lattigo/v6/ring"
+)
+
+// MasterRotationsForBase returns the set of master rotation indices for a
+// p-ary number system with the given base and number of slots.
+//
+// For base=4, nSlots=32768: returns {1, 4, 16, 64, 256, 1024, 4096, 16384}.
+// These are powers of base up to nSlots/2 (since rotations are mod nSlots).
+//
+// With these master keys, any rotation in [1, nSlots/2] can be decomposed as a
+// sum of at most ceil(log_base(nSlots)) master rotations via RotToRot.
+// Negative rotations are normalized to positive equivalents by DeriveGaloisKeys.
+func MasterRotationsForBase(base, nSlots int) []int {
+	if base < 2 || nSlots < 1 {
+		return nil
+	}
+	rots := make([]int, 0)
+	for p := 1; p <= nSlots/2; p *= base {
+		rots = append(rots, p)
+	}
+	return rots
+}
+
+// DecomposeRotation decomposes a target rotation as a sum of master rotation
+// indices using greedy p-ary decomposition (largest master first).
+//
+// masterRots must be a sorted (ascending) p-ary set (powers of some base p)
+// as produced by [MasterRotationsForBase]. The function greedily subtracts
+// the largest fitting master at each step, which is optimal for p-ary sets.
+//
+// Returns a sequence of master rotation indices whose sum equals target.
+// Returns nil if target cannot be decomposed (e.g., target <= 0 or no masters).
+func DecomposeRotation(target int, masterRots []int) []int {
+	if target <= 0 || len(masterRots) == 0 {
+		return nil
+	}
+
+	result := make([]int, 0)
+	remaining := target
+
+	// Greedy from largest to smallest master rotation
+	for i := len(masterRots) - 1; i >= 0 && remaining > 0; i-- {
+		m := masterRots[i]
+		for remaining >= m {
+			result = append(result, m)
+			remaining -= m
+		}
+	}
+
+	if remaining != 0 {
+		return nil // cannot fully decompose
+	}
+	return result
+}
+
+// ConvertToLattigoConvention applies pi^{-1} to each GadgetCiphertext component
+// of a GaloisKey, converting from paper convention (automorph-then-keyswitch) to
+// lattigo convention (keyswitch-then-automorph) in-place.
+//
+// This allocates temporary buffers per call. For repeated use in a hot loop,
+// consider pre-allocating buffers (see kgplus.Evaluator for an example).
+func ConvertToLattigoConvention(paramsEval rlwe.Parameters, gk *rlwe.GaloisKey) error {
+
+	galEl := gk.GaloisElement
+	galElInv := paramsEval.ModInvGaloisElement(galEl)
+
+	ringQ := paramsEval.RingQ()
+	ringP := paramsEval.RingP()
+
+	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galElInv)
+	if err != nil {
+		return fmt.Errorf("Q automorphism index: %w", err)
+	}
+
+	var indexP []uint64
+	if ringP != nil {
+		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galElInv)
+		if err != nil {
+			return fmt.Errorf("P automorphism index: %w", err)
+		}
+	}
+
+	for i := range gk.Value {
+		for j := range gk.Value[i] {
+			component := gk.Value[i][j]
+
+			automorphInPlace(ringQ, indexQ, component[0].Q)
+			if ringP != nil {
+				automorphInPlace(ringP, indexP, component[0].P)
+			}
+
+			automorphInPlace(ringQ, indexQ, component[1].Q)
+			if ringP != nil {
+				automorphInPlace(ringP, indexP, component[1].P)
+			}
+		}
+	}
+
+	return nil
+}
+
+// automorphInPlace applies an automorphism to a polynomial using a pre-computed
+// index. Allocates a temporary buffer internally.
+func automorphInPlace(r *ring.Ring, index []uint64, p ring.Poly) {
+	tmp := r.NewPoly()
+	r.AutomorphismNTTWithIndex(p, index, tmp)
+	p.CopyLvl(p.Level(), tmp)
+}
