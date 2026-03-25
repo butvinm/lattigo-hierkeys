@@ -47,5 +47,16 @@ var (
 			},
 			LogPMaster: []int{61},
 		},
+		// ConjugateInvariant ring
+		{
+			ParametersLiteral: rlwe.ParametersLiteral{
+				LogN:     10,
+				Q:        testQi60[:5],
+				P:        testPi60[:1],
+				NTTFlag:  true,
+				RingType: ring.ConjugateInvariant,
+			},
+			LogPMaster: []int{61},
+		},
 	}
 )
