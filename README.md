@@ -112,6 +112,28 @@ go test -v -count=1 -short ./llkn/...     # LLKN tests
 go test -v -count=1 ./...                  # full suite
 ```
 
+## Benchmarks
+
+Transmission key sizes and derivation speed (base-4 master set, 20 target rotations, Intel i7-1260P):
+
+| Scenario | LogN | Q primes | Conventional | KG+ TX | LLKN TX | KG+ Derive | LLKN Derive |
+| -------- | ---- | -------- | ------------ | ------ | ------- | ---------- | ----------- |
+| Small    | 10   | 5        | 7.0 MB       | 8.2 MB | 3.8 MB  | 630 ms     | 112 ms      |
+| Medium   | 12   | 7        | 63 MB        | 66 MB  | 31 MB   | 3.9 s      | 773 ms      |
+| Large    | 14   | 10       | 578 MB       | 550 MB | 259 MB  | —          | —           |
+
+- "Conventional" = sending one standard GaloisKey per rotation
+- KG+ keys work with standard `ckks.Evaluator`; LLKN keys require `PaperConventionEvaluator`
+- LLKN is faster because it avoids ring switching (degree 2N → N conversion)
+- KG+ transmission advantage appears at larger parameters with more target rotations
+
+Run benchmarks:
+
+```bash
+go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ ./...
+go test -bench BenchmarkDeriveGaloisKeys -benchtime 3x -run ^$ ./...
+```
+
 ## Examples
 
 ```bash
