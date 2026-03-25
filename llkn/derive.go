@@ -8,6 +8,14 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
+// IntermediateKeys holds GaloisKeys produced by RotToRot expansion.
+// These are in the paper's convention (not yet post-converted).
+// They can be stored by the server for the "inactive" use case and later
+// finalized to evaluation keys on demand via [Evaluator.FinalizeKeys].
+type IntermediateKeys struct {
+	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
+}
+
 // DeriveGaloisKeys is a convenience wrapper that creates a temporary
 // Evaluator internally. For repeated calls, use [Evaluator.DeriveGaloisKeys].
 func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
@@ -20,13 +28,31 @@ func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations [
 // directly with rlwe.Evaluator.Automorphism, ckks.Evaluator.Rotate, and
 // hoisted rotations.
 //
-// Unlike KG+, LLKN does not need ring switching — the RotToRot output
-// is already in the evaluation ring R. Convention conversion (π⁻¹
-// automorphism) is applied to produce lattigo-compatible keys.
+// This is a convenience wrapper that calls [Evaluator.Expand] followed
+// by [Evaluator.FinalizeKeys]. For finer control (e.g., storing
+// intermediate keys for later finalization), call those methods directly.
 //
 // The returned MemEvaluationKeySet can be passed directly to
 // rlwe.NewEvaluator or ckks.NewEvaluator.
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
+
+	intermediate, err := eval.Expand(tk, targetRotations)
+	if err != nil {
+		return nil, err
+	}
+
+	return eval.FinalizeKeys(intermediate)
+}
+
+// Expand expands master keys via RotToRot to produce eval-level keys
+// for all target rotations. This is the expensive phase.
+//
+// Intermediate RotToRot results are cached: if multiple targets share a
+// prefix in their decomposition, the shared intermediate is computed once.
+//
+// The results are in paper convention and can be stored for later
+// finalization via [Evaluator.FinalizeKeys].
+func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*IntermediateKeys, error) {
 
 	if tk == nil || tk.Shift0Key == nil {
 		return nil, fmt.Errorf("transmission keys and shift-0 key must not be nil")
@@ -80,21 +106,34 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 		}
 	}
 
-	// Convert from paper convention to lattigo convention and collect
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRotations))
-
+	// Extract requested targets
+	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
 			continue
 		}
+		result.Keys[target] = cache[normalized]
+	}
+	return result, nil
+}
 
-		gk := cache[normalized]
+// FinalizeKeys converts intermediate keys from paper convention to lattigo
+// convention. This is the cheap phase.
+//
+// The result is a standard MemEvaluationKeySet usable with [rlwe.Evaluator].
+func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
 
+	if intermediate == nil || len(intermediate.Keys) == 0 {
+		return nil, fmt.Errorf("intermediate keys must not be nil or empty")
+	}
+
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+
+	for rot, gk := range intermediate.Keys {
 		if err := hierkeys.ConvertToLattigoConvention(eval.params.Eval, gk); err != nil {
-			return nil, fmt.Errorf("convention conversion for rotation %d: %w", target, err)
+			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
 		}
-
 		galoisKeys = append(galoisKeys, gk)
 	}
 

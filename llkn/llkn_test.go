@@ -1,6 +1,7 @@
 package llkn
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"runtime"
@@ -71,6 +72,7 @@ func TestLLKN(t *testing.T) {
 			testKeyGenerator,
 			testDeriveGaloisKeys,
 			testDeriveGaloisKeysWithEvaluator,
+			testExpandAndFinalize,
 		} {
 			testSet(tc, t)
 			runtime.GC()
@@ -141,6 +143,43 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 		evk, err := tc.eval.DeriveGaloisKeys(tc.tk, targetRots)
+		require.NoError(t, err)
+
+		ct := prepareTestCiphertext(t, params.Eval, tc.skEval)
+		stdEval := rlwe.NewEvaluator(params.Eval, evk)
+
+		for _, rot := range targetRots {
+			verifyDeriveRotation(t, params.Eval, tc.skEval, stdEval, ct, rot, float64(1<<25))
+		}
+	})
+}
+
+func testExpandAndFinalize(tc *testContext, t *testing.T) {
+
+	params := tc.params
+
+	t.Run(testString(params, "ExpandAndFinalize"), func(t *testing.T) {
+
+		targetRots := []int{1, 2, 3, 4, 5}
+
+		// Expand (expensive)
+		intermediate, err := tc.eval.Expand(tc.tk, targetRots)
+		require.NoError(t, err)
+		require.Len(t, intermediate.Keys, len(targetRots))
+
+		// Serialize + deserialize intermediate
+		var buf bytes.Buffer
+		_, err = intermediate.WriteTo(&buf)
+		require.NoError(t, err)
+		t.Logf("intermediate keys: %d bytes (%.2f KB)", buf.Len(), float64(buf.Len())/1024)
+
+		intermediate2 := new(IntermediateKeys)
+		_, err = intermediate2.ReadFrom(&buf)
+		require.NoError(t, err)
+		require.Len(t, intermediate2.Keys, len(targetRots))
+
+		// Finalize (cheap)
+		evk, err := tc.eval.FinalizeKeys(intermediate2)
 		require.NoError(t, err)
 
 		ct := prepareTestCiphertext(t, params.Eval, tc.skEval)
