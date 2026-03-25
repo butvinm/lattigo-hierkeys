@@ -15,42 +15,66 @@ go get github.com/butvinm/lattigo-hierkeys
 
 ## Two Schemes
 
-|                         | **KG+** (`kgplus/`)                                      | **LLKN** (`llkn/`)                                      |
-| ----------------------- | -------------------------------------------------------- | ------------------------------------------------------- |
-| Based on                | [Cheon-Kang-Park 2025](https://eprint.iacr.org/2025/720) | [Lee-Lee-Kim-No 2022](https://eprint.iacr.org/2022/532) |
-| Ring switching          | Yes (extension ring R', degree 2N)                       | No (same ring)                                          |
-| ConjugateInvariant      | No                                                       | Yes                                                     |
-| NTT prime constraint    | q ≡ 1 mod 4N                                             | Standard (q ≡ 1 mod 2N)                                 |
-| Inactive/active pattern | Yes (Expand + FinalizeKeys)                              | Yes (Expand + FinalizeKeys)                             |
+|                      | **LLKN** (`llkn/`)                                      | **KG+** (`kgplus/`)                                      |
+| -------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| Based on             | [Lee-Lee-Kim-No 2022](https://eprint.iacr.org/2022/532) | [Cheon-Kang-Park 2025](https://eprint.iacr.org/2025/720) |
+| Ring switching       | No                                                      | Yes (extension ring R', degree 2N)                       |
+| ConjugateInvariant   | Yes                                                     | No                                                       |
+| NTT prime constraint | Standard (q ≡ 1 mod 2N)                                 | q ≡ 1 mod 4N                                             |
 
-Both produce standard lattigo-convention keys. Both use k=2 hierarchy (master → eval).
+Both produce standard lattigo Galois keys.
 
 ## Quick Start
+
+### k=2 (two-level hierarchy)
 
 ```go
 import (
     hierkeys "github.com/butvinm/lattigo-hierkeys"
-    "github.com/butvinm/lattigo-hierkeys/kgplus" // or "github.com/butvinm/lattigo-hierkeys/llkn"
+    "github.com/butvinm/lattigo-hierkeys/llkn"
 )
 
-// Choose scheme: kgplus.NewParameters or llkn.NewParameters
-params, _ := kgplus.NewParameters(paramsEval.Parameters, []int{61})
+// LLKN k=2: one level of P primes
+params, _ := llkn.NewParameters(paramsEval, [][]int{{61}})
 
 // CLIENT
-kgen := kgplus.NewKeyGenerator(params)
+kgen := llkn.NewKeyGenerator(params)
 sk := kgen.GenSecretKeyNew()
 tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
-// send tk to server
 
-// SERVER
-evk, _ := kgplus.DeriveGaloisKeys(params, tk, targetRotations)
-
-// Standard CKKS evaluator
+// SERVER: one-shot derivation
+evk, _ := llkn.DeriveGaloisKeys(params, tk, targetRotations)
 eval := ckks.NewEvaluator(paramsEval, evk)
-eval.Rotate(ct, 3, ctRot)
 ```
 
-Replace `kgplus` with `llkn` for the LLKN scheme — the API is the same.
+### k=3 with gradual expansion
+
+```go
+// LLKN k=3: two levels of P primes (P ≈ Q at each level for noise control)
+params, _ := llkn.NewParameters(paramsEval, [][]int{
+    {61, 61, 61, 61, 61, 61}, // P for level 1
+    {61, 61, 61, 61, 61, 61}, // P for level 2
+})
+
+kgen := llkn.NewKeyGenerator(params)
+sk := kgen.GenSecretKeyNew()
+tk, _ := kgen.GenTransmissionKeys(sk, masterRots)
+
+eval := llkn.NewEvaluator(params)
+
+// Phase 1 (rare): top masters → level-1 keys
+level1, _ := eval.ExpandLevel(1, tk.Shift0Keys[1], tk.MasterRotKeys, masterRots)
+// store level1 to disk...
+
+// Phase 2 (occasional): level-1 → level-0 keys
+level0, _ := eval.ExpandLevel(0, tk.Shift0Keys[0], level1.Keys, targetRots)
+// store level0 to disk...
+
+// Phase 3 (on-demand): finalize to eval keys
+evk, _ := eval.FinalizeKeys(level0)
+```
+
+Replace `llkn` with `kgplus` for the KG+ scheme — the API pattern is the same (KG+ adds a homing key for ring switching).
 
 ## Architecture
 
@@ -67,38 +91,50 @@ Shared utilities:
 
 ### KG+ (`kgplus/`)
 
-Four parameter tiers: Eval, HK, RPrime, RPrimeMaster.
+Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N).
 
-Pipeline: `GenTransmissionKeys` → `Expand` + `FinalizeKeys` → `rlwe.GaloisKey`.
-
-Supports the inactive/active key management pattern: pre-expand R' intermediates (expensive, cacheable), finalize to eval keys on demand (cheap).
+Pipeline: `GenTransmissionKeys` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
 
 ### LLKN (`llkn/`)
 
-Two parameter tiers: Eval, Master (same degree N).
+Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master.
 
-Pipeline: `GenTransmissionKeys` → `DeriveGaloisKeys` → `rlwe.GaloisKey`.
-
-Single-phase derivation, no intermediate step.
+Pipeline: `GenTransmissionKeys` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
 
 ## Benchmarks
 
-Transmission key sizes for 256 derived rotation keys (base-4 master set, k=2 hierarchy):
+256 target rotation keys, base-4, single-threaded CPU. Parameters are **insecure** (small N for fast testing) — see the papers for production parameter selection under security constraints.
 
-| LogN | Q   | P   | Conventional | KG+          | LLKN         |
-| ---- | --- | --- | ------------ | ------------ | ------------ |
-| 10   | 5   | 1   | 120 MB       | 8 MB (7%)    | 4 MB (3%)    |
-| 12   | 8   | 2   | 640 MB       | 94 MB (15%)  | 44 MB (7%)   |
-| 14   | 14  | 3   | 5.4 GB       | 1.2 GB (22%) | 557 MB (10%) |
-| 15   | 22  | 5   | 17.3 GB      | 1.6 GB (9%)  | 740 MB (4%)  |
+**Scheme configurations** (each uses the same eval-level Q and P):
 
-Percentages are vs conventional (one `rlwe.GaloisKey` per rotation).
+| Scheme                         | Masters | m   | dnum      | Modulus bit length    | Max modulus |
+| ------------------------------ | ------- | --- | --------- | --------------------- | ----------- |
+| **LogN=10, Q=5×55b, P=1×56b**  |         |     |           |                       |             |
+| Conventional                   | —       | 256 | (5)       | (275, 56)             | 331         |
+| LLKN k=2                       | base-4  | 5   | (5, 6)    | (275, 56, 56)         | 387         |
+| KG+ k=3                        | {1, 4}  | 2   | (5, 2, 1) | (275, 56, 280, 616)   | 1227 / R'   |
+| **LogN=12, Q=8×55b, P=2×56b**  |         |     |           |                       |             |
+| Conventional                   | —       | 256 | (4)       | (440, 112)            | 552         |
+| LLKN k=2                       | base-4  | 6   | (4, 10)   | (440, 112, 56)        | 608         |
+| KG+ k=3                        | {1, 4}  | 2   | (4, 2, 1) | (440, 112, 448, 1008) | 2008 / R'   |
+| **LogN=14, Q=14×55b, P=3×56b** |         |     |           |                       |             |
+| Conventional                   | —       | 256 | (5)       | (770, 168)            | 938         |
+| LLKN k=2                       | base-4  | 7   | (5, 17)   | (770, 168, 56)        | 994         |
+| KG+ k=3                        | {1, 4}  | 2   | (5, 2, 1) | (770, 168, 784, 1736) | 3458 / R'   |
 
-At k=2, LLKN produces smaller transmission keys because KG+ master keys live in R' (degree 2N, doubling polynomial size) and include a homing key. The [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) reports 0.3-0.6 GB for KG+ at N=2^16 using a k=3 hierarchy with dnum=1 master keys — a regime not yet implemented here.
+**Results:**
+
+| LogN | Conventional | LLKN k=2    | KG+ k=3     |
+| ---- | ------------ | ----------- | ----------- |
+| 10   | 120 MB       | 4 MB / 1s   | 3 MB / 4s   |
+| 12   | 640 MB       | 44 MB / 11s | 21 MB / 27s |
+| 14   | 5.4 GB       | 557 MB / 3m | 151 MB / 5m |
+
+Format: TX size / server derivation time.
 
 ```bash
-go test -bench BenchmarkKeySizes -benchtime 1x .
-go test -bench BenchmarkDeriveGaloisKeys -benchtime 3x .
+go test -bench BenchmarkKeySizes -benchtime 1x -run ^NONE ./...
+go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^NONE -timeout 60m ./...
 ```
 
 ## Build & Test
@@ -111,10 +147,12 @@ go test -v -count=1 -short ./llkn/...
 
 ## Examples
 
+Both examples demonstrate k=3 hierarchy with the gradual (per-level) inactive/active expansion pattern:
+
 ```bash
 cd example
-go run ./kgplus/   # KG+ with inactive key management pattern
-go run ./llkn/     # LLKN single-phase derivation
+go run ./kgplus/   # KG+ k=3 with ring switching
+go run ./llkn/     # LLKN k=3, same ring
 ```
 
 ## License
