@@ -125,12 +125,12 @@ Transmission key sizes (base-4 master set, Intel i7-1260P):
 
 Percentages are vs conventional (one GaloisKey per rotation).
 
-**With our current parameters, LLKN produces smaller keys than KG+.** This is because KG+ master keys live in R' (degree 2N), doubling their polynomial size. KG+ only wins when the extension ring's larger modulus budget (`Q_max,2N ≈ 2·Q_max,N`) allows setting `P_hk ≈ Q` to reduce the gadget rank to 1. This regime (N ≥ 2^16, Q ≈ 1300+ bits, P_hk ≈ 1700 bits) is what the [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) benchmarks — they report 0.3-0.6 GB for ResNet-20 (265 rotations) vs 3.5 GB for LLKN.
+KG+ master keys live in R' (degree 2N), so each polynomial is 2x larger than LLKN's. This makes KG+ larger at small-to-medium parameters with few P_hk primes (high gadget rank). KG+ becomes smaller when P_hk is large enough to reduce the gadget rank (`dnum`) to 1 — this requires the extension ring's doubled modulus budget (`Q_max,2N ≈ 2·Q_max,N`), which only has room at production scale. The [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) benchmarks this regime (N = 2^16, Q ≈ 1300 bits, P_hk ≈ 1700 bits, 265 rotations) and reports 0.3-0.6 GB for KG+ vs 3.5 GB for LLKN.
 
-**Trade-offs:**
+**When to use which:**
 
-- **LLKN**: smaller keys, faster derivation, supports CI ring, but requires `PaperConventionEvaluator`
-- **KG+**: larger keys at small parameters, but dramatically smaller at production scale (N ≥ 2^16); produces standard lattigo-convention keys
+- **LLKN**: prototyping, small/medium N, ConjugateInvariant ring, or when simplicity matters. Requires `PaperConventionEvaluator` for automorphisms.
+- **KG+**: production PPML (N ≥ 2^16, hundreds of rotations) where the modulus budget allows dnum=1 master keys. Produces standard lattigo-convention keys.
 
 Run benchmarks:
 
