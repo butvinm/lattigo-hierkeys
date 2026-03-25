@@ -116,12 +116,12 @@ go test -v -count=1 ./...                  # full suite
 
 Transmission key sizes (base-4 master set, Intel i7-1260P):
 
-| Scenario | LogN | Q   | P   | Targets | Conventional | KG+ TX        | LLKN TX      |
-| -------- | ---- | --- | --- | ------- | ------------ | ------------- | ------------ |
-| Toy      | 10   | 5   | 1   | 15      | 7 MB         | 8 MB (116%)   | 4 MB (53%)   |
-| Small    | 12   | 8   | 2   | 20      | 50 MB        | 94 MB (189%)  | 44 MB (88%)  |
-| Medium   | 14   | 14  | 3   | 50      | 1.1 GB       | 1.2 GB (112%) | 557 MB (52%) |
-| Large    | 15   | 22  | 5   | 100     | 6.8 GB       | 1.6 GB (23%)  | 740 MB (11%) |
+| Scenario | LogN | Q   | P   | Rot. Keys | Conventional | KG+ TX        | LLKN TX      |
+| -------- | ---- | --- | --- | --------- | ------------ | ------------- | ------------ |
+| Toy      | 10   | 5   | 1   | 15        | 7 MB         | 8 MB (116%)   | 4 MB (53%)   |
+| Small    | 12   | 8   | 2   | 20        | 50 MB        | 94 MB (189%)  | 44 MB (88%)  |
+| Medium   | 14   | 14  | 3   | 50        | 1.1 GB       | 1.2 GB (112%) | 557 MB (52%) |
+| Large    | 15   | 22  | 5   | 100       | 6.8 GB       | 1.6 GB (23%)  | 740 MB (11%) |
 
 Percentages are vs conventional (one GaloisKey per rotation).
 
