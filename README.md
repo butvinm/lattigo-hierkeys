@@ -94,7 +94,7 @@ Transmission key sizes for 256 derived rotation keys (base-4 master set, k=2 hie
 
 Percentages are vs conventional (one `rlwe.GaloisKey` per rotation).
 
-At k=2 with small P_hk, LLKN produces smaller transmission keys because KG+ master keys live in R' (degree 2N). The [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) reports 0.3-0.6 GB for KG+ at N=2^16 using a k=3 hierarchy with dnum=1 master keys — a regime not yet implemented here.
+At k=2, LLKN produces smaller transmission keys because KG+ master keys live in R' (degree 2N, doubling polynomial size) and include a homing key. The [Cheon-Kang-Park paper](https://eprint.iacr.org/2025/720) reports 0.3-0.6 GB for KG+ at N=2^16 using a k=3 hierarchy with dnum=1 master keys — a regime not yet implemented here.
 
 ```bash
 go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ -timeout 30m ./...
