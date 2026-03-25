@@ -68,12 +68,12 @@ func RingSwitchGaloisKey(
 // transmission keys. The returned keys work with lattigo's standard
 // rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.
 //
-// This is a convenience wrapper that calls [Evaluator.ExpandInRPrime]
+// This is a convenience wrapper that calls [Evaluator.Expand]
 // followed by [Evaluator.FinalizeKeys]. For finer control (e.g., storing
 // intermediate keys for later finalization), call those methods directly.
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
-	intermediate, err := eval.ExpandInRPrime(tk, targetRotations)
+	intermediate, err := eval.Expand(tk, targetRotations)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	return eval.FinalizeKeys(tk, intermediate)
 }
 
-// ExpandInRPrime expands master keys via RotToRot to produce level-0 R' keys
+// Expand expands master keys via RotToRot to produce level-0 R' keys
 // for all target rotations. This is the expensive phase (~80% of total cost).
 //
 // Intermediate RotToRot results are cached: if multiple targets share a
@@ -89,7 +89,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 // the shared intermediate is computed only once.
 //
 // The results can be stored for later finalization via [Evaluator.FinalizeKeys].
-func (eval *Evaluator) ExpandInRPrime(tk *TransmissionKeys, targetRotations []int) (*IntermediateKeys, error) {
+func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*IntermediateKeys, error) {
 
 	if tk == nil || tk.Shift0Key == nil {
 		return nil, fmt.Errorf("transmission keys and shift-0 key must not be nil")

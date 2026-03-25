@@ -66,7 +66,7 @@ func main() {
 	eval := kgplus.NewEvaluator(hkParams)
 
 	var intermediate *kgplus.IntermediateKeys
-	if intermediate, err = eval.ExpandInRPrime(tk2, allPossibleRots); err != nil {
+	if intermediate, err = eval.Expand(tk2, allPossibleRots); err != nil {
 		panic(err)
 	}
 	fmt.Printf("\nServer (inactive): expanded %d intermediate keys in R'\n", len(intermediate.Keys))

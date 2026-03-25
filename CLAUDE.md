@@ -36,7 +36,7 @@ Shared utilities: `MasterRotationsForBase`, `DecomposeRotation`, `RotToRot` (par
 
 Four parameter tiers: Eval, HK, RPrime, RPrimeMaster — see `kgplus/params.go`.
 
-Key pipeline: GenTransmissionKeys (client) → ExpandInRPrime + FinalizeKeys (server) → standard rlwe.GaloisKey.
+Key pipeline: GenTransmissionKeys (client) → Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
 
 Ring-switched keys are post-converted from paper convention to lattigo convention via π⁻¹ automorphism. Only supports Standard ring type (not ConjugateInvariant).
 

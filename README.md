@@ -21,7 +21,7 @@ go get github.com/butvinm/lattigo-hierkeys
 | Ring switching          | Yes (extension ring R', degree 2N)                       | No (same ring)                                          |
 | ConjugateInvariant      | No                                                       | Yes                                                     |
 | NTT prime constraint    | q ≡ 1 mod 4N                                             | Standard (q ≡ 1 mod 2N)                                 |
-| Inactive/active pattern | Yes (ExpandInRPrime + FinalizeKeys)                      | No (single-phase DeriveGaloisKeys)                      |
+| Inactive/active pattern | Yes (Expand + FinalizeKeys)                              | Yes (Expand + FinalizeKeys)                             |
 
 Both produce standard lattigo-convention keys. Both use k=2 hierarchy (master → eval).
 
@@ -69,7 +69,7 @@ Shared utilities:
 
 Four parameter tiers: Eval, HK, RPrime, RPrimeMaster.
 
-Pipeline: `GenTransmissionKeys` → `ExpandInRPrime` + `FinalizeKeys` → `rlwe.GaloisKey`.
+Pipeline: `GenTransmissionKeys` → `Expand` + `FinalizeKeys` → `rlwe.GaloisKey`.
 
 Supports the inactive/active key management pattern: pre-expand R' intermediates (expensive, cacheable), finalize to eval keys on demand (cheap).
 

@@ -518,7 +518,7 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 	})
 }
 
-// testExpandAndFinalize verifies that the two-phase approach (ExpandInRPrime +
+// testExpandAndFinalize verifies that the two-phase approach (Expand +
 // FinalizeKeys) produces the same results as the single-call DeriveGaloisKeys.
 func testExpandAndFinalize(tc *testContext, t *testing.T) {
 
@@ -529,7 +529,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		targetRots := []int{1, 2, 3, 4, 5}
 
 		// Two-phase approach
-		intermediate, err := tc.hkEval.ExpandInRPrime(tc.tk, targetRots)
+		intermediate, err := tc.hkEval.Expand(tc.tk, targetRots)
 		require.NoError(t, err)
 		require.Equal(t, len(targetRots), len(intermediate.Keys))
 
@@ -548,7 +548,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 	})
 }
 
-// testIntermediateKeyReuse verifies that caching in ExpandInRPrime works
+// testIntermediateKeyReuse verifies that caching in Expand works
 // correctly: deriving {1,2,3,4,5} in one call should produce valid keys,
 // and intermediate keys for shared prefixes should be computed once.
 func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
@@ -560,7 +560,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 		targetRots := []int{1, 2, 3, 4, 5}
 
 		// Derive all at once (with caching)
-		intermediate, err := tc.hkEval.ExpandInRPrime(tc.tk, targetRots)
+		intermediate, err := tc.hkEval.Expand(tc.tk, targetRots)
 		require.NoError(t, err)
 
 		// Verify all requested keys are present
@@ -626,7 +626,7 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Expand to get intermediate keys
 		hkEval := NewEvaluator(params)
-		intermediate, err := hkEval.ExpandInRPrime(tc.tk, []int{1, 2, 3, 4, 5})
+		intermediate, err := hkEval.Expand(tc.tk, []int{1, 2, 3, 4, 5})
 		require.NoError(t, err)
 
 		// Serialize
