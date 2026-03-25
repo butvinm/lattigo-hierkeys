@@ -1,116 +1,121 @@
 # Hierarchical Rotation Keys
 
-The `hierkeys` package implements hierarchical rotation key generation via ring switching, reducing
-the client-to-server key transmission cost for RLWE-based homomorphic encryption schemes.
+Implements hierarchical rotation key generation for RLWE-based homomorphic encryption (lattigo v6),
+reducing client-to-server key transmission cost.
 
 Instead of transmitting one rotation key per needed cyclic shift, the client generates a small set of
-master rotation keys in an extension ring R' (degree 2N) and sends them to the server. The server
-expands these into all required evaluation keys via the RotToRot algorithm and ring switching. The
-derived keys are standard `rlwe.GaloisKey` objects, compatible with `rlwe.Evaluator.Automorphism` and
-`ckks.Evaluator.Rotate` without any special wrappers.
+master rotation keys and sends them to the server. The server expands these into all required evaluation
+keys via the RotToRot algorithm.
+
+Two schemes are provided:
+
+| Scheme                    | Package   | Ring Switching     | CI Ring Support | Key Size |
+| ------------------------- | --------- | ------------------ | --------------- | -------- |
+| **KG+** (Cheon-Kang-Park) | `kgplus/` | Yes (R' degree 2N) | No              | Smaller  |
+| **LLKN** (Lee-Lee-Kim-No) | `llkn/`   | No (same ring)     | Yes             | Larger   |
 
 ## References
 
 1. Towards Lightweight CKKS: On Client Cost Efficiency (<https://eprint.iacr.org/2025/720>)
-2. Rotation Key Reduction for Client-Server Systems of Deep Neural Network on Fully Homomorphic Encryption (<https://eprint.iacr.org/2022/532>)
+2. Rotation Key Reduction for Client-Server Systems (<https://eprint.iacr.org/2022/532>)
 
-## Quick Start
+## Quick Start — KG+
+
+KG+ uses ring switching to reduce key sizes. Only supports Standard ring type.
+All primes must be NTT-friendly for degree 2N (q ≡ 1 mod 4N).
 
 ```go
-// CKKS evaluation parameters. All Q and P primes must be NTT-friendly for
-// degree 2N (q ≡ 1 mod 4N), not just N. Use explicit primes or generate
-// with LogN+1 to ensure compatibility.
-paramsEval, _ := ckks.NewParametersFromLiteral(ckks.ParametersLiteral{...})
+import (
+    hierkeys "github.com/butvinm/lattigo-hierkeys"
+    "github.com/butvinm/lattigo-hierkeys/kgplus"
+)
 
-// Derive hierarchical key parameters (adds one auxiliary prime for ring switching)
-hkParams, _ := hierkeys.NewParameters(paramsEval.Parameters, []int{61})
+// Derive hierarchical parameters (adds one auxiliary prime for ring switching)
+hkParams, _ := kgplus.NewParameters(paramsEval.Parameters, []int{61})
 
 // CLIENT: generate and send master keys
-kgen := hierkeys.NewKeyGenerator(hkParams)
+kgen := kgplus.NewKeyGenerator(hkParams)
 sk := kgen.GenSecretKeyNew()
-tk, _ := kgen.GenTransmissionKeys(sk, []int{1, 4, 16, 64, 256})
-// Send tk to server. Keep sk for decryption.
+tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
 
-// SERVER: derive evaluation keys via RotToRot expansion
-evk, _ := hierkeys.DeriveGaloisKeys(hkParams, tk, targetRotations)
+// SERVER: derive evaluation keys
+evk, _ := kgplus.DeriveGaloisKeys(hkParams, tk, targetRotations)
 
-// Standard CKKS evaluator — nothing special
+// Standard CKKS evaluator — keys are in lattigo convention
 eval := ckks.NewEvaluator(paramsEval, evk)
 eval.Rotate(ct, 3, ctRot) // just works
 ```
 
+## Quick Start — LLKN
+
+LLKN operates in the evaluation ring (no extension ring). Supports any ring type
+including ConjugateInvariant.
+
+```go
+import (
+    hierkeys "github.com/butvinm/lattigo-hierkeys"
+    "github.com/butvinm/lattigo-hierkeys/llkn"
+)
+
+// Derive hierarchical parameters (adds one auxiliary prime for master level)
+llknParams, _ := llkn.NewParameters(paramsEval.Parameters, []int{61})
+
+// CLIENT: generate and send master keys
+kgen := llkn.NewKeyGenerator(llknParams)
+sk := kgen.GenSecretKeyNew()
+tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
+
+// SERVER: derive evaluation keys
+evk, _ := llkn.DeriveGaloisKeys(llknParams, tk, targetRotations)
+
+// Use PaperConventionEvaluator (keys are in paper convention)
+paperEval := llkn.NewPaperConventionEvaluator(paramsEval.Parameters, evk)
+paperEval.Automorphism(ct, galEl, ctRot)
+```
+
 ## Architecture
 
-The package uses four parameter sets derived from the evaluation parameters plus auxiliary primes:
+### Parent package (`hierkeys`)
 
-| Parameter Set  | Ring Degree | Q               | P      | Purpose                        |
-| -------------- | ----------- | --------------- | ------ | ------------------------------ |
-| `Eval`         | N           | Q_eval          | P_eval | Ciphertext evaluation          |
-| `HK`           | N           | Q_eval ∪ P_eval | P_hk   | Homing key operations          |
-| `RPrime`       | 2N          | Q_eval          | P_eval | Level-0 keys in extension ring |
-| `RPrimeMaster` | 2N          | Q_eval ∪ P_eval | P_hk   | Master keys in extension ring  |
+Shared utilities used by both schemes:
 
-All primes must be NTT-friendly for degree 2N (i.e., q ≡ 1 mod 4N).
+| Symbol                         | Purpose                                 |
+| ------------------------------ | --------------------------------------- |
+| `MasterRotationsForBase`       | Generate p-ary master rotation set      |
+| `DecomposeRotation`            | Greedy p-ary decomposition              |
+| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm (parameterized) |
+| `ConvertToLattigoConvention`   | Paper → lattigo convention (KG+ only)   |
 
-## Key Derivation Pipeline
+### KG+ (`kgplus/`)
 
-**Client** generates transmission keys and sends them to the server:
+Four parameter tiers: Eval, HK, RPrime, RPrimeMaster.
 
-1. `GenTransmissionKeys(sk, masterRotations)` produces:
-   - Homing key (switches s̃₁ → s)
-   - Shift-0 seed key (identity rotation in R')
-   - Master rotation keys (one per master index, in R')
+Key pipeline: `GenTransmissionKeys` (client) → `ExpandInRPrime` + `FinalizeKeys` (server) → standard `rlwe.GaloisKey`.
 
-**Server** derives evaluation keys in two phases:
+Supports the inactive/active pattern: pre-expand intermediates, finalize on demand.
 
-2. `ExpandInRPrime(tk, targetRotations)` — expensive, cacheable:
-   - RotToRot: shift-0 + master(r) → intermediate key for rotation r
-   - RotToRot: rot(r) + master(r') → intermediate key for rotation r+r'
-   - Shared intermediates are computed once and reused
+### LLKN (`llkn/`)
 
-3. `FinalizeKeys(tk, intermediate)` — cheap, on-demand:
-   - Ring switch each intermediate key from R' (degree 2N) to R (degree N)
-   - Post-convert from paper convention to lattigo convention (π⁻¹ automorphism)
+Two parameter tiers: Eval, Master (same degree N).
 
-**Evaluation** uses standard lattigo — no special wrappers:
+Key pipeline: `GenTransmissionKeys` (client) → `DeriveGaloisKeys` (server) → paper convention `rlwe.GaloisKey`.
 
-4. `ckks.NewEvaluator(params, evk)` then `eval.Rotate(ct, k, out)`
+Output keys use paper convention (automorph-then-keyswitch). Use `PaperConventionEvaluator` for automorphisms.
 
-## Key Management Use Cases
+## Build & Test
 
-Following the Lee-Lee-Kim-No paper (Section 2.2):
-
-**Active:** Server pre-derives all evaluation keys and stores them for fast repeated use.
-
-```go
-evk, _ := eval.DeriveGaloisKeys(tk, allRotations)
+```bash
+go build ./...
+gofmt -w hierkeys.go rottorot.go kgplus/*.go llkn/*.go
+go test -v -count=1 -short ./kgplus/...   # KG+ tests
+go test -v -count=1 -short ./llkn/...     # LLKN tests
+go test -v -count=1 ./...                  # full suite
 ```
 
-**Inactive:** Server pre-expands R' intermediate keys (stores ~1/3 the size of full eval keys), and
-finalizes to evaluation keys on demand when a service is requested.
+## Examples
 
-```go
-intermediate, _ := eval.ExpandInRPrime(tk, possibleRotations)
-// ... later, when service is requested ...
-evk, _ := eval.FinalizeKeys(tk, intermediate)
+```bash
+cd example
+go run ./kgplus/   # KG+ with inactive key management
+go run ./llkn/     # LLKN single-phase derivation
 ```
-
-**Single use:** Server derives keys on demand and discards them after use.
-
-```go
-evk, _ := eval.DeriveGaloisKeys(tk, neededRotations)
-// ... evaluate, then discard evk ...
-```
-
-## Package Structure
-
-| File               | Contents                                                                 |
-| ------------------ | ------------------------------------------------------------------------ |
-| `params.go`        | `Parameters`, `NewParameters`                                            |
-| `keygen.go`        | `KeyGenerator`, `TransmissionKeys`, `GenTransmissionKeys`                |
-| `evaluator.go`     | `Evaluator` with pre-allocated buffers, `ShallowCopy`                    |
-| `eval.go`          | `RingSwitchGaloisKey` (core ring switching)                              |
-| `rottorot.go`      | `RotToRot` (hierarchical expansion in R')                                |
-| `derive.go`        | `DeriveGaloisKeys`, `ExpandInRPrime`, `FinalizeKeys`, `IntermediateKeys` |
-| `utils.go`         | `MasterRotationsForBase`, `decomposeRotation`                            |
-| `serialization.go` | `TransmissionKeys` `WriteTo`/`ReadFrom`                                  |
