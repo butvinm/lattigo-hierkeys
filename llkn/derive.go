@@ -8,10 +8,10 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// IntermediateKeys holds GaloisKeys produced by RotToRot expansion.
-// These are in the paper's convention (not yet post-converted).
-// They can be stored by the server for the "inactive" use case and later
-// finalized to evaluation keys on demand via [Evaluator.FinalizeKeys].
+// IntermediateKeys holds GaloisKeys produced by RotToRot expansion at a
+// single hierarchy level. These are in the paper's convention (not yet
+// post-converted). They can be serialized, stored, and later used as input
+// to expand the next level down or finalized via [Evaluator.FinalizeKeys].
 type IntermediateKeys struct {
 	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
 }
@@ -24,53 +24,87 @@ func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations [
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
-// transmission keys. The returned keys are in lattigo convention and work
-// directly with rlwe.Evaluator.Automorphism, ckks.Evaluator.Rotate, and
-// hoisted rotations.
+// transmission keys in one shot. The returned keys are in lattigo convention
+// and work directly with rlwe.Evaluator.Automorphism, ckks.Evaluator.Rotate,
+// and hoisted rotations.
 //
-// This is a convenience wrapper that calls [Evaluator.Expand] followed
-// by [Evaluator.FinalizeKeys]. For finer control (e.g., storing
-// intermediate keys for later finalization), call those methods directly.
+// For per-level control (e.g., storing intermediates at each level for the
+// inactive/active pattern), use [Evaluator.ExpandLevel] directly:
 //
-// The returned MemEvaluationKeySet can be passed directly to
-// rlwe.NewEvaluator or ckks.NewEvaluator.
+//	level1Keys, _ := eval.ExpandLevel(1, tk.Shift0Keys[1], tk.MasterRotKeys, masterRots)
+//	// store level1Keys to disk...
+//	level0Keys, _ := eval.ExpandLevel(0, tk.Shift0Keys[0], level1Keys.Keys, targetRots)
+//	// store level0Keys to disk...
+//	evk, _ := eval.FinalizeKeys(level0Keys)
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
-	intermediate, err := eval.Expand(tk, targetRotations)
-	if err != nil {
-		return nil, err
+	if tk == nil || len(tk.Shift0Keys) == 0 {
+		return nil, fmt.Errorf("transmission keys and shift-0 keys must not be nil")
 	}
 
-	return eval.FinalizeKeys(intermediate)
+	k := eval.params.NumLevels()
+
+	if len(tk.Shift0Keys) != k-1 {
+		return nil, fmt.Errorf("expected %d shift-0 keys (k-1), got %d", k-1, len(tk.Shift0Keys))
+	}
+
+	masterRots := sortedKeys(tk.MasterRotKeys)
+	currentMasters := tk.MasterRotKeys
+
+	for level := k - 2; level >= 1; level-- {
+		derived, err := eval.ExpandLevel(level, tk.Shift0Keys[level], currentMasters, masterRots)
+		if err != nil {
+			return nil, fmt.Errorf("expand level %d: %w", level, err)
+		}
+		currentMasters = derived.Keys
+	}
+
+	level0Keys, err := eval.ExpandLevel(0, tk.Shift0Keys[0], currentMasters, targetRotations)
+	if err != nil {
+		return nil, fmt.Errorf("expand level 0: %w", err)
+	}
+
+	return eval.FinalizeKeys(level0Keys)
 }
 
-// Expand expands master keys via RotToRot to produce eval-level keys
-// for all target rotations. This is the expensive phase.
+// ExpandLevel derives keys at the given hierarchy level using RotToRot with
+// master keys from the level above.
 //
-// Intermediate RotToRot results are cached: if multiple targets share a
-// prefix in their decomposition, the shared intermediate is computed once.
+// Parameters:
+//   - level: the hierarchy level to derive keys at (0 = eval level)
+//   - shift0Key: the identity (shift-0) key at this level (from TransmissionKeys.Shift0Keys)
+//   - masterKeys: keys at level+1, indexed by rotation (either from TransmissionKeys.MasterRotKeys
+//     or from a previous ExpandLevel call's IntermediateKeys.Keys)
+//   - targetRotations: which rotations to derive at this level
 //
-// The results are in paper convention and can be stored for later
-// finalization via [Evaluator.FinalizeKeys].
-func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*IntermediateKeys, error) {
+// The returned IntermediateKeys can be serialized for storage, then later
+// passed as masterKeys to the next ExpandLevel call (level-1), or finalized
+// via [Evaluator.FinalizeKeys] if level == 0.
+//
+// Intermediate RotToRot results within a level are cached: if multiple targets
+// share a decomposition prefix, the shared intermediate is computed once.
+func (eval *Evaluator) ExpandLevel(
+	level int,
+	shift0Key *rlwe.GaloisKey,
+	masterKeys map[int]*rlwe.GaloisKey,
+	targetRotations []int,
+) (*IntermediateKeys, error) {
 
-	if tk == nil || tk.Shift0Key == nil {
-		return nil, fmt.Errorf("transmission keys and shift-0 key must not be nil")
+	if shift0Key == nil {
+		return nil, fmt.Errorf("shift-0 key must not be nil")
 	}
 
-	// Extract available master rotation indices (sorted ascending for greedy decomposition)
-	masterRots := make([]int, 0, len(tk.MasterRotKeys))
-	for rot := range tk.MasterRotKeys {
-		masterRots = append(masterRots, rot)
+	if len(masterKeys) == 0 {
+		return nil, fmt.Errorf("master keys must not be empty")
 	}
-	sort.Ints(masterRots)
 
-	// Cache: rotation index -> eval-level key (paper convention)
+	paramsLow := eval.params.Levels[level]
+	nSlots := eval.params.Eval().N() / 2
+
+	masterRots := sortedKeys(masterKeys)
+
 	cache := make(map[int]*rlwe.GaloisKey)
-	cache[0] = tk.Shift0Key // seed
-
-	// Normalize negative rotations: CKKS rotation by -k = rotation by nSlots-k.
-	nSlots := eval.params.Eval.N() / 2
+	cache[0] = shift0Key
 
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
@@ -93,8 +127,12 @@ func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*Int
 			nextRot := currentRot + step
 
 			if _, ok := cache[nextRot]; !ok {
-				combinedGalEl := eval.params.Eval.GaloisElement(nextRot)
-				key, err := eval.RotToRot(cache[currentRot], tk.MasterRotKeys[step], combinedGalEl)
+				masterKey, ok := masterKeys[step]
+				if !ok {
+					return nil, fmt.Errorf("missing master key for rotation %d at level %d", step, level+1)
+				}
+				combinedGalEl := paramsLow.GaloisElement(nextRot)
+				key, err := eval.RotToRot(level, cache[currentRot], masterKey, combinedGalEl)
 				if err != nil {
 					return nil, fmt.Errorf("RotToRot step (current=%d + master=%d -> %d): %w",
 						currentRot, step, nextRot, err)
@@ -106,14 +144,15 @@ func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*Int
 		}
 	}
 
-	// Extract requested targets
 	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
 			continue
 		}
-		result.Keys[target] = cache[normalized]
+		if key, ok := cache[normalized]; ok {
+			result.Keys[target] = key
+		}
 	}
 	return result, nil
 }
@@ -131,11 +170,20 @@ func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEv
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
 	for rot, gk := range intermediate.Keys {
-		if err := hierkeys.ConvertToLattigoConvention(eval.params.Eval, gk); err != nil {
+		if err := hierkeys.ConvertToLattigoConvention(eval.params.Eval(), gk); err != nil {
 			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
 		}
 		galoisKeys = append(galoisKeys, gk)
 	}
 
 	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
+}
+
+func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys
 }

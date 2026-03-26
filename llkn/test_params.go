@@ -9,7 +9,7 @@ import (
 // prime sizes needed for LLKN hierarchical key generation.
 type TestParametersLiteral struct {
 	rlwe.ParametersLiteral
-	LogPMaster []int // bit-sizes of auxiliary P primes for the master level
+	LogPPerLevel [][]int // P prime bit-sizes for each level above eval
 }
 
 var (
@@ -21,11 +21,11 @@ var (
 
 	testPi60 = []uint64{
 		0x1ffffffff6c80001, // P_eval
-		0x1ffffffff6140001, // P_master
+		0x1ffffffff6140001, // P_1 / P_master
 	}
 
 	testInsecure = []TestParametersLiteral{
-		// Standard ring
+		// k=2, Standard ring
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:     10,
@@ -34,9 +34,9 @@ var (
 				NTTFlag:  true,
 				RingType: ring.Standard,
 			},
-			LogPMaster: []int{61},
+			LogPPerLevel: [][]int{{61}},
 		},
-		// Standard ring, fewer levels
+		// k=2, Standard ring, fewer levels
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:     10,
@@ -45,9 +45,9 @@ var (
 				NTTFlag:  true,
 				RingType: ring.Standard,
 			},
-			LogPMaster: []int{61},
+			LogPPerLevel: [][]int{{61}},
 		},
-		// ConjugateInvariant ring
+		// k=2, ConjugateInvariant ring
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:     10,
@@ -56,7 +56,24 @@ var (
 				NTTFlag:  true,
 				RingType: ring.ConjugateInvariant,
 			},
-			LogPMaster: []int{61},
+			LogPPerLevel: [][]int{{61}},
+		},
+		// k=3, Standard ring (3-level hierarchy)
+		// Intermediate levels need P ≈ Q primes to keep Q/P ratio ~1,
+		// preventing noise amplification when derived keys are used as
+		// masters for the next level's RotToRot.
+		{
+			ParametersLiteral: rlwe.ParametersLiteral{
+				LogN:     10,
+				Q:        testQi60[:5],
+				P:        testPi60[:1],
+				NTTFlag:  true,
+				RingType: ring.Standard,
+			},
+			LogPPerLevel: [][]int{
+				{61, 61, 61, 61, 61, 61}, // P_1: 6 primes → dnum_1 = ceil(6/6) = 1
+				{61, 61, 61, 61, 61, 61}, // P_2: 6 primes → dnum_2 = ceil(12/6) = 2
+			},
 		},
 	}
 )

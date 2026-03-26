@@ -1,5 +1,5 @@
 // Package main demonstrates KG+ hierarchical rotation keys for CKKS using the
-// "inactive" key management pattern from Lee-Lee-Kim-No (Section 2.2).
+// "inactive" key management pattern with a 3-level hierarchy (k=3).
 //
 // KG+ uses ring switching (extension ring R' of degree 2N) to reduce
 // transmission key sizes. Only supports Standard ring type.
@@ -30,13 +30,21 @@ func main() {
 		panic(err)
 	}
 
+	// k=3 hierarchy: needs enough P primes at each intermediate level
+	// for noise control when derived keys are used as masters.
 	var hkParams kgplus.Parameters
-	if hkParams, err = kgplus.NewParameters(params.Parameters, []int{61}); err != nil {
+	logPHK := []int{61, 61, 61, 61, 61, 61}    // P for RPrime[1] (also HK P)
+	logPExtra := []int{61, 61, 61, 61, 61, 61} // P for RPrime[2]
+	if hkParams, err = kgplus.NewParameters(params.Parameters, logPHK, logPExtra); err != nil {
 		panic(err)
 	}
 
 	slots := params.MaxSlots()
-	fmt.Printf("KG+ CKKS: LogN=%d, %d slots, %d Q primes\n", params.LogN(), slots, params.QCount())
+	fmt.Printf("KG+ CKKS (k=%d): LogN=%d, %d slots, %d Q primes\n",
+		hkParams.NumLevels(), params.LogN(), slots, params.QCount())
+	for i, rp := range hkParams.RPrime {
+		fmt.Printf("  RPrime[%d]: Q=%d, P=%d primes\n", i, rp.QCount(), rp.PCount())
+	}
 
 	// CLIENT: generate and send master keys
 	kgen := kgplus.NewKeyGenerator(hkParams)
@@ -48,6 +56,7 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("\nClient: %d master keys for rotations %v\n", len(masterRots), masterRots)
+	fmt.Printf("Client: %d shift-0 keys (one per level 0..%d)\n", len(tk.Shift0Keys), hkParams.NumLevels()-2)
 
 	// Serialize transmission keys
 	var tkBuf bytes.Buffer
@@ -56,29 +65,49 @@ func main() {
 	}
 	fmt.Printf("Client: transmitted %d bytes (%.1f KB)\n", tkBuf.Len(), float64(tkBuf.Len())/1024)
 
-	// SERVER (inactive phase): expand and store intermediates
+	// SERVER: gradual expansion using per-level ExpandLevel
 	tk2 := new(kgplus.TransmissionKeys)
 	if _, err = tk2.ReadFrom(&tkBuf); err != nil {
 		panic(err)
 	}
 
-	allPossibleRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	eval := kgplus.NewEvaluator(hkParams)
 
-	var intermediate *kgplus.IntermediateKeys
-	if intermediate, err = eval.Expand(tk2, allPossibleRots); err != nil {
+	// Phase 1 (rare): derive level-1 keys from top masters
+	var level1Keys *kgplus.IntermediateKeys
+	if level1Keys, err = eval.ExpandLevel(1, tk2.Shift0Keys[1], tk2.MasterRotKeys, masterRots); err != nil {
 		panic(err)
 	}
-	fmt.Printf("\nServer (inactive): expanded %d intermediate keys in R'\n", len(intermediate.Keys))
+	fmt.Printf("\nServer (phase 1): derived %d level-1 keys in R'\n", len(level1Keys.Keys))
 
-	// Serialize intermediates
+	// Serialize level-1 intermediates to disk
+	var l1Buf bytes.Buffer
+	if _, err = level1Keys.WriteTo(&l1Buf); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Server (phase 1): stored %d bytes (%.1f KB)\n", l1Buf.Len(), float64(l1Buf.Len())/1024)
+
+	// Phase 2 (occasional): derive level-0 keys from level-1 keys
+	level1Loaded := new(kgplus.IntermediateKeys)
+	if _, err = level1Loaded.ReadFrom(&l1Buf); err != nil {
+		panic(err)
+	}
+
+	allPossibleRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+	var level0Keys *kgplus.IntermediateKeys
+	if level0Keys, err = eval.ExpandLevel(0, tk2.Shift0Keys[0], level1Loaded.Keys, allPossibleRots); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Server (phase 2): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
+
+	// Serialize level-0 intermediates
 	var ikBuf bytes.Buffer
-	if _, err = intermediate.WriteTo(&ikBuf); err != nil {
+	if _, err = level0Keys.WriteTo(&ikBuf); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Server (inactive): stored %d bytes (%.1f KB) to disk\n", ikBuf.Len(), float64(ikBuf.Len())/1024)
+	fmt.Printf("Server (phase 2): stored %d bytes (%.1f KB)\n", ikBuf.Len(), float64(ikBuf.Len())/1024)
 
-	// SERVER (active phase): finalize on demand
+	// Phase 3 (on-demand): finalize from stored level-0 intermediates
 	intermediate2 := new(kgplus.IntermediateKeys)
 	if _, err = intermediate2.ReadFrom(&ikBuf); err != nil {
 		panic(err)

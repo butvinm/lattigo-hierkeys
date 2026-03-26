@@ -9,12 +9,13 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// IntermediateKeys holds level-0 R' GaloisKeys produced by RotToRot expansion.
-// These are in the paper's convention (not yet ring-switched or post-converted).
-// They can be stored by the server for the "inactive" use case and later
-// finalized to evaluation keys on demand via [Evaluator.FinalizeKeys].
+// IntermediateKeys holds R' GaloisKeys produced by RotToRot expansion at a
+// single hierarchy level. These are in the paper's convention (not yet
+// ring-switched or post-converted). They can be serialized, stored, and later
+// used as input to expand the next level down or finalized via
+// [Evaluator.FinalizeKeys] (level 0 only).
 type IntermediateKeys struct {
-	Keys map[int]*rlwe.GaloisKey // indexed by rotation index, at RPrime level
+	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
 }
 
 // DeriveGaloisKeys is a convenience wrapper that creates a temporary
@@ -35,13 +36,12 @@ func RotToRot(
 	combinedGalEl uint64,
 ) (*rlwe.GaloisKey, error) {
 	params := Parameters{
-		Eval:         paramsLow, // placeholder
-		HK:           paramsLow, // placeholder
-		RPrime:       paramsLow,
-		RPrimeMaster: paramsHigh,
+		Eval:   paramsLow, // placeholder
+		HK:     paramsLow, // placeholder
+		RPrime: []rlwe.Parameters{paramsLow, paramsHigh},
 	}
 	eval := NewEvaluator(params)
-	return eval.RotToRot(inputKey, masterKey, combinedGalEl)
+	return eval.RotToRot(0, inputKey, masterKey, combinedGalEl)
 }
 
 // RingSwitchGaloisKey is a convenience wrapper that creates a temporary
@@ -55,69 +55,106 @@ func RingSwitchGaloisKey(
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
 	params := Parameters{
-		Eval:         paramsEval,
-		HK:           paramsHK,
-		RPrime:       paramsRPrime,
-		RPrimeMaster: paramsHK, // placeholder
+		Eval:   paramsEval,
+		HK:     paramsHK,
+		RPrime: []rlwe.Parameters{paramsRPrime, paramsHK}, // placeholder
 	}
 	eval := NewEvaluator(params)
 	return eval.RingSwitchGaloisKey(masterKeyRPrime, homingKey, galoisElement)
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
-// transmission keys. The returned keys work with lattigo's standard
+// transmission keys in one shot. The returned keys work with lattigo's standard
 // rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.
 //
-// This is a convenience wrapper that calls [Evaluator.Expand]
-// followed by [Evaluator.FinalizeKeys]. For finer control (e.g., storing
-// intermediate keys for later finalization), call those methods directly.
+// For per-level control (e.g., storing intermediates at each level for the
+// inactive/active pattern), use [Evaluator.ExpandLevel] directly:
+//
+//	level1Keys, _ := eval.ExpandLevel(1, tk.Shift0Keys[1], tk.MasterRotKeys, masterRots)
+//	// store level1Keys to disk...
+//	level0Keys, _ := eval.ExpandLevel(0, tk.Shift0Keys[0], level1Keys.Keys, targetRots)
+//	// store level0Keys to disk...
+//	evk, _ := eval.FinalizeKeys(tk, level0Keys)
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
-	intermediate, err := eval.Expand(tk, targetRotations)
-	if err != nil {
-		return nil, err
+	if tk == nil || len(tk.Shift0Keys) == 0 {
+		return nil, fmt.Errorf("transmission keys and shift-0 keys must not be nil")
 	}
 
-	return eval.FinalizeKeys(tk, intermediate)
+	k := eval.params.NumLevels()
+
+	if len(tk.Shift0Keys) != k-1 {
+		return nil, fmt.Errorf("expected %d shift-0 keys (k-1), got %d", k-1, len(tk.Shift0Keys))
+	}
+
+	masterRots := sortedKeys(tk.MasterRotKeys)
+	currentMasters := tk.MasterRotKeys
+
+	for level := k - 2; level >= 1; level-- {
+		derived, err := eval.ExpandLevel(level, tk.Shift0Keys[level], currentMasters, masterRots)
+		if err != nil {
+			return nil, fmt.Errorf("expand R' level %d: %w", level, err)
+		}
+		currentMasters = derived.Keys
+	}
+
+	level0Keys, err := eval.ExpandLevel(0, tk.Shift0Keys[0], currentMasters, targetRotations)
+	if err != nil {
+		return nil, fmt.Errorf("expand R' level 0: %w", err)
+	}
+
+	return eval.FinalizeKeys(tk, level0Keys)
 }
 
-// Expand expands master keys via RotToRot to produce level-0 R' keys
-// for all target rotations. This is the expensive phase (~80% of total cost).
+// ExpandLevel derives keys at the given R' hierarchy level using RotToRot with
+// master keys from the level above.
 //
-// Intermediate RotToRot results are cached: if multiple targets share a
-// prefix in their decomposition (e.g., rot1 used by both rot2 and rot5),
-// the shared intermediate is computed only once.
+// Parameters:
+//   - level: the R' hierarchy level to derive keys at (0 = lowest R' level)
+//   - shift0Key: the identity (shift-0) key at this level (from TransmissionKeys.Shift0Keys)
+//   - masterKeys: keys at level+1, indexed by rotation (either from TransmissionKeys.MasterRotKeys
+//     or from a previous ExpandLevel call's IntermediateKeys.Keys)
+//   - targetRotations: which rotations to derive at this level
 //
-// The results can be stored for later finalization via [Evaluator.FinalizeKeys].
-func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*IntermediateKeys, error) {
+// The returned IntermediateKeys can be serialized for storage, then later
+// passed as masterKeys to the next ExpandLevel call (level-1), or finalized
+// via [Evaluator.FinalizeKeys] if level == 0.
+//
+// Intermediate RotToRot results within a level are cached: if multiple targets
+// share a decomposition prefix, the shared intermediate is computed once.
+func (eval *Evaluator) ExpandLevel(
+	level int,
+	shift0Key *rlwe.GaloisKey,
+	masterKeys map[int]*rlwe.GaloisKey,
+	targetRotations []int,
+) (*IntermediateKeys, error) {
 
-	if tk == nil || tk.Shift0Key == nil {
-		return nil, fmt.Errorf("transmission keys and shift-0 key must not be nil")
+	if shift0Key == nil {
+		return nil, fmt.Errorf("shift-0 key must not be nil")
 	}
 
-	// Extract available master rotation indices (sorted ascending for greedy decomposition)
-	masterRots := make([]int, 0, len(tk.MasterRotKeys))
-	for rot := range tk.MasterRotKeys {
-		masterRots = append(masterRots, rot)
+	if len(masterKeys) == 0 {
+		return nil, fmt.Errorf("master keys must not be empty")
 	}
-	sort.Ints(masterRots)
 
-	// Cache: rotation index -> R' level-0 key
-	cache := make(map[int]*rlwe.GaloisKey)
-	cache[0] = tk.Shift0Key // seed
-
-	// Normalize negative rotations: CKKS rotation by -k = rotation by nSlots-k.
+	paramsLow := eval.params.RPrime[level]
 	nSlots := eval.params.Eval.N() / 2
 
+	// Decomposition base: sorted rotation indices available as masters
+	masterRots := sortedKeys(masterKeys)
+
+	// Cache: normalized rotation index -> key at this level
+	cache := make(map[int]*rlwe.GaloisKey)
+	cache[0] = shift0Key
+
 	for _, target := range targetRotations {
-		// Normalize to positive
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
-			continue // identity rotation, skip
+			continue
 		}
 
 		if _, ok := cache[normalized]; ok {
-			continue // already computed
+			continue
 		}
 
 		steps := hierkeys.DecomposeRotation(normalized, masterRots)
@@ -131,9 +168,12 @@ func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*Int
 			nextRot := currentRot + step
 
 			if _, ok := cache[nextRot]; !ok {
-				// Not cached — compute via RotToRot
-				combinedGalEl := eval.params.RPrime.GaloisElement(nextRot)
-				key, err := eval.RotToRot(cache[currentRot], tk.MasterRotKeys[step], combinedGalEl)
+				masterKey, ok := masterKeys[step]
+				if !ok {
+					return nil, fmt.Errorf("missing master key for rotation %d at level %d", step, level+1)
+				}
+				combinedGalEl := paramsLow.GaloisElement(nextRot)
+				key, err := eval.RotToRot(level, cache[currentRot], masterKey, combinedGalEl)
 				if err != nil {
 					return nil, fmt.Errorf("RotToRot step (current=%d + master=%d -> %d): %w",
 						currentRot, step, nextRot, err)
@@ -145,16 +185,28 @@ func (eval *Evaluator) Expand(tk *TransmissionKeys, targetRotations []int) (*Int
 		}
 	}
 
-	// Extract requested targets
+	// Build result indexed by requested rotations
 	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
 			continue
 		}
-		result.Keys[target] = cache[normalized]
+		if key, ok := cache[normalized]; ok {
+			result.Keys[target] = key
+		}
 	}
 	return result, nil
+}
+
+// sortedKeys extracts and sorts the integer keys from a map.
+func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	return keys
 }
 
 // FinalizeKeys ring-switches R' intermediate keys to R and post-converts
@@ -203,7 +255,7 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 
 	paramsEval := eval.params.Eval
 	paramsHK := eval.params.HK
-	paramsRPrime := eval.params.RPrime
+	paramsRPrime := eval.params.RPrime[0]
 
 	// Input validation
 	if paramsRPrime.N() != 2*paramsEval.N() {

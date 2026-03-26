@@ -7,37 +7,46 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// Parameters bundles the four-tier parameter sets needed for KG+
+// Parameters bundles the parameter sets needed for KG+
 // hierarchical rotation key generation via ring switching.
 //
 // Three tiers of primes:
 //   - Q_eval, P_eval: standard evaluation parameters (computation + key-switching)
 //   - P_hk: auxiliary primes consumed by the homing key during ring switching
 //
-// Four parameter sets derived from these:
-//   - Eval:         Q = Q_eval, P = P_eval, degree N — for ciphertext evaluation
-//   - HK:           Q = Q_eval ∪ P_eval, P = P_hk, degree N — for homing key operations
-//   - RPrime:       Q = Q_eval, P = P_eval, degree 2N — level-0 keys in extension ring R'
-//   - RPrimeMaster: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N — master keys in extension ring R'
+// The hierarchy has k levels in the extension ring R' (degree 2N):
+//   - RPrime[0]: Q = Q_eval, P = P_eval — level-0 keys
+//   - RPrime[1]: Q = Q_eval ∪ P_eval, P = P_hk — first master level (same P as HK)
+//   - RPrime[i]: Q = RPrime[i-1].Q ∪ RPrime[i-1].P, P = P_i — higher levels
+//
+// For k=2, this is the standard KG+ scheme.
+// For k>2, extra levels provide additional hierarchy depth.
 //
 // KG+ only supports the Standard ring type (not ConjugateInvariant),
 // because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
-	Eval         rlwe.Parameters
-	HK           rlwe.Parameters
-	RPrime       rlwe.Parameters
-	RPrimeMaster rlwe.Parameters
+	Eval   rlwe.Parameters
+	HK     rlwe.Parameters
+	RPrime []rlwe.Parameters // RPrime[0]=level0, RPrime[k-1]=top master
+}
+
+// NumLevels returns the number of hierarchy levels (k = len(RPrime)).
+func (p Parameters) NumLevels() int {
+	return len(p.RPrime)
 }
 
 // NewParameters constructs KG+ hierarchical key parameters from standard evaluation
-// parameters and auxiliary prime bit-sizes for the homing key.
+// parameters and auxiliary prime bit-sizes.
 //
-// The auxiliary primes (logPHK) are additional special primes consumed during
-// ring switching. They must be NTT-friendly for degree 2N. Typically one 61-bit
-// prime suffices.
+// logPHK specifies auxiliary primes for the homing key and RPrime[1].
+// logPExtra (optional) specifies P-prime bit-sizes for additional levels (k>2).
 //
-// Returns an error if the evaluation parameters use the ConjugateInvariant ring type.
-func NewParameters(eval rlwe.Parameters, logPHK []int) (Parameters, error) {
+// For k=2 (standard): NewParameters(eval, logPHK)
+// For k=3: NewParameters(eval, logPHK, logP2)
+//
+// All primes must be NTT-friendly for degree 2N. Returns an error if the evaluation
+// parameters use the ConjugateInvariant ring type.
+func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Parameters, error) {
 
 	if eval.RingType() == ring.ConjugateInvariant {
 		return Parameters{}, fmt.Errorf("KG+ does not support ConjugateInvariant ring type; use the llkn package instead")
@@ -51,52 +60,149 @@ func NewParameters(eval rlwe.Parameters, logPHK []int) (Parameters, error) {
 		return Parameters{}, fmt.Errorf("eval parameters must have P primes")
 	}
 
-	// Q_hk = Q_eval ∪ P_eval (concatenate Q and P primes from eval)
+	// Q_hk = Q_eval ∪ P_eval
 	qHK := make([]uint64, 0, eval.QCount()+eval.PCount())
 	qHK = append(qHK, eval.Q()...)
 	qHK = append(qHK, eval.P()...)
+
+	// Collect all primes for collision avoidance
+	usedPrimes := make(map[uint64]bool)
+	for _, q := range eval.Q() {
+		usedPrimes[q] = true
+	}
+	for _, p := range eval.P() {
+		usedPrimes[p] = true
+	}
+
+	nthRoot := uint64(eval.RingQ().NthRoot())
+	nthRoot2N := nthRoot * 2 // NTT-friendly for degree 2N
+
+	// Generate HK P primes (avoiding existing primes).
+	// Must be NTT-friendly for degree 2N because they are also used as P in RPrime[1].
+	pHK, err := generateUniquePrimes(logPHK, nthRoot2N, usedPrimes)
+	if err != nil {
+		return Parameters{}, fmt.Errorf("cannot generate HK P primes: %w", err)
+	}
+	for _, p := range pHK {
+		usedPrimes[p] = true
+	}
 
 	// Homing key: Q = Q_eval ∪ P_eval, P = P_hk, degree N
 	paramsHK, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN(),
 		Q:       qHK,
-		LogP:    logPHK,
+		P:       pHK,
 		NTTFlag: true,
 	})
 	if err != nil {
 		return Parameters{}, fmt.Errorf("cannot create HK parameters: %w", err)
 	}
 
-	// Extension ring R': Q = Q_eval, P = P_eval, degree 2N.
-	// IMPORTANT: All Q and P primes must be NTT-friendly for degree 2N
-	// (i.e., q ≡ 1 mod 4N). If paramsEval was created with LogQ/LogP,
-	// the generated primes may only satisfy q ≡ 1 mod 2N. In that case,
-	// use explicit primes that satisfy the 2N constraint.
-	paramsRPrime, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+	// Build RPrime levels (degree 2N)
+	k := 2 + len(logPExtra) // k=2 minimum, +1 per extra level
+
+	rpLevels := make([]rlwe.Parameters, k)
+
+	// RPrime[0]: Q = Q_eval, P = P_eval, degree 2N
+	paramsRPrime0, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       eval.Q(),
 		P:       eval.P(),
 		NTTFlag: true,
 	})
 	if err != nil {
-		return Parameters{}, fmt.Errorf("cannot create R' parameters (primes may not be NTT-friendly for degree 2N): %w", err)
+		return Parameters{}, fmt.Errorf("cannot create R' level-0 parameters (primes may not be NTT-friendly for degree 2N): %w", err)
 	}
+	rpLevels[0] = paramsRPrime0
 
-	// Master level in R': Q = Q_eval ∪ P_eval, P = P_hk, degree 2N
-	paramsRPrimeMaster, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+	// RPrime[1]: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N
+	paramsRPrime1, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       qHK,
-		LogP:    logPHK,
+		P:       pHK,
 		NTTFlag: true,
 	})
 	if err != nil {
-		return Parameters{}, fmt.Errorf("cannot create R' master parameters: %w", err)
+		return Parameters{}, fmt.Errorf("cannot create R' level-1 parameters: %w", err)
+	}
+	rpLevels[1] = paramsRPrime1
+
+	// Build additional RPrime levels (k>2)
+	for i := 0; i < len(logPExtra); i++ {
+		if len(logPExtra[i]) == 0 {
+			return Parameters{}, fmt.Errorf("logPExtra[%d] must have at least one element", i)
+		}
+
+		prev := rpLevels[i+1]
+
+		// Q_{next} = prev.Q ∪ prev.P
+		qNext := make([]uint64, 0, prev.QCount()+prev.PCount())
+		qNext = append(qNext, prev.Q()...)
+		qNext = append(qNext, prev.P()...)
+
+		// Generate fresh P primes avoiding all used primes, NTT-friendly for degree 2N
+		pNext, err := generateUniquePrimes(logPExtra[i], nthRoot2N, usedPrimes)
+		if err != nil {
+			return Parameters{}, fmt.Errorf("cannot generate P primes for R' level %d: %w", i+2, err)
+		}
+		for _, p := range pNext {
+			usedPrimes[p] = true
+		}
+
+		next, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+			LogN:    eval.LogN() + 1,
+			Q:       qNext,
+			P:       pNext,
+			NTTFlag: true,
+		})
+		if err != nil {
+			return Parameters{}, fmt.Errorf("cannot create R' level-%d parameters: %w", i+2, err)
+		}
+
+		rpLevels[i+2] = next
 	}
 
 	return Parameters{
-		Eval:         eval,
-		HK:           paramsHK,
-		RPrime:       paramsRPrime,
-		RPrimeMaster: paramsRPrimeMaster,
+		Eval:   eval,
+		HK:     paramsHK,
+		RPrime: rpLevels,
 	}, nil
+}
+
+// generateUniquePrimes generates NTT-friendly primes of the given bit sizes
+// that are not in the usedPrimes set.
+func generateUniquePrimes(logP []int, nthRoot uint64, usedPrimes map[uint64]bool) ([]uint64, error) {
+	primes := make([]uint64, 0, len(logP))
+
+	// Group by bit size to share generators
+	bySize := make(map[int]int)
+	for _, bits := range logP {
+		bySize[bits]++
+	}
+
+	generated := make(map[int][]uint64)
+	for bits, count := range bySize {
+		g := ring.NewNTTFriendlyPrimesGenerator(uint64(bits), nthRoot)
+		ps := make([]uint64, 0, count)
+		for len(ps) < count {
+			p, err := g.NextAlternatingPrime()
+			if err != nil {
+				return nil, fmt.Errorf("exhausted %d-bit NTT-friendly primes (need %d, got %d)", bits, count, len(ps))
+			}
+			if !usedPrimes[p] {
+				ps = append(ps, p)
+			}
+		}
+		generated[bits] = ps
+	}
+
+	// Reconstruct in original order
+	counters := make(map[int]int)
+	for _, bits := range logP {
+		idx := counters[bits]
+		primes = append(primes, generated[bits][idx])
+		counters[bits] = idx + 1
+	}
+
+	return primes, nil
 }

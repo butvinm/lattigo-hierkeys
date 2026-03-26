@@ -6,7 +6,8 @@ import "github.com/tuneinsight/lattigo/v6/core/rlwe"
 // prime sizes needed for hierarchical key generation.
 type TestParametersLiteral struct {
 	rlwe.ParametersLiteral
-	LogPHK []int // bit-sizes of auxiliary P primes for the homing key
+	LogPHK    []int   // bit-sizes of auxiliary P primes for the homing key (and RPrime[1])
+	LogPExtra [][]int // bit-sizes of P primes for additional RPrime levels (k>2)
 }
 
 var (
@@ -24,7 +25,7 @@ var (
 
 	// testInsecure are insecure parameters used for the sole purpose of fast testing.
 	testInsecure = []TestParametersLiteral{
-		// 5 Q primes, 1 P prime, 1 homing-key prime
+		// k=2, 5 Q primes, 1 P prime, 1 homing-key prime
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:    10,
@@ -34,7 +35,7 @@ var (
 			},
 			LogPHK: []int{61},
 		},
-		// 3 Q primes, 1 P prime, 1 homing-key prime (fewer levels)
+		// k=2, 3 Q primes, 1 P prime, 1 homing-key prime (fewer levels)
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:    10,
@@ -43,6 +44,18 @@ var (
 				NTTFlag: true,
 			},
 			LogPHK: []int{61},
+		},
+		// k=3, 5 Q primes, 1 P prime, 1 homing-key prime + extra level
+		// Needs enough P primes at RPrime[1] to keep noise manageable.
+		{
+			ParametersLiteral: rlwe.ParametersLiteral{
+				LogN:    10,
+				Q:       testQi60[:5],
+				P:       testPi60[:1],
+				NTTFlag: true,
+			},
+			LogPHK:    []int{61, 61, 61, 61, 61, 61},
+			LogPExtra: [][]int{{61, 61, 61, 61, 61, 61}},
 		},
 	}
 )

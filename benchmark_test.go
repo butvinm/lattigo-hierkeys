@@ -16,11 +16,15 @@ type benchScenario struct {
 	LogN   int
 	LogQ   []int // Q prime bit-sizes
 	LogP   []int // P prime bit-sizes
-	LogPHK []int // Homing key / master P prime bit-sizes
+	LogPHK []int // Homing key / master P prime bit-sizes (k=2)
 	Base   int   // master rotation base
+
+	// k=3 KG+ parameters: P_hk with enough primes for noise control,
+	// P_extra large enough for dnum=1 at the top level.
+	LogPHK3   []int // P^(1) for RPrime[1] (≈ Q_eval primes for noise)
+	LogPExtra []int // P^(2) for RPrime[2] (≈ Q^(2) primes for dnum=1)
 }
 
-// buildLogQ creates a slice of n copies of bitSize.
 func buildLogQ(n, bitSize int) []int {
 	q := make([]int, n)
 	for i := range q {
@@ -33,37 +37,43 @@ var benchScenarios = []benchScenario{
 	{
 		Name: "LogN10_Q5_P1",
 		LogN: 10, LogQ: buildLogQ(5, 55), LogP: []int{56}, LogPHK: []int{56},
-		Base: 4,
+		Base:      4,
+		LogPHK3:   buildLogQ(5, 56),  // P^(1): 5 primes → noise-safe
+		LogPExtra: buildLogQ(11, 56), // P^(2): 11 primes → dnum=1
 	},
 	{
 		Name: "LogN12_Q8_P2",
 		LogN: 12, LogQ: buildLogQ(8, 55), LogP: []int{56, 56}, LogPHK: []int{56},
-		Base: 4,
+		Base:      4,
+		LogPHK3:   buildLogQ(8, 56),
+		LogPExtra: buildLogQ(18, 56),
 	},
 	{
 		Name: "LogN14_Q14_P3",
 		LogN: 14, LogQ: buildLogQ(14, 55), LogP: []int{56, 56, 56}, LogPHK: []int{56},
-		Base: 4,
+		Base:      4,
+		LogPHK3:   buildLogQ(14, 56),
+		LogPExtra: buildLogQ(31, 56),
 	},
 	{
 		Name: "LogN15_Q22_P5",
 		LogN: 15, LogQ: buildLogQ(22, 55), LogP: []int{56, 56, 56, 56, 56}, LogPHK: []int{56, 56, 56, 56, 56},
-		Base: 4,
+		Base:      4,
+		LogPHK3:   buildLogQ(22, 56),
+		LogPExtra: buildLogQ(49, 56),
 	},
 }
 
-// BenchmarkKeySizes measures and reports transmission key sizes.
-// Run with: go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ -timeout 30m ./...
+// BenchmarkKeySizes measures and reports transmission key sizes for LLKN, KG+ k=2, and KG+ k=3.
 func BenchmarkKeySizes(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
-			// Generate primes NTT-friendly for 2N (so KG+ also works)
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
 				LogQ:       sc.LogQ,
 				LogP:       sc.LogP,
 				NTTFlag:    true,
-				LogNthRoot: sc.LogN + 2, // q ≡ 1 mod 4N → NTT-friendly for degree 2N
+				LogNthRoot: sc.LogN + 2,
 			})
 			if err != nil {
 				b.Fatal(err)
@@ -76,7 +86,6 @@ func BenchmarkKeySizes(b *testing.B) {
 				targetRots = append(targetRots, i)
 			}
 
-			// Reference: size of one standard GaloisKey
 			kgenRef := rlwe.NewKeyGenerator(paramsEval)
 			skRef := kgenRef.GenSecretKeyNew()
 			refGK := kgenRef.GenGaloisKeyNew(paramsEval.GaloisElement(1), skRef)
@@ -90,15 +99,43 @@ func BenchmarkKeySizes(b *testing.B) {
 			b.Logf("Conventional: %d keys × %d bytes = %.1f MB",
 				len(targetRots), stdKeySize, float64(conventionalBytes)/(1024*1024))
 
-			b.Run("KGPlus", func(b *testing.B) {
+			b.Run("LLKN", func(b *testing.B) {
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				topLevel := params.Top()
+				dnumMaster := topLevel.BaseRNSDecompositionVectorSize(
+					topLevel.MaxLevel(), topLevel.MaxLevelP())
+
+				kgen := llkn.NewKeyGenerator(params)
+				sk := kgen.GenSecretKeyNew()
+				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				tkSize := tk.BinarySize()
+				ratio := float64(tkSize) / float64(conventionalBytes) * 100
+
+				b.Logf("LLKN k=2: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
+					dnumMaster, float64(tkSize)/(1024*1024), ratio)
+				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
+				b.ReportMetric(ratio, "vs_conv_%")
+				b.ReportMetric(float64(dnumMaster), "dnum_master")
+			})
+
+			b.Run("KGPlus_k2", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK)
 				if err != nil {
-					b.Skip("KG+ params failed:", err)
+					b.Skip("KG+ k=2 params failed:", err)
 					return
 				}
 
-				dnumMaster := params.RPrimeMaster.BaseRNSDecompositionVectorSize(
-					params.RPrimeMaster.MaxLevel(), params.RPrimeMaster.MaxLevelP())
+				topRP := params.RPrime[params.NumLevels()-1]
+				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
+					topRP.MaxLevel(), topRP.MaxLevelP())
 
 				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
@@ -110,43 +147,40 @@ func BenchmarkKeySizes(b *testing.B) {
 				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
-				b.Logf("KG+ dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
+				b.Logf("KG+ k=2: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
 					dnumMaster, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
 				b.ReportMetric(float64(dnumMaster), "dnum_master")
 			})
 
-			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, sc.LogPHK)
+			b.Run("KGPlus_k3", func(b *testing.B) {
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Fatal(err)
+					b.Skip("KG+ k=3 params failed:", err)
+					return
 				}
 
-				dnumMaster := params.Master.BaseRNSDecompositionVectorSize(
-					params.Master.MaxLevel(), params.Master.MaxLevelP())
+				topRP := params.RPrime[params.NumLevels()-1]
+				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
+					topRP.MaxLevel(), topRP.MaxLevelP())
 
-				kgen := llkn.NewKeyGenerator(params)
+				// k=3 uses a reduced master set: {1, base}.
+				// The full base-4 set is derived server-side at the intermediate level.
+				k3MasterRots := []int{1, sc.Base}
+
+				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
-				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
+				tk, err := kgen.GenTransmissionKeys(sk, k3MasterRots)
 				if err != nil {
 					b.Fatal(err)
 				}
 
-				// Compute LLKN transmission size
-				tkSize := 0
-				if tk.Shift0Key != nil {
-					tkSize += tk.Shift0Key.BinarySize()
-				}
-				tkSize += 8
-				for _, gk := range tk.MasterRotKeys {
-					tkSize += 8 + gk.BinarySize()
-				}
-
+				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
-				b.Logf("LLKN dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
-					dnumMaster, float64(tkSize)/(1024*1024), ratio)
+				b.Logf("KG+ k=3: dnum_master=%d, masters=%v, TX=%.1f MB (%.0f%% of conventional)",
+					dnumMaster, k3MasterRots, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
 				b.ReportMetric(float64(dnumMaster), "dnum_master")
@@ -159,7 +193,7 @@ func BenchmarkKeySizes(b *testing.B) {
 func BenchmarkDeriveGaloisKeys(b *testing.B) {
 	for _, sc := range benchScenarios {
 		if sc.LogN > 14 {
-			continue // skip very large for speed
+			continue
 		}
 
 		b.Run(sc.Name, func(b *testing.B) {
@@ -181,10 +215,30 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				targetRots = append(targetRots, i)
 			}
 
-			b.Run("KGPlus", func(b *testing.B) {
+			b.Run("LLKN", func(b *testing.B) {
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+				kgen := llkn.NewKeyGenerator(params)
+				sk := kgen.GenSecretKeyNew()
+				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
+				if err != nil {
+					b.Fatal(err)
+				}
+				eval := llkn.NewEvaluator(params)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus_k2", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK)
 				if err != nil {
-					b.Skip("KG+ params failed:", err)
+					b.Skip("KG+ k=2 params failed:", err)
 					return
 				}
 				kgen := kgplus.NewKeyGenerator(params)
@@ -202,18 +256,19 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				}
 			})
 
-			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, sc.LogPHK)
+			b.Run("KGPlus_k3", func(b *testing.B) {
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Fatal(err)
+					b.Skip("KG+ k=3 params failed:", err)
+					return
 				}
-				kgen := llkn.NewKeyGenerator(params)
+				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
 				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
 				if err != nil {
 					b.Fatal(err)
 				}
-				eval := llkn.NewEvaluator(params)
+				eval := kgplus.NewEvaluator(params)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
@@ -247,10 +302,25 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 			slots := paramsEval.N() / 2
 			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
 
-			b.Run("KGPlus", func(b *testing.B) {
+			b.Run("LLKN", func(b *testing.B) {
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+				kgen := llkn.NewKeyGenerator(params)
+				sk := kgen.GenSecretKeyNew()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := kgen.GenTransmissionKeys(sk, masterRots); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus_k2", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK)
 				if err != nil {
-					b.Skip("KG+ params failed:", err)
+					b.Skip("KG+ k=2 params failed:", err)
 					return
 				}
 				kgen := kgplus.NewKeyGenerator(params)
@@ -263,12 +333,13 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 				}
 			})
 
-			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, sc.LogPHK)
+			b.Run("KGPlus_k3", func(b *testing.B) {
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Fatal(err)
+					b.Skip("KG+ k=3 params failed:", err)
+					return
 				}
-				kgen := llkn.NewKeyGenerator(params)
+				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
