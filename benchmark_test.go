@@ -33,34 +33,38 @@ func buildLogQ(n, bitSize int) []int {
 	return q
 }
 
+// 128-bit secure parameter sets (HE Standard, h=N/2 ternary secret).
+// Each scenario satisfies:
+//   - Eval QP ≤ Q_max(N)
+//   - LLKN k=2 top QP ≤ Q_max(N)
+//   - KG+ k=3 top QP ≤ Q_max(2N) (R' extension ring)
 var benchScenarios = []benchScenario{
 	{
-		Name: "LogN10_Q5_P1",
-		LogN: 10, LogQ: buildLogQ(5, 55), LogP: []int{56}, LogPHK: []int{56},
+		// Q_max(14)=438. Eval QP=350, LLKN top=406, KG+ R' top=462≤881.
+		Name: "LogN14_Q5_P2",
+		LogN: 14, LogQ: buildLogQ(5, 50), LogP: []int{50, 50}, LogPHK: []int{56},
 		Base:      4,
-		LogPHK3:   buildLogQ(5, 56),  // P^(1): 5 primes → noise-safe
-		LogPExtra: buildLogQ(11, 56), // P^(2): 11 primes → dnum=1
+		LogPHK3:   []int{56},
+		LogPExtra: []int{56},
 	},
 	{
-		Name: "LogN12_Q8_P2",
-		LogN: 12, LogQ: buildLogQ(8, 55), LogP: []int{56, 56}, LogPHK: []int{56},
+		// Q_max(15)=881. Eval QP=598, LLKN top=720, KG+ R' top=1513≤1761.
+		Name: "LogN15_Q10_P3",
+		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: []int{61, 61, 61},
+		LogPHK:    []int{61, 61},
 		Base:      4,
-		LogPHK3:   buildLogQ(8, 56),
-		LogPExtra: buildLogQ(18, 56),
+		LogPHK3:   buildLogQ(10, 61),
+		LogPExtra: buildLogQ(5, 61),
 	},
 	{
-		Name: "LogN14_Q14_P3",
-		LogN: 14, LogQ: buildLogQ(14, 55), LogP: []int{56, 56, 56}, LogPHK: []int{56},
+		// Q_max(16)=1761. Eval QP=1540, LLKN top=1760, KG+ R' top=3416≤3500.
+		// Matches KG+ paper (Cheon-Kang-Park) C.ii parameter set.
+		Name: "LogN16_Q24_P4",
+		LogN: 16, LogQ: buildLogQ(24, 55), LogP: []int{55, 55, 55, 55},
+		LogPHK:    []int{55, 55, 55, 55},
 		Base:      4,
-		LogPHK3:   buildLogQ(14, 56),
-		LogPExtra: buildLogQ(31, 56),
-	},
-	{
-		Name: "LogN15_Q22_P5",
-		LogN: 15, LogQ: buildLogQ(22, 55), LogP: []int{56, 56, 56, 56, 56}, LogPHK: []int{56, 56, 56, 56, 56},
-		Base:      4,
-		LogPHK3:   buildLogQ(22, 56),
-		LogPExtra: buildLogQ(49, 56),
+		LogPHK3:   buildLogQ(3, 57),
+		LogPExtra: buildLogQ(31, 55),
 	},
 }
 
@@ -192,10 +196,6 @@ func BenchmarkKeySizes(b *testing.B) {
 // BenchmarkDeriveGaloisKeys measures server-side key derivation time.
 func BenchmarkDeriveGaloisKeys(b *testing.B) {
 	for _, sc := range benchScenarios {
-		if sc.LogN > 14 {
-			continue
-		}
-
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
@@ -283,10 +283,6 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 // BenchmarkGenTransmissionKeys measures client-side key generation time.
 func BenchmarkGenTransmissionKeys(b *testing.B) {
 	for _, sc := range benchScenarios {
-		if sc.LogN > 14 {
-			continue
-		}
-
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
