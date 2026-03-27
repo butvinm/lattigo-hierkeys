@@ -17,20 +17,11 @@ func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 
 	var written int64
 
-	// Write number of shift-0 keys
-	nShift0 := uint64(len(tk.Shift0Keys))
-	if err = binary.Write(bw, binary.LittleEndian, nShift0); err != nil {
-		return n, fmt.Errorf("write shift-0 count: %w", err)
+	// Write encryption of zero
+	if written, err = tk.EncZero.WriteTo(bw); err != nil {
+		return n, fmt.Errorf("write EncZero: %w", err)
 	}
-	n += 8
-
-	// Write shift-0 keys
-	for i, gk := range tk.Shift0Keys {
-		if written, err = gk.WriteTo(bw); err != nil {
-			return n, fmt.Errorf("write shift-0 key %d: %w", i, err)
-		}
-		n += written
-	}
+	n += written
 
 	// Write master rotation keys
 	nMasters := uint64(len(tk.MasterRotKeys))
@@ -71,22 +62,12 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 
 	var read int64
 
-	// Read shift-0 keys
-	var nShift0 uint64
-	if err = binary.Read(br, binary.LittleEndian, &nShift0); err != nil {
-		return n, fmt.Errorf("read shift-0 count: %w", err)
+	// Read encryption of zero
+	tk.EncZero = new(rlwe.Ciphertext)
+	if read, err = tk.EncZero.ReadFrom(br); err != nil {
+		return n, fmt.Errorf("read EncZero: %w", err)
 	}
-	n += 8
-
-	tk.Shift0Keys = make([]*rlwe.GaloisKey, nShift0)
-	for i := uint64(0); i < nShift0; i++ {
-		gk := new(rlwe.GaloisKey)
-		if read, err = gk.ReadFrom(br); err != nil {
-			return n, fmt.Errorf("read shift-0 key %d: %w", i, err)
-		}
-		n += read
-		tk.Shift0Keys[i] = gk
-	}
+	n += read
 
 	// Read master rotation keys
 	var nMasters uint64
@@ -117,11 +98,7 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 
 // BinarySize returns the serialized size of the TransmissionKeys in bytes.
 func (tk *TransmissionKeys) BinarySize() int {
-	size := 8 // shift-0 count
-
-	for _, gk := range tk.Shift0Keys {
-		size += gk.BinarySize()
-	}
+	size := tk.EncZero.BinarySize()
 
 	size += 8 // master key count
 	for _, gk := range tk.MasterRotKeys {

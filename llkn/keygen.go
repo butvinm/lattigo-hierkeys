@@ -14,11 +14,9 @@ type TransmissionKeys struct {
 	// Indexed by rotation index (not Galois element).
 	MasterRotKeys map[int]*rlwe.GaloisKey
 
-	// Shift0Keys[i] is the identity (shift-0) GaloisKey at Levels[i].
-	// Each encrypts P_i·s under s and serves as the seed for RotToRot
-	// at the corresponding level.
-	// Length is k-1 (one per level except the top).
-	Shift0Keys []*rlwe.GaloisKey
+	// EncZero is an encryption of zero at the top level (Levels[k-1]).
+	// The server derives shift-0 keys at each lower level via PubToRot.
+	EncZero *rlwe.Ciphertext
 }
 
 // KeyGenerator generates transmission keys on the client side.
@@ -86,21 +84,20 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 
 	k := kgen.params.NumLevels()
 
-	// Generate shift-0 keys at each level 0..k-2
-	shift0Keys := make([]*rlwe.GaloisKey, k-1)
-	for level := 0; level < k-1; level++ {
-		skLevel := kgen.projectToLevel(sk, level)
-		shift0EK := kgen.kgens[level].GenEvaluationKeyNew(skLevel, skLevel)
-		shift0Keys[level] = &rlwe.GaloisKey{
-			EvaluationKey: *shift0EK,
-			GaloisElement: 1, // identity
-			NthRoot:       kgen.params.Levels[level].RingQ().NthRoot(),
-		}
+	// Generate encryption of zero at the top level.
+	// The server will derive shift-0 keys at each lower level via PubToRot.
+	topLevel := k - 1
+	paramsTop := kgen.params.Levels[topLevel]
+	encZero := rlwe.NewCiphertext(paramsTop, 1, paramsTop.MaxLevel())
+	encZero.IsNTT = true
+	encZero.IsMontgomery = true
+	enc := rlwe.NewEncryptor(paramsTop, sk)
+	var err error
+	if err = enc.EncryptZero(encZero); err != nil {
+		return nil, fmt.Errorf("encrypt zero: %w", err)
 	}
 
 	// Generate master rotation keys at top level (paper convention)
-	topLevel := k - 1
-	paramsTop := kgen.params.Levels[topLevel]
 	masterRotKeys := make(map[int]*rlwe.GaloisKey, len(masterRotations))
 	for _, rot := range masterRotations {
 		galEl := paramsTop.GaloisElement(rot)
@@ -124,6 +121,6 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 
 	return &TransmissionKeys{
 		MasterRotKeys: masterRotKeys,
-		Shift0Keys:    shift0Keys,
+		EncZero:       encZero,
 	}, nil
 }

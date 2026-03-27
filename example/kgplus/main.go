@@ -56,7 +56,7 @@ func main() {
 		panic(err)
 	}
 	fmt.Printf("\nClient: %d master keys for rotations %v\n", len(masterRots), masterRots)
-	fmt.Printf("Client: %d shift-0 keys (one per level 0..%d)\n", len(tk.Shift0Keys), hkParams.NumLevels()-2)
+	fmt.Printf("Client: EncZero at top RPrime level (degree %d)\n", tk.EncZero.Degree())
 
 	// Serialize transmission keys
 	var tkBuf bytes.Buffer
@@ -74,8 +74,13 @@ func main() {
 	eval := kgplus.NewEvaluator(hkParams)
 
 	// Phase 1 (rare): derive level-1 keys from top masters
+	topLevel := hkParams.NumLevels() - 1
+	var shift0L1 *rlwe.GaloisKey
+	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk2.EncZero); err != nil {
+		panic(err)
+	}
 	var level1Keys *kgplus.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, tk2.Shift0Keys[1], tk2.MasterRotKeys, masterRots); err != nil {
+	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk2.MasterRotKeys, masterRots); err != nil {
 		panic(err)
 	}
 	fmt.Printf("\nServer (phase 1): derived %d level-1 keys in R'\n", len(level1Keys.Keys))
@@ -94,8 +99,12 @@ func main() {
 	}
 
 	allPossibleRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+	var shift0L0 *rlwe.GaloisKey
+	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk2.EncZero); err != nil {
+		panic(err)
+	}
 	var level0Keys *kgplus.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, tk2.Shift0Keys[0], level1Loaded.Keys, allPossibleRots); err != nil {
+	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Loaded.Keys, allPossibleRots); err != nil {
 		panic(err)
 	}
 	fmt.Printf("Server (phase 2): derived %d level-0 keys in R'\n", len(level0Keys.Keys))

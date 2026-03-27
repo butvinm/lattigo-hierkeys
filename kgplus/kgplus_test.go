@@ -62,6 +62,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 // removed Expand method did. Used by tests that need level-0 IntermediateKeys.
 func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*IntermediateKeys, error) {
 	k := eval.params.NumLevels()
+	topLevel := k - 1
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
 	for rot := range tk.MasterRotKeys {
 		masterRots = append(masterRots, rot)
@@ -70,13 +71,21 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		derived, err := eval.ExpandLevel(level, tk.Shift0Keys[level], currentMasters, masterRots)
+		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.EncZero)
+		if err != nil {
+			return nil, err
+		}
+		derived, err := eval.ExpandLevel(level, shift0Key, currentMasters, masterRots)
 		if err != nil {
 			return nil, err
 		}
 		currentMasters = derived.Keys
 	}
-	return eval.ExpandLevel(0, tk.Shift0Keys[0], currentMasters, targetRots)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.EncZero)
+	if err != nil {
+		return nil, err
+	}
+	return eval.ExpandLevel(0, shift0Key0, currentMasters, targetRots)
 }
 
 // TestKGPlus is the main entry point, iterating over parameter sets
@@ -142,10 +151,8 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 		t.Run("GenTransmissionKeys", func(t *testing.T) {
 			tk := tc.tk
 			require.NotNil(t, tk.HomingKey)
-			require.Len(t, tk.Shift0Keys, params.NumLevels()-1)
-			for i, gk := range tk.Shift0Keys {
-				require.NotNil(t, gk, "shift-0 key at level %d is nil", i)
-			}
+			require.NotNil(t, tk.EncZero)
+			require.Equal(t, 1, tk.EncZero.Degree())
 			require.Equal(t, len(tc.masterRots), len(tk.MasterRotKeys))
 			for _, rot := range tc.masterRots {
 				_, ok := tk.MasterRotKeys[rot]
@@ -663,10 +670,8 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Verify structure
 		require.NotNil(t, tk2.HomingKey)
-		require.Len(t, tk2.Shift0Keys, len(tc.tk.Shift0Keys))
-		for i, gk := range tk2.Shift0Keys {
-			require.NotNil(t, gk, "shift-0 key at level %d is nil after deserialization", i)
-		}
+		require.NotNil(t, tk2.EncZero)
+		require.Equal(t, 1, tk2.EncZero.Degree())
 		require.Equal(t, len(tc.tk.MasterRotKeys), len(tk2.MasterRotKeys))
 
 		for rot := range tc.tk.MasterRotKeys {
