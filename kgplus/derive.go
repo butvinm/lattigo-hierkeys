@@ -90,6 +90,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	masterRots := sortedKeys(tk.MasterRotKeys)
 	currentMasters := tk.MasterRotKeys
 
+	isDerived := false // tracks whether currentMasters is derived (safe to nil) vs original TX data
 	for level := k - 2; level >= 1; level-- {
 		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.EncZero)
 		if err != nil {
@@ -99,7 +100,17 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 		if err != nil {
 			return nil, fmt.Errorf("expand R' level %d: %w", level, err)
 		}
+
+		// Release previous level's derived keys — no longer needed.
+		// Skip if currentMasters is tk.MasterRotKeys (don't mutate caller's data).
+		if isDerived {
+			for rot := range currentMasters {
+				currentMasters[rot] = nil // permit early GC
+			}
+		}
+
 		currentMasters = derived.Keys
+		isDerived = true
 	}
 
 	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.EncZero)
@@ -109,6 +120,13 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	level0Keys, err := eval.ExpandLevel(0, shift0Key0, currentMasters, targetRotations)
 	if err != nil {
 		return nil, fmt.Errorf("expand R' level 0: %w", err)
+	}
+
+	// Release intermediate masters — no longer needed after level-0 expansion.
+	if isDerived {
+		for rot := range currentMasters {
+			currentMasters[rot] = nil // permit early GC
+		}
 	}
 
 	return eval.FinalizeKeys(tk, level0Keys)
@@ -241,6 +259,9 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *Intermed
 		if err != nil {
 			return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
 		}
+
+		// Release R' key — no longer needed after ring switching
+		intermediate.Keys[rot] = nil
 
 		// Post-convert from paper convention to lattigo convention
 		if err := eval.convertToLattigoConvention(rsGK); err != nil {

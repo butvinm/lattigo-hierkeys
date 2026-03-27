@@ -50,6 +50,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	masterRots := sortedKeys(tk.MasterRotKeys)
 	currentMasters := tk.MasterRotKeys
 
+	isDerived := false // tracks whether currentMasters is derived (safe to nil) vs original TX data
 	for level := k - 2; level >= 1; level-- {
 		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Top(), tk.EncZero)
 		if err != nil {
@@ -59,7 +60,17 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 		if err != nil {
 			return nil, fmt.Errorf("expand level %d: %w", level, err)
 		}
+
+		// Release previous level's derived keys — no longer needed.
+		// Skip if currentMasters is tk.MasterRotKeys (don't mutate caller's data).
+		if isDerived {
+			for rot := range currentMasters {
+				currentMasters[rot] = nil // permit early GC
+			}
+		}
+
 		currentMasters = derived.Keys
+		isDerived = true
 	}
 
 	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Top(), tk.EncZero)
@@ -69,6 +80,13 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	level0Keys, err := eval.ExpandLevel(0, shift0Key0, currentMasters, targetRotations)
 	if err != nil {
 		return nil, fmt.Errorf("expand level 0: %w", err)
+	}
+
+	// Release intermediate masters — no longer needed after level-0 expansion.
+	if isDerived {
+		for rot := range currentMasters {
+			currentMasters[rot] = nil // permit early GC
+		}
 	}
 
 	return eval.FinalizeKeys(level0Keys)
