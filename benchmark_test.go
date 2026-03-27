@@ -264,7 +264,8 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				}
 				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
-				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
+				k3MasterRots := []int{1, sc.Base}
+				tk, err := kgen.GenTransmissionKeys(sk, k3MasterRots)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -337,9 +338,10 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 				}
 				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
+				k3MasterRots := []int{1, sc.Base}
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if _, err := kgen.GenTransmissionKeys(sk, masterRots); err != nil {
+					if _, err := kgen.GenTransmissionKeys(sk, k3MasterRots); err != nil {
 						b.Fatal(err)
 					}
 				}
