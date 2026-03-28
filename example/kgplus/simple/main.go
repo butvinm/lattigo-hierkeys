@@ -71,7 +71,7 @@ func main() {
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
 	// Phase 1 (inactive): derive full master rotation set at intermediate level
-	var shift0L1 *rlwe.GaloisKey
+	var shift0L1 *hierkeys.MasterKey
 	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
 		panic(err)
 	}
@@ -83,7 +83,7 @@ func main() {
 
 	// Phase 2 (active): derive target rotation keys at level 0
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
-	var shift0L0 *rlwe.GaloisKey
+	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
 		panic(err)
 	}
@@ -101,7 +101,10 @@ func main() {
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// SERVER: use derived keys with standard CKKS evaluator
-	skEval := kgen.ProjectToEvalKey(sk)
+	var skEval *rlwe.SecretKey
+	if skEval, err = kgen.ProjectToEvalKey(sk); err != nil {
+		panic(err)
+	}
 	ecd := ckks.NewEncoder(params)
 	enc := rlwe.NewEncryptor(params, skEval)
 	dec := rlwe.NewDecryptor(params, skEval)

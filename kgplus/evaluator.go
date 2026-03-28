@@ -113,9 +113,9 @@ func (eval *Evaluator) ConcurrentCopy() *Evaluator {
 // level-(i+1) key in the extension ring R'. See [hierkeys.RotToRot] for details.
 func (eval *Evaluator) RotToRot(
 	level int,
-	inputKey *rlwe.GaloisKey,
-	masterKey *rlwe.GaloisKey,
+	inputKey *hierkeys.MasterKey,
+	masterKey *hierkeys.MasterKey,
 	combinedGalEl uint64,
-) (*rlwe.GaloisKey, error) {
+) (*hierkeys.MasterKey, error) {
 	return hierkeys.RotToRot(eval.rotBufs[level], eval.params.RPrime[level], eval.params.RPrime[level+1], inputKey, masterKey, combinedGalEl)
 }

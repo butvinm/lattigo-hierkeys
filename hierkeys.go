@@ -59,13 +59,18 @@ func DecomposeRotation(target int, masterRots []int) []int {
 	return result
 }
 
-// ConvertToLattigoConvention applies pi^{-1} to each GadgetCiphertext component
-// of a GaloisKey, converting from paper convention (automorph-then-keyswitch) to
-// lattigo convention (keyswitch-then-automorph) in-place.
+// ConvertToLattigoConvention converts a [MasterKey] (paper convention) to a
+// standard [rlwe.GaloisKey] (lattigo convention) by applying pi^{-1} to each
+// GadgetCiphertext component.
+//
+// This consumes the MasterKey — it must not be used after this call.
 //
 // This allocates temporary buffers per call. For repeated use in a hot loop,
 // consider pre-allocating buffers (see kgplus.Evaluator for an example).
-func ConvertToLattigoConvention(paramsEval rlwe.Parameters, gk *rlwe.GaloisKey) error {
+func ConvertToLattigoConvention(paramsEval rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
+
+	gk := mk.gk
+	mk.gk = nil // consume
 
 	galEl := gk.GaloisElement
 	galElInv := paramsEval.ModInvGaloisElement(galEl)
@@ -75,14 +80,14 @@ func ConvertToLattigoConvention(paramsEval rlwe.Parameters, gk *rlwe.GaloisKey) 
 
 	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galElInv)
 	if err != nil {
-		return fmt.Errorf("Q automorphism index: %w", err)
+		return nil, fmt.Errorf("Q automorphism index: %w", err)
 	}
 
 	var indexP []uint64
 	if ringP != nil {
 		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galElInv)
 		if err != nil {
-			return fmt.Errorf("P automorphism index: %w", err)
+			return nil, fmt.Errorf("P automorphism index: %w", err)
 		}
 	}
 
@@ -102,7 +107,7 @@ func ConvertToLattigoConvention(paramsEval rlwe.Parameters, gk *rlwe.GaloisKey) 
 		}
 	}
 
-	return nil
+	return gk, nil
 }
 
 // automorphInPlace applies an automorphism to a polynomial using a pre-computed

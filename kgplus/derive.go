@@ -9,13 +9,13 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// IntermediateKeys holds R' GaloisKeys produced by RotToRot expansion at a
-// single hierarchy level. These are in the paper's convention (not yet
+// IntermediateKeys holds R' MasterKeys produced by RotToRot expansion at a
+// single hierarchy level. These are in paper convention (not yet
 // ring-switched or post-converted). They can be serialized, stored, and later
 // used as input to expand the next level down or finalized via
 // [Evaluator.FinalizeKeys] (level 0 only).
 type IntermediateKeys struct {
-	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
+	Keys map[int]*hierkeys.MasterKey // indexed by rotation index
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
@@ -105,8 +105,8 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 // share a decomposition prefix, the shared intermediate is computed once.
 func (eval *Evaluator) ExpandLevel(
 	level int,
-	shift0Key *rlwe.GaloisKey,
-	masterKeys map[int]*rlwe.GaloisKey,
+	shift0Key *hierkeys.MasterKey,
+	masterKeys map[int]*hierkeys.MasterKey,
 	targetRotations []int,
 ) (*IntermediateKeys, error) {
 
@@ -125,7 +125,7 @@ func (eval *Evaluator) ExpandLevel(
 	masterRots := sortedKeys(masterKeys)
 
 	// Cache: normalized rotation index -> key at this level
-	cache := make(map[int]*rlwe.GaloisKey)
+	cache := make(map[int]*hierkeys.MasterKey)
 	cache[0] = shift0Key
 
 	for _, target := range targetRotations {
@@ -167,7 +167,7 @@ func (eval *Evaluator) ExpandLevel(
 	}
 
 	// Build result indexed by requested rotations
-	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
+	result := &IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRotations))}
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
@@ -181,7 +181,7 @@ func (eval *Evaluator) ExpandLevel(
 }
 
 // sortedKeys extracts and sorts the integer keys from a map.
-func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
+func sortedKeys(m map[int]*hierkeys.MasterKey) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -207,10 +207,10 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *Intermed
 	params := eval.params
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
-	for rot, rPrimeKey := range intermediate.Keys {
+	for rot, mk := range intermediate.Keys {
 		// Ring-switch from R' to R
 		galElR := params.Eval.GaloisElement(rot)
-		rsGK, err := eval.RingSwitchGaloisKey(rPrimeKey, tk.HomingKey, galElR)
+		rsGK, err := eval.RingSwitchGaloisKey(mk, tk.HomingKey, galElR)
 		if err != nil {
 			return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
 		}
@@ -229,10 +229,10 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *Intermed
 	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
 }
 
-// RingSwitchGaloisKey ring-switches a GaloisKey from R' (degree 2N) to a
+// RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a
 // standard GaloisKey in R (degree N) using a homing key.
 func (eval *Evaluator) RingSwitchGaloisKey(
-	masterKeyRPrime *rlwe.GaloisKey,
+	masterKeyRPrime *hierkeys.MasterKey,
 	homingKey *rlwe.EvaluationKey,
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
@@ -256,6 +256,8 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 		return nil, fmt.Errorf("masterKeyRPrime and homingKey must not be nil")
 	}
 
+	rpGK := masterKeyRPrime.GaloisKey()
+
 	N := paramsEval.N()
 	ringQHK := paramsHK.RingQ()
 
@@ -263,7 +265,7 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 	levelQEval := paramsEval.MaxLevel()
 	levelPEval := paramsEval.MaxLevelP()
 
-	gc := &masterKeyRPrime.GadgetCiphertext
+	gc := &rpGK.GadgetCiphertext
 	nRNS := len(gc.Value)
 
 	nEvalRNS := paramsEval.BaseRNSDecompositionVectorSize(levelQEval, levelPEval)

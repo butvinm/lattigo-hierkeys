@@ -38,7 +38,10 @@ type testContext struct {
 func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	kgen := NewKeyGenerator(params)
 	sk := kgen.GenSecretKeyNew()
-	skEval := kgen.ProjectToEvalKey(sk)
+	skEval, err := kgen.ProjectToEvalKey(sk)
+	if err != nil {
+		return nil, err
+	}
 
 	tk, err := kgen.GenTransmissionKeys(sk, masterRots)
 	if err != nil {
@@ -142,7 +145,8 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 		})
 
 		t.Run("ProjectToEvalKey", func(t *testing.T) {
-			skEval := tc.kgen.ProjectToEvalKey(tc.sk)
+			skEval, err := tc.kgen.ProjectToEvalKey(tc.sk)
+			require.NoError(t, err)
 			require.NotNil(t, skEval)
 			require.Equal(t, params.Eval.QCount()-1, skEval.LevelQ())
 			require.Equal(t, params.Eval.PCount()-1, skEval.LevelP())
@@ -291,11 +295,11 @@ func testRotToRot(tc *testContext, t *testing.T) {
 
 		// Shift-0 key at level-0 in R'
 		shift0EK := kgenRPLow.GenEvaluationKeyNew(skTildeLow, skTildeLow)
-		shift0Key := &rlwe.GaloisKey{
+		shift0Key := hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *shift0EK,
 			GaloisElement: 1,
 			NthRoot:       paramsRPLow.RingQ().NthRoot(),
-		}
+		})
 
 		// Master key for rotation 1 at master level
 		rot := 1
@@ -308,11 +312,11 @@ func testRotToRot(tc *testContext, t *testing.T) {
 		paramsRPHigh.RingP().AutomorphismNTTWithIndex(skTildeHigh.Value.P, autIdx, skTildeHighAut.Value.P)
 
 		masterEK := kgenRPHigh.GenEvaluationKeyNew(skTildeHighAut, skTildeHigh)
-		masterKey := &rlwe.GaloisKey{
+		masterKey := hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *masterEK,
 			GaloisElement: galElRPHigh,
 			NthRoot:       paramsRPHigh.RingQ().NthRoot(),
-		}
+		})
 
 		// RotToRot: shift0 + master -> rotation key at level-0
 		galElRPLow := paramsRPLow.GaloisElement(rot)
@@ -324,13 +328,14 @@ func testRotToRot(tc *testContext, t *testing.T) {
 		rsGK, err := tc.hkEval.RingSwitchGaloisKey(rotKey, homingKey, galElR)
 		require.NoError(t, err)
 
-		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK))
+		rsGKConverted, err := hierkeys.ConvertToLattigoConvention(paramsEval, hierkeys.NewMasterKey(rsGK))
+		require.NoError(t, err)
 
 		threshold := float64(1 << 25)
 		if params.NumLevels() > 2 {
 			threshold = float64(1 << 35)
 		}
-		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK, rot, threshold)
+		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGKConverted, rot, threshold)
 	})
 }
 
@@ -360,11 +365,11 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		homingKey := kgenHK.GenEvaluationKeyNew(skS1, skS)
 
 		shift0EK := kgenRPLow.GenEvaluationKeyNew(skTildeLow, skTildeLow)
-		shift0Key := &rlwe.GaloisKey{
+		shift0Key := hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *shift0EK,
 			GaloisElement: 1,
 			NthRoot:       paramsRPLow.RingQ().NthRoot(),
-		}
+		})
 
 		// Master key for rotation 1
 		rot1 := 1
@@ -375,11 +380,11 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		paramsRPHigh.RingQ().AutomorphismNTTWithIndex(skTildeHigh.Value.Q, idx1, skAut1.Value.Q)
 		paramsRPHigh.RingP().AutomorphismNTTWithIndex(skTildeHigh.Value.P, idx1, skAut1.Value.P)
 		master1EK := kgenRPHigh.GenEvaluationKeyNew(skAut1, skTildeHigh)
-		masterKey1 := &rlwe.GaloisKey{
+		masterKey1 := hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *master1EK,
 			GaloisElement: galEl1High,
 			NthRoot:       paramsRPHigh.RingQ().NthRoot(),
-		}
+		})
 
 		// Master key for rotation 4
 		rot4 := 4
@@ -390,11 +395,11 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		paramsRPHigh.RingQ().AutomorphismNTTWithIndex(skTildeHigh.Value.Q, idx4, skAut4.Value.Q)
 		paramsRPHigh.RingP().AutomorphismNTTWithIndex(skTildeHigh.Value.P, idx4, skAut4.Value.P)
 		master4EK := kgenRPHigh.GenEvaluationKeyNew(skAut4, skTildeHigh)
-		masterKey4 := &rlwe.GaloisKey{
+		masterKey4 := hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *master4EK,
 			GaloisElement: galEl4High,
 			NthRoot:       paramsRPHigh.RingQ().NthRoot(),
-		}
+		})
 
 		// Step 1: shift0 + master(1) -> rot-1
 		galEl1Low := paramsRPLow.GaloisElement(rot1)
@@ -416,15 +421,17 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		galElR1 := paramsEval.GaloisElement(rot1)
 		rsGK1, err := tc.hkEval.RingSwitchGaloisKey(rot1Key, homingKey, galElR1)
 		require.NoError(t, err)
-		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK1))
-		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1, rot1, threshold)
+		rsGK1Converted, err := hierkeys.ConvertToLattigoConvention(paramsEval, hierkeys.NewMasterKey(rsGK1))
+		require.NoError(t, err)
+		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1Converted, rot1, threshold)
 
 		// Ring-switch and verify rot-5
 		galElR5 := paramsEval.GaloisElement(rot5)
 		rsGK5, err := tc.hkEval.RingSwitchGaloisKey(rot5Key, homingKey, galElR5)
 		require.NoError(t, err)
-		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK5))
-		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5, rot5, threshold)
+		rsGK5Converted, err := hierkeys.ConvertToLattigoConvention(paramsEval, hierkeys.NewMasterKey(rsGK5))
+		require.NoError(t, err)
+		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5Converted, rot5, threshold)
 	})
 }
 
@@ -639,7 +646,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 		for _, rot := range targetRots {
 			// Finalize the single key from the batch
 			singleIntermediate := &IntermediateKeys{
-				Keys: map[int]*rlwe.GaloisKey{rot: intermediate.Keys[rot]},
+				Keys: map[int]*hierkeys.MasterKey{rot: intermediate.Keys[rot]},
 			}
 			evk, err := tc.hkEval.FinalizeKeys(tc.tk, singleIntermediate)
 			require.NoError(t, err)
@@ -852,7 +859,8 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		// Client
 		kgen := NewKeyGenerator(params)
 		sk := kgen.GenSecretKeyNew()
-		skEval := kgen.ProjectToEvalKey(sk)
+		skEval, err := kgen.ProjectToEvalKey(sk)
+		require.NoError(t, err)
 
 		masterRots := hierkeys.MasterRotationsForBase(4, paramsEval.N()/2)
 		t.Logf("master rotations (base-4): %v (%d keys)", masterRots, len(masterRots))

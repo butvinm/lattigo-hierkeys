@@ -3,16 +3,16 @@ package llkn
 import (
 	"fmt"
 
+	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
 // TransmissionKeys holds everything the client sends to the server.
 type TransmissionKeys struct {
-	// MasterRotKeys are GaloisKeys at the top level (Levels[k-1]),
-	// paper convention: each encrypts P_top·G_i·σ_r(s) under s.
-	// Indexed by rotation index (not Galois element).
-	MasterRotKeys map[int]*rlwe.GaloisKey
+	// MasterRotKeys are rotation keys at the top level (Levels[k-1]) in paper
+	// convention. Indexed by rotation index (not Galois element).
+	MasterRotKeys map[int]*hierkeys.MasterKey
 
 	// EncZero is an encryption of zero at the top level (Levels[k-1]).
 	// The server derives shift-0 keys at each lower level via PubToRot.
@@ -49,8 +49,14 @@ func (kgen *KeyGenerator) GenSecretKeyNew() *rlwe.SecretKey {
 
 // ProjectToEvalKey projects a top-level secret key to evaluation level.
 // The evaluation key has Q = Q_eval and P = P_eval.
-func (kgen *KeyGenerator) ProjectToEvalKey(skTop *rlwe.SecretKey) *rlwe.SecretKey {
-	return kgen.projectToLevel(skTop, 0)
+//
+// Returns an error if the secret key is not at the expected top level.
+func (kgen *KeyGenerator) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, error) {
+	expectedQ := kgen.params.Top().QCount()
+	if skTop.LevelQ()+1 != expectedQ {
+		return nil, fmt.Errorf("sk has %d Q primes, want %d (top level)", skTop.LevelQ()+1, expectedQ)
+	}
+	return kgen.projectToLevel(skTop, 0), nil
 }
 
 // projectToLevel projects a top-level secret key to the given level.
@@ -98,7 +104,7 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 	}
 
 	// Generate master rotation keys at top level (paper convention)
-	masterRotKeys := make(map[int]*rlwe.GaloisKey, len(masterRotations))
+	masterRotKeys := make(map[int]*hierkeys.MasterKey, len(masterRotations))
 	for _, rot := range masterRotations {
 		galEl := paramsTop.GaloisElement(rot)
 
@@ -112,11 +118,11 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 		paramsTop.RingP().AutomorphismNTTWithIndex(sk.Value.P, index, skAut.Value.P)
 
 		evk := kgen.kgens[topLevel].GenEvaluationKeyNew(skAut, sk)
-		masterRotKeys[rot] = &rlwe.GaloisKey{
+		masterRotKeys[rot] = hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *evk,
 			GaloisElement: galEl,
 			NthRoot:       paramsTop.RingQ().NthRoot(),
-		}
+		})
 	}
 
 	return &TransmissionKeys{

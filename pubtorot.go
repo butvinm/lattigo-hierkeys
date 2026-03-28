@@ -34,7 +34,7 @@ import (
 //   - paramsHigh.QCount() >= paramsLow.QCount() + paramsLow.PCount()
 //     (the high-level Q ring must contain all Q and P primes of the low level)
 //   - paramsLow.LogN() == paramsHigh.LogN()
-func PubToRot(paramsLow, paramsHigh rlwe.Parameters, encZero *rlwe.Ciphertext) (*rlwe.GaloisKey, error) {
+func PubToRot(paramsLow, paramsHigh rlwe.Parameters, encZero *rlwe.Ciphertext) (*MasterKey, error) {
 
 	if encZero == nil {
 		return nil, fmt.Errorf("encZero must not be nil")
@@ -110,7 +110,7 @@ func PubToRot(paramsLow, paramsHigh rlwe.Parameters, encZero *rlwe.Ciphertext) (
 		return nil, fmt.Errorf("addGadgetToAPart: %w", err)
 	}
 
-	return outputKey, nil
+	return &MasterKey{gk: outputKey}, nil
 }
 
 // addGadgetToAPart adds P * G_i to the Q-part of the 'a' component

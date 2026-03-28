@@ -58,10 +58,10 @@ func NewRotToRotBuffers(paramsLow, paramsHigh rlwe.Parameters) *RotToRotBuffers 
 func RotToRot(
 	buf *RotToRotBuffers,
 	paramsLow, paramsHigh rlwe.Parameters,
-	inputKey *rlwe.GaloisKey,
-	masterKey *rlwe.GaloisKey,
+	inputKey *MasterKey,
+	masterKey *MasterKey,
 	combinedGalEl uint64,
-) (*rlwe.GaloisKey, error) {
+) (*MasterKey, error) {
 
 	// --- Input validation ---
 	if inputKey == nil || masterKey == nil {
@@ -77,7 +77,10 @@ func RotToRot(
 			paramsHigh.QCount(), expectedQHigh)
 	}
 
-	gc := &inputKey.GadgetCiphertext
+	inputGK := inputKey.gk
+	masterGK := masterKey.gk
+
+	gc := &inputGK.GadgetCiphertext
 	nRNS := len(gc.Value)
 
 	levelQLow := paramsLow.MaxLevel()
@@ -99,7 +102,7 @@ func RotToRot(
 	}
 
 	// --- Automorphism index for master's Galois element ---
-	masterGalEl := masterKey.GaloisElement
+	masterGalEl := masterGK.GaloisElement
 	autIdx, err := ring.AutomorphismNTTIndex(ringQHigh.N(), ringQHigh.NthRoot(), masterGalEl)
 	if err != nil {
 		return nil, fmt.Errorf("AutomorphismNTTIndex: %w", err)
@@ -129,7 +132,7 @@ func RotToRot(
 			ringQHigh.AutomorphismNTTWithIndex(buf.ACombined, autIdx, buf.AAut)
 
 			// Step 3: GadgetProduct(aAut, masterKey) at paramsHigh
-			buf.Eval.GadgetProduct(levelQHigh, buf.AAut, &masterKey.GadgetCiphertext, buf.CtKS)
+			buf.Eval.GadgetProduct(levelQHigh, buf.AAut, &masterGK.GadgetCiphertext, buf.CtKS)
 
 			// Step 4: Add automorphed b component
 			ringQHigh.Add(buf.BAut, buf.CtKS.Value[0], buf.CtKS.Value[0])
@@ -149,5 +152,5 @@ func RotToRot(
 		}
 	}
 
-	return outputKey, nil
+	return &MasterKey{gk: outputKey}, nil
 }

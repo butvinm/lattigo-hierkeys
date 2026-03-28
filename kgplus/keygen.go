@@ -3,6 +3,7 @@ package kgplus
 import (
 	"fmt"
 
+	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
@@ -13,10 +14,9 @@ type TransmissionKeys struct {
 	// HomingKey switches from s̃₁ to s in R (at HK parameter level).
 	HomingKey *rlwe.EvaluationKey
 
-	// MasterRotKeys are GaloisKeys in R' at the top RPrime level,
-	// paper convention: each encrypts P_top·G_i·π(s̃) under s̃.
-	// Indexed by rotation index (not Galois element).
-	MasterRotKeys map[int]*rlwe.GaloisKey
+	// MasterRotKeys are rotation keys in R' at the top RPrime level in paper
+	// convention. Indexed by rotation index (not Galois element).
+	MasterRotKeys map[int]*hierkeys.MasterKey
 
 	// EncZero is an encryption of zero at the top RPrime level under s̃.
 	// The server derives shift-0 keys at each lower level via PubToRot.
@@ -57,8 +57,12 @@ func (kgen *KeyGenerator) GenSecretKeyNew() *rlwe.SecretKey {
 // ProjectToEvalKey projects a homing-key-level secret key to evaluation level.
 // The evaluation key has Q = Q_eval and P = P_eval.
 //
-// This copies the first QCount primes to Q and remaps the remaining primes to P.
-func (kgen *KeyGenerator) ProjectToEvalKey(skHK *rlwe.SecretKey) *rlwe.SecretKey {
+// Returns an error if the secret key is not at the expected HK level.
+func (kgen *KeyGenerator) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, error) {
+	expectedQ := kgen.params.HK.QCount()
+	if skHK.LevelQ()+1 != expectedQ {
+		return nil, fmt.Errorf("sk has %d Q primes, want %d (HK level)", skHK.LevelQ()+1, expectedQ)
+	}
 	skEval := rlwe.NewSecretKey(kgen.params.Eval)
 	for m := 0; m <= kgen.params.Eval.MaxLevel(); m++ {
 		copy(skEval.Value.Q.Coeffs[m], skHK.Value.Q.Coeffs[m])
@@ -66,7 +70,7 @@ func (kgen *KeyGenerator) ProjectToEvalKey(skHK *rlwe.SecretKey) *rlwe.SecretKey
 	for m := 0; m <= kgen.params.Eval.MaxLevelP(); m++ {
 		copy(skEval.Value.P.Coeffs[m], skHK.Value.Q.Coeffs[kgen.params.Eval.QCount()+m])
 	}
-	return skEval
+	return skEval, nil
 }
 
 // GenTransmissionKeys generates a homing key, shift-0 keys at each RPrime level,
@@ -108,7 +112,7 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 
 	// Generate master rotation keys at the top RPrime level (paper convention)
 
-	masterRotKeys := make(map[int]*rlwe.GaloisKey, len(masterRotations))
+	masterRotKeys := make(map[int]*hierkeys.MasterKey, len(masterRotations))
 	for _, rot := range masterRotations {
 		galElRP := paramsTop.GaloisElement(rot)
 
@@ -122,11 +126,11 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 		paramsTop.RingP().AutomorphismNTTWithIndex(skTildeTop.Value.P, index, skTildeAut.Value.P)
 
 		evk := kgen.kgenRP[topLevel].GenEvaluationKeyNew(skTildeAut, skTildeTop)
-		masterRotKeys[rot] = &rlwe.GaloisKey{
+		masterRotKeys[rot] = hierkeys.NewMasterKey(&rlwe.GaloisKey{
 			EvaluationKey: *evk,
 			GaloisElement: galElRP,
 			NthRoot:       paramsTop.RingQ().NthRoot(),
-		}
+		})
 	}
 
 	return &TransmissionKeys{

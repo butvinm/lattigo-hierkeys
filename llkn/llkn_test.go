@@ -35,7 +35,10 @@ type testContext struct {
 func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	kgen := NewKeyGenerator(params)
 	sk := kgen.GenSecretKeyNew()
-	skEval := kgen.ProjectToEvalKey(sk)
+	skEval, err := kgen.ProjectToEvalKey(sk)
+	if err != nil {
+		return nil, err
+	}
 
 	tk, err := kgen.GenTransmissionKeys(sk, masterRots)
 	if err != nil {
@@ -129,7 +132,8 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 		})
 
 		t.Run("ProjectToEvalKey", func(t *testing.T) {
-			skEval := tc.kgen.ProjectToEvalKey(tc.sk)
+			skEval, err := tc.kgen.ProjectToEvalKey(tc.sk)
+			require.NoError(t, err)
 			require.NotNil(t, skEval)
 			require.Equal(t, params.Eval().QCount(), skEval.LevelQ()+1)
 			require.Equal(t, params.Eval().PCount(), skEval.LevelP()+1)
@@ -262,7 +266,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 				derivedShift0, err := hierkeys.PubToRot(paramsLevel, params.Top(), tc.tk.EncZero)
 				require.NoError(t, err)
 				require.NotNil(t, derivedShift0)
-				require.Equal(t, uint64(1), derivedShift0.GaloisElement)
+				require.Equal(t, uint64(1), derivedShift0.GaloisElement())
 
 				masterRots := make([]int, 0, len(tc.tk.MasterRotKeys))
 				for rot := range tc.tk.MasterRotKeys {
@@ -274,7 +278,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 
 				// Use PubToRot-derived shift-0 key to derive rotation keys
 				targetRots := []int{1, 2, 3}
-				var currentMasters map[int]*rlwe.GaloisKey
+				var currentMasters map[int]*hierkeys.MasterKey
 
 				if level == k-2 {
 					// Level directly below top: use top master keys

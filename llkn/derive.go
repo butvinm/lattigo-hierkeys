@@ -8,12 +8,12 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// IntermediateKeys holds GaloisKeys produced by RotToRot expansion at a
-// single hierarchy level. These are in the paper's convention (not yet
+// IntermediateKeys holds MasterKeys produced by RotToRot expansion at a
+// single hierarchy level. These are in paper convention (not yet
 // post-converted). They can be serialized, stored, and later used as input
 // to expand the next level down or finalized via [Evaluator.FinalizeKeys].
 type IntermediateKeys struct {
-	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
+	Keys map[int]*hierkeys.MasterKey // indexed by rotation index
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
@@ -103,8 +103,8 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 // share a decomposition prefix, the shared intermediate is computed once.
 func (eval *Evaluator) ExpandLevel(
 	level int,
-	shift0Key *rlwe.GaloisKey,
-	masterKeys map[int]*rlwe.GaloisKey,
+	shift0Key *hierkeys.MasterKey,
+	masterKeys map[int]*hierkeys.MasterKey,
 	targetRotations []int,
 ) (*IntermediateKeys, error) {
 
@@ -121,7 +121,7 @@ func (eval *Evaluator) ExpandLevel(
 
 	masterRots := sortedKeys(masterKeys)
 
-	cache := make(map[int]*rlwe.GaloisKey)
+	cache := make(map[int]*hierkeys.MasterKey)
 	cache[0] = shift0Key
 
 	for _, target := range targetRotations {
@@ -162,7 +162,7 @@ func (eval *Evaluator) ExpandLevel(
 		}
 	}
 
-	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
+	result := &IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRotations))}
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
@@ -187,8 +187,9 @@ func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEv
 
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
-	for rot, gk := range intermediate.Keys {
-		if err := hierkeys.ConvertToLattigoConvention(eval.params.Eval(), gk); err != nil {
+	for rot, mk := range intermediate.Keys {
+		gk, err := hierkeys.ConvertToLattigoConvention(eval.params.Eval(), mk)
+		if err != nil {
 			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
 		}
 		galoisKeys = append(galoisKeys, gk)
@@ -197,7 +198,7 @@ func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEv
 	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
 }
 
-func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
+func sortedKeys(m map[int]*hierkeys.MasterKey) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

@@ -72,7 +72,10 @@ func main() {
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// SERVER: use derived keys with standard CKKS evaluator
-	skEval := kgen.ProjectToEvalKey(sk)
+	var skEval *rlwe.SecretKey
+	if skEval, err = kgen.ProjectToEvalKey(sk); err != nil {
+		panic(err)
+	}
 	ecd := ckks.NewEncoder(params)
 	enc := rlwe.NewEncryptor(params, skEval)
 	dec := rlwe.NewDecryptor(params, skEval)

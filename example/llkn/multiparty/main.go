@@ -105,7 +105,7 @@ func main() {
 	// can pass skIn=σ_r(s_i), skOut=s_i per party.
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 	evkgProto := multiparty.NewEvaluationKeyGenProtocol(topParams)
-	masterRotKeys := make(map[int]*rlwe.GaloisKey, len(masterRots))
+	masterRotKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 
 	ringQ := topParams.RingQ()
 	ringP := topParams.RingP()
@@ -147,7 +147,7 @@ func main() {
 		gk.GaloisElement = galEl
 		gk.NthRoot = ringQ.NthRoot()
 
-		masterRotKeys[rot] = gk
+		masterRotKeys[rot] = hierkeys.NewMasterKey(gk)
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(masterRots), masterRots)
 
@@ -168,7 +168,10 @@ func main() {
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// --- VERIFY: encrypt, rotate, check precision ---
-	skEval := kgen.ProjectToEvalKey(skIdeal)
+	var skEval *rlwe.SecretKey
+	if skEval, err = kgen.ProjectToEvalKey(skIdeal); err != nil {
+		panic(err)
+	}
 	ecd := ckks.NewEncoder(params)
 	enc := rlwe.NewEncryptor(params, skEval)
 	dec := rlwe.NewDecryptor(params, skEval)

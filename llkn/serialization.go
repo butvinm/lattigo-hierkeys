@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 
+	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
@@ -37,13 +38,13 @@ func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 	sort.Ints(masterRotsSorted)
 
 	for _, rot := range masterRotsSorted {
-		gk := tk.MasterRotKeys[rot]
+		mk := tk.MasterRotKeys[rot]
 		if err = binary.Write(bw, binary.LittleEndian, int64(rot)); err != nil {
 			return n, fmt.Errorf("write rotation index: %w", err)
 		}
 		n += 8
 
-		if written, err = gk.WriteTo(bw); err != nil {
+		if written, err = mk.WriteTo(bw); err != nil {
 			return n, fmt.Errorf("write master key rot=%d: %w", rot, err)
 		}
 		n += written
@@ -76,7 +77,7 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 	n += 8
 
-	tk.MasterRotKeys = make(map[int]*rlwe.GaloisKey, nMasters)
+	tk.MasterRotKeys = make(map[int]*hierkeys.MasterKey, nMasters)
 	for i := uint64(0); i < nMasters; i++ {
 		var rot int64
 		if err = binary.Read(br, binary.LittleEndian, &rot); err != nil {
@@ -84,13 +85,13 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 		}
 		n += 8
 
-		gk := new(rlwe.GaloisKey)
-		if read, err = gk.ReadFrom(br); err != nil {
+		mk := new(hierkeys.MasterKey)
+		if read, err = mk.ReadFrom(br); err != nil {
 			return n, fmt.Errorf("read master key: %w", err)
 		}
 		n += read
 
-		tk.MasterRotKeys[int(rot)] = gk
+		tk.MasterRotKeys[int(rot)] = mk
 	}
 
 	return
@@ -101,8 +102,8 @@ func (tk *TransmissionKeys) BinarySize() int {
 	size := tk.EncZero.BinarySize()
 
 	size += 8 // master key count
-	for _, gk := range tk.MasterRotKeys {
-		size += 8 + gk.BinarySize() // rotation index + data
+	for _, mk := range tk.MasterRotKeys {
+		size += 8 + mk.BinarySize() // rotation index + data
 	}
 
 	return size
@@ -142,14 +143,14 @@ func (ik *IntermediateKeys) WriteTo(w io.Writer) (n int64, err error) {
 	sort.Ints(keyRotsSorted)
 
 	for _, rot := range keyRotsSorted {
-		gk := ik.Keys[rot]
+		mk := ik.Keys[rot]
 
 		if err = binary.Write(bw, binary.LittleEndian, int64(rot)); err != nil {
 			return n, fmt.Errorf("write rotation index: %w", err)
 		}
 		n += 8
 
-		if written, err = gk.WriteTo(bw); err != nil {
+		if written, err = mk.WriteTo(bw); err != nil {
 			return n, fmt.Errorf("write key rot=%d: %w", rot, err)
 		}
 		n += written
@@ -174,7 +175,7 @@ func (ik *IntermediateKeys) ReadFrom(r io.Reader) (n int64, err error) {
 	}
 	n += 8
 
-	ik.Keys = make(map[int]*rlwe.GaloisKey, nKeys)
+	ik.Keys = make(map[int]*hierkeys.MasterKey, nKeys)
 	for i := uint64(0); i < nKeys; i++ {
 		var rot int64
 		if err = binary.Read(br, binary.LittleEndian, &rot); err != nil {
@@ -182,13 +183,13 @@ func (ik *IntermediateKeys) ReadFrom(r io.Reader) (n int64, err error) {
 		}
 		n += 8
 
-		gk := new(rlwe.GaloisKey)
-		if read, err = gk.ReadFrom(br); err != nil {
+		mk := new(hierkeys.MasterKey)
+		if read, err = mk.ReadFrom(br); err != nil {
 			return n, fmt.Errorf("read key: %w", err)
 		}
 		n += read
 
-		ik.Keys[int(rot)] = gk
+		ik.Keys[int(rot)] = mk
 	}
 
 	return
@@ -197,8 +198,8 @@ func (ik *IntermediateKeys) ReadFrom(r io.Reader) (n int64, err error) {
 // BinarySize returns the serialized size of the IntermediateKeys in bytes.
 func (ik *IntermediateKeys) BinarySize() int {
 	size := 8 // key count
-	for _, gk := range ik.Keys {
-		size += 8 + gk.BinarySize() // rotation index + key data
+	for _, mk := range ik.Keys {
+		size += 8 + mk.BinarySize() // rotation index + key data
 	}
 	return size
 }
