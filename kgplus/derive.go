@@ -191,7 +191,7 @@ func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
 }
 
 // FinalizeKeys ring-switches R' intermediate keys to R and post-converts
-// to lattigo's standard convention. This is the cheaper phase (~20% of cost).
+// to lattigo's standard convention.
 //
 // The result is a standard MemEvaluationKeySet usable with [rlwe.Evaluator].
 func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {

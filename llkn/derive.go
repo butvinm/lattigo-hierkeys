@@ -176,7 +176,7 @@ func (eval *Evaluator) ExpandLevel(
 }
 
 // FinalizeKeys converts intermediate keys from paper convention to lattigo
-// convention. This is the cheap phase.
+// convention.
 //
 // The result is a standard MemEvaluationKeySet usable with [rlwe.Evaluator].
 func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {

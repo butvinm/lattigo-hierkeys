@@ -224,7 +224,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, intermediate2.Keys, len(targetRots))
 
-		// Finalize (cheap)
+		// Finalize
 		evk, err := tc.eval.FinalizeKeys(intermediate2)
 		require.NoError(t, err)
 
