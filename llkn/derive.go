@@ -188,7 +188,7 @@ func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEv
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
 	for rot, mk := range intermediate.Keys {
-		gk, err := hierkeys.NewGaloisKeyFromMasterKey(eval.params.Eval(), mk)
+		gk, err := hierkeys.MasterKeyToGaloisKey(eval.params.Eval(), mk)
 		if err != nil {
 			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
 		}

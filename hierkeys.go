@@ -59,7 +59,7 @@ func DecomposeRotation(target int, masterRots []int) []int {
 	return result
 }
 
-// NewMasterKeyFromGaloisKey converts a standard lattigo-convention [rlwe.GaloisKey]
+// GaloisKeyToMasterKey converts a standard lattigo-convention [rlwe.GaloisKey]
 // to a paper-convention [MasterKey] by applying σ_r (the forward automorphism)
 // to each GadgetCiphertext component.
 //
@@ -67,14 +67,14 @@ func DecomposeRotation(target int, masterRots []int) []int {
 // or [multiparty.GaloisKeyGenProtocol] into MasterKeys for hierarchical derivation.
 //
 // This modifies the input key in-place. The GaloisKey must not be used after this call.
-func NewMasterKeyFromGaloisKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
+func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
 	if err := automorphGadgetCiphertext(params, gk, gk.GaloisElement); err != nil {
 		return nil, err
 	}
 	return &MasterKey{gk: gk}, nil
 }
 
-// NewGaloisKeyFromMasterKey converts a paper-convention [MasterKey] to a standard
+// MasterKeyToGaloisKey converts a paper-convention [MasterKey] to a standard
 // lattigo-convention [rlwe.GaloisKey] by applying σ^{-1}_r (the inverse automorphism)
 // to each GadgetCiphertext component.
 //
@@ -82,7 +82,7 @@ func NewMasterKeyFromGaloisKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*Mas
 //
 // This allocates temporary buffers per call. For repeated use in a hot loop,
 // consider pre-allocating buffers (see kgplus.Evaluator for an example).
-func NewGaloisKeyFromMasterKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
+func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
 	gk := mk.gk
 	mk.gk = nil // consume
 	galElInv := params.ModInvGaloisElement(gk.GaloisElement)

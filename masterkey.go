@@ -10,11 +10,11 @@ import (
 // used as input to [RotToRot] expansion.
 //
 // Construct via:
-//   - [NewMasterKeyFromGaloisKey]: converts a standard lattigo GaloisKey (recommended)
+//   - [GaloisKeyToMasterKey]: converts a standard lattigo GaloisKey (recommended)
 //   - [NewMasterKey]: raw constructor, caller asserts paper convention
 //   - [PubToRot], [RotToRot]: returned by derivation primitives
 //
-// Convert back to standard lattigo convention with [NewGaloisKeyFromMasterKey].
+// Convert back to standard lattigo convention with [MasterKeyToGaloisKey].
 type MasterKey struct {
 	gk *rlwe.GaloisKey
 }
@@ -23,7 +23,7 @@ type MasterKey struct {
 // The caller asserts that gk is already in paper convention
 // (EvalKey with skIn=σ_r(s), skOut=s).
 //
-// Prefer [NewMasterKeyFromGaloisKey] which converts from standard lattigo
+// Prefer [GaloisKeyToMasterKey] which converts from standard lattigo
 // convention automatically.
 func NewMasterKey(gk *rlwe.GaloisKey) *MasterKey {
 	return &MasterKey{gk: gk}

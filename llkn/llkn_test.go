@@ -47,7 +47,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	for _, rot := range masterRots {
 		galEl := params.Top().GaloisElement(rot)
 		gk := kgenTop.GenGaloisKeyNew(galEl, sk)
-		mk, err := hierkeys.NewMasterKeyFromGaloisKey(params.Top(), gk)
+		mk, err := hierkeys.GaloisKeyToMasterKey(params.Top(), gk)
 		if err != nil {
 			return nil, err
 		}

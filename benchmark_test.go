@@ -69,7 +69,7 @@ func genLLKNTransmissionKeys(b *testing.B, params llkn.Parameters, masterRots []
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, rot := range masterRots {
 		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
-		mk, err := hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRot
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, rot := range masterRots {
 		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
-		mk, err := hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
 		if err != nil {
 			b.Fatal(err)
 		}

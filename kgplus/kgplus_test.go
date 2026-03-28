@@ -58,7 +58,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	for _, rot := range masterRots {
 		galEl := topParams.GaloisElement(rot)
 		gk := kgenRP.GenGaloisKeyNew(galEl, skExt)
-		mk, err := hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
 		if err != nil {
 			return nil, err
 		}
@@ -350,7 +350,7 @@ func testRotToRot(tc *testContext, t *testing.T) {
 		rsGK, err := tc.hkEval.RingSwitchGaloisKey(rotKey, homingKey, galElR)
 		require.NoError(t, err)
 
-		rsGKConverted, err := hierkeys.NewGaloisKeyFromMasterKey(paramsEval, hierkeys.NewMasterKey(rsGK))
+		rsGKConverted, err := hierkeys.MasterKeyToGaloisKey(paramsEval, hierkeys.NewMasterKey(rsGK))
 		require.NoError(t, err)
 
 		threshold := float64(1 << 25)
@@ -443,7 +443,7 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		galElR1 := paramsEval.GaloisElement(rot1)
 		rsGK1, err := tc.hkEval.RingSwitchGaloisKey(rot1Key, homingKey, galElR1)
 		require.NoError(t, err)
-		rsGK1Converted, err := hierkeys.NewGaloisKeyFromMasterKey(paramsEval, hierkeys.NewMasterKey(rsGK1))
+		rsGK1Converted, err := hierkeys.MasterKeyToGaloisKey(paramsEval, hierkeys.NewMasterKey(rsGK1))
 		require.NoError(t, err)
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1Converted, rot1, threshold)
 
@@ -451,7 +451,7 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		galElR5 := paramsEval.GaloisElement(rot5)
 		rsGK5, err := tc.hkEval.RingSwitchGaloisKey(rot5Key, homingKey, galElR5)
 		require.NoError(t, err)
-		rsGK5Converted, err := hierkeys.NewGaloisKeyFromMasterKey(paramsEval, hierkeys.NewMasterKey(rsGK5))
+		rsGK5Converted, err := hierkeys.MasterKeyToGaloisKey(paramsEval, hierkeys.NewMasterKey(rsGK5))
 		require.NoError(t, err)
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5Converted, rot5, threshold)
 	})
@@ -900,7 +900,7 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		for _, rot := range masterRots {
 			galEl := topParams.GaloisElement(rot)
 			gk := kgenRP.GenGaloisKeyNew(galEl, skExt)
-			mk, err := hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+			mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
 			require.NoError(t, err)
 			masterKeys[rot] = mk
 		}

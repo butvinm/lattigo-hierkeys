@@ -59,7 +59,7 @@ func main() {
 	masterKeys := make(map[int]*hierkeys.MasterKey)
 	for _, rot := range masterRots {
 		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
-		masterKeys[rot], err = hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk)
 		if err != nil {
 			panic(err)
 		}

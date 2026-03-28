@@ -146,7 +146,7 @@ func main() {
 
 		gk := rlwe.NewGaloisKey(topParams)
 		gkg.GenGaloisKey(acc, crp, gk)
-		masterKeys[rot], err = hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk)
 		if err != nil {
 			panic(err)
 		}
