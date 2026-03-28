@@ -1,3 +1,10 @@
+// Package kgplus implements KG+ hierarchical rotation key derivation with ring switching (R', degree 2N).
+//
+//	Client: rlwe.GenSecretKeyNew (×2) → ConstructExtendedSK → rlwe.GenGaloisKeyNew → hierkeys.GaloisKeyToMasterKey → TransmissionKeys
+//	Server: PubToRot → ExpandLevel → FinalizeKeys (ring-switch + convention convert) → rlwe.MemEvaluationKeySet
+//
+// See example/kgplus/simple for complete single-party flow,
+// and example/kgplus/multiparty for N-out-of-N multiparty.
 package kgplus
 
 import (
@@ -5,29 +12,18 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// TransmissionKeys holds everything the client sends to the server.
-// This is the only data that crosses the client-server boundary.
+// TransmissionKeys holds the client-to-server data for hierarchical key derivation.
 type TransmissionKeys struct {
-	// HomingKey switches from s̃₁ to s in R (at HK parameter level).
-	HomingKey *rlwe.EvaluationKey
-
-	// PublicKey in R' at the top RPrime level, for PubToRot.
-	PublicKey *rlwe.PublicKey
-
-	// MasterRotKeys are rotation keys in R' at the top RPrime level in paper
-	// convention. Indexed by rotation index (not Galois element).
-	MasterRotKeys map[int]*hierkeys.MasterKey
+	HomingKey     *rlwe.EvaluationKey         // EvalKey(s̃₁ → s) at HK level
+	PublicKey     *rlwe.PublicKey             // in R' at top RPrime level, used by PubToRot
+	MasterRotKeys map[int]*hierkeys.MasterKey // in R' at top RPrime level, indexed by rotation
 }
 
-// ConstructExtendedSK builds the extended secret key s̃ = s + Y·s̃₁ in the
-// extension ring R' (degree 2N) from two secret keys at the homing-key level.
+// ConstructExtendedSK builds s̃ = s + Y·s̃₁ in R' (degree 2N) from two
+// independent HK-level secret keys. skS and skS1 must be different keys.
 //
-// paramsHK: the homing-key parameters (Q = Q_eval ∪ P_eval, P = P_hk)
-// paramsRP: the target R' parameters (degree 2N)
-// skS, skS1: secret keys at paramsHK level
-//
-// For k>2, paramsRP.Q may include primes beyond paramsHK.Q (e.g., the HK P primes).
-// In that case, the additional coefficient slots are filled from skS.P and skS1.P.
+// For k>2, paramsRP.Q may include primes beyond paramsHK.Q (the HK P primes).
+// These extra coefficient slots are filled from skS.P and skS1.P.
 func ConstructExtendedSK(paramsHK, paramsRP rlwe.Parameters, skS, skS1 *rlwe.SecretKey) *rlwe.SecretKey {
 	N := paramsHK.N()
 	ringQHK := paramsHK.RingQ()

@@ -1,3 +1,10 @@
+// Package llkn implements LLKN hierarchical rotation key derivation (same ring, no ring switching).
+//
+//	Client: rlwe.GenSecretKeyNew → rlwe.GenGaloisKeyNew → hierkeys.GaloisKeyToMasterKey → TransmissionKeys
+//	Server: PubToRot → ExpandLevel → FinalizeKeys → rlwe.MemEvaluationKeySet
+//
+// See example/llkn/simple for complete single-party flow,
+// and example/llkn/multiparty for N-out-of-N multiparty.
 package llkn
 
 import (
@@ -5,13 +12,8 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// TransmissionKeys holds everything the client sends to the server.
+// TransmissionKeys holds the client-to-server data for hierarchical key derivation.
 type TransmissionKeys struct {
-	// PublicKey at the top level (Levels[k-1]).
-	// The server derives shift-0 keys at each lower level via PubToRot.
-	PublicKey *rlwe.PublicKey
-
-	// MasterRotKeys are rotation keys at the top level in paper convention.
-	// Indexed by rotation index (not Galois element).
-	MasterRotKeys map[int]*hierkeys.MasterKey
+	PublicKey     *rlwe.PublicKey             // at top level, used by PubToRot
+	MasterRotKeys map[int]*hierkeys.MasterKey // at top level, indexed by rotation
 }

@@ -4,8 +4,7 @@ import (
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 )
 
-// Evaluator pre-allocates all buffers for server-side hierarchical key
-// derivation via RotToRot (no ring switching needed).
+// Evaluator pre-allocates buffers for server-side hierarchical key derivation.
 type Evaluator struct {
 	params Parameters
 	*evaluatorBuffers

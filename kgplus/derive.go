@@ -9,31 +9,19 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// IntermediateKeys holds R' MasterKeys produced by RotToRot expansion at a
-// single hierarchy level. These are in paper convention (not yet
-// ring-switched or post-converted). They can be serialized, stored, and later
-// used as input to expand the next level down or finalized via
-// [Evaluator.FinalizeKeys] (level 0 only).
+// IntermediateKeys holds R' MasterKeys produced by [Evaluator.ExpandLevel] at a
+// single hierarchy level. Can be serialized, used as input to the next
+// ExpandLevel call, or finalized via [Evaluator.FinalizeKeys] (level 0 only).
 type IntermediateKeys struct {
 	Keys map[int]*hierkeys.MasterKey // indexed by rotation index
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
-// transmission keys in one shot. The returned keys work with lattigo's standard
-// rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.
+// transmission keys in one shot. The returned keys work with standard
+// lattigo evaluators.
 //
-// For per-level control (e.g., storing intermediates at each level for the
-// inactive/active pattern), derive shift-0 keys via PubToRot and use
-// [Evaluator.ExpandLevel] directly:
-//
-//	shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey)
-//	level1Keys, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
-//	// store level1Keys to disk...
-//	shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
-//	level0Keys, _ := eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots)
-//	// store level0Keys to disk...
-//	// store level0Keys to disk...
-//	evk, _ := eval.FinalizeKeys(tk, level0Keys)
+// For per-level control (inactive/active pattern), use [Evaluator.ExpandLevel]
+// and [Evaluator.FinalizeKeys] directly. See example/kgplus.
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
 	if tk == nil || tk.PublicKey == nil {
@@ -88,22 +76,9 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	return eval.FinalizeKeys(tk, level0Keys)
 }
 
-// ExpandLevel derives keys at the given R' hierarchy level using RotToRot with
-// master keys from the level above.
-//
-// Parameters:
-//   - level: the R' hierarchy level to derive keys at (0 = lowest R' level)
-//   - shift0Key: the identity (shift-0) key at this level (derived via PubToRot from TransmissionKeys.EncZero)
-//   - masterKeys: keys at level+1, indexed by rotation (either from TransmissionKeys.MasterRotKeys
-//     or from a previous ExpandLevel call's IntermediateKeys.Keys)
-//   - targetRotations: which rotations to derive at this level
-//
-// The returned IntermediateKeys can be serialized for storage, then later
-// passed as masterKeys to the next ExpandLevel call (level-1), or finalized
-// via [Evaluator.FinalizeKeys] if level == 0.
-//
-// Intermediate RotToRot results within a level are cached: if multiple targets
-// share a decomposition prefix, the shared intermediate is computed once.
+// ExpandLevel derives keys at the given R' hierarchy level using RotToRot.
+// shift0Key comes from [hierkeys.PubToRot], masterKeys from [TransmissionKeys]
+// or a previous ExpandLevel call. Shared decomposition prefixes are cached.
 func (eval *Evaluator) ExpandLevel(
 	level int,
 	shift0Key *hierkeys.MasterKey,
@@ -191,10 +166,8 @@ func sortedKeys(m map[int]*hierkeys.MasterKey) []int {
 	return keys
 }
 
-// FinalizeKeys ring-switches R' intermediate keys to R and post-converts
-// to lattigo's standard convention.
-//
-// The result is a standard MemEvaluationKeySet usable with [rlwe.Evaluator].
+// FinalizeKeys ring-switches level-0 R' IntermediateKeys to R and converts
+// to standard [rlwe.MemEvaluationKeySet] usable with lattigo evaluators.
 func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
 
 	if tk == nil || tk.HomingKey == nil {

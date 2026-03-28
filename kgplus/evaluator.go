@@ -6,13 +6,8 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// Evaluator pre-allocates all buffers for server-side hierarchical key
-// derivation (RingSwitchGaloisKey, RotToRot, DeriveGaloisKeys).
-//
-// Following lattigo's evaluator pattern, the struct separates read-only
-// state (params, rlwe evaluators) from mutable buffers so that
-// ConcurrentCopy can produce a concurrency-safe copy that shares the
-// read-only parts.
+// Evaluator pre-allocates buffers for server-side hierarchical key derivation.
+// Use [ConcurrentCopy] for concurrent derivation.
 type Evaluator struct {
 	params Parameters
 	*evaluatorBuffers

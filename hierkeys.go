@@ -1,3 +1,6 @@
+// Package hierkeys provides shared primitives for hierarchical rotation key
+// derivation with lattigo v6. See [llkn] and [kgplus] sub-packages for
+// scheme-specific implementations.
 package hierkeys
 
 import (
@@ -59,14 +62,9 @@ func DecomposeRotation(target int, masterRots []int) []int {
 	return result
 }
 
-// GaloisKeyToMasterKey converts a standard lattigo-convention [rlwe.GaloisKey]
-// to a paper-convention [MasterKey] by applying σ_r (the forward automorphism)
-// to each GadgetCiphertext component.
-//
-// Use this to convert GaloisKeys produced by [rlwe.KeyGenerator.GenGaloisKeyNew]
-// or [multiparty.GaloisKeyGenProtocol] into MasterKeys for hierarchical derivation.
-//
-// This modifies the input key in-place. The GaloisKey must not be used after this call.
+// GaloisKeyToMasterKey converts a standard lattigo [rlwe.GaloisKey] to a
+// [MasterKey] by applying σ_r to all GadgetCiphertext components.
+// Consumes the input in-place.
 func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
 	if err := automorphGadgetCiphertext(params, gk, gk.GaloisElement); err != nil {
 		return nil, err
@@ -74,14 +72,9 @@ func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKe
 	return &MasterKey{gk: gk}, nil
 }
 
-// MasterKeyToGaloisKey converts a paper-convention [MasterKey] to a standard
-// lattigo-convention [rlwe.GaloisKey] by applying σ^{-1}_r (the inverse automorphism)
-// to each GadgetCiphertext component.
-//
-// This consumes the MasterKey — it must not be used after this call.
-//
-// This allocates temporary buffers per call. For repeated use in a hot loop,
-// consider pre-allocating buffers (see kgplus.Evaluator for an example).
+// MasterKeyToGaloisKey converts a [MasterKey] back to a standard lattigo
+// [rlwe.GaloisKey] by applying σ^{-1}_r to all GadgetCiphertext components.
+// Consumes the MasterKey in-place.
 func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
 	gk := mk.gk
 	mk.gk = nil // consume

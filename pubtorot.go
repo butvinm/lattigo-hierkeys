@@ -10,57 +10,43 @@ import (
 	"github.com/tuneinsight/lattigo/v6/utils/bignum"
 )
 
-// PubToRot generates a shift-0 MasterKey (identity automorphism, GaloisElement=1)
-// from a public key at a higher parameter level.
+// PubToRot derives a shift-0 [MasterKey] (GaloisElement=1) from a public key.
+// The server calls this at each hierarchy level to obtain the identity key
+// needed by [RotToRot].
 //
-// This implements the PubToRot concept from the LLKN paper (Lee-Lee-Kim-No,
-// "Rotation Key Reduction for Client-Server Systems"). Instead of the client
-// transmitting full shift-0 GaloisKeys, it sends a compact public key at the
-// top level, and the server derives shift-0 keys at each lower level.
-//
-// The construction works as follows. Given a public key (b, a) where
-// b = -a*s + e, we build a GadgetCiphertext at paramsLow by setting for each
-// gadget component i:
-//
-//	b_i = b' (public key b reduced to Q_low union P_low moduli)
-//	a_i = a' + P * G_i (public key a reduced, plus gadget constant)
-//
-// Then b_i = -(a' + P*G_i)*s + (a'+P*G_i)*s + b' = -a_i*s + e + P*G_i*s,
-// which is a valid encryption of P*G_i*s under s -- exactly the form of a
-// shift-0 evaluation key.
-//
-// PARAMETER REQUIREMENTS:
-//   - pk must be a public key generated at paramsHigh (in NTT+Montgomery form)
-//   - paramsHigh.QCount() >= paramsLow.QCount() + paramsLow.PCount()
-//     (the high-level Q ring must contain all Q and P primes of the low level)
-//   - paramsLow.LogN() == paramsHigh.LogN()
-func PubToRot(paramsLow, paramsHigh rlwe.Parameters, pk *rlwe.PublicKey) (*MasterKey, error) {
+// Requires paramsPK.QCount() >= paramsTarget.QCount() + paramsTarget.PCount().
+func PubToRot(paramsTarget, paramsPK rlwe.Parameters, pk *rlwe.PublicKey) (*MasterKey, error) {
 
 	if pk == nil {
 		return nil, fmt.Errorf("public key must not be nil")
 	}
 
-	if paramsLow.LogN() != paramsHigh.LogN() {
-		return nil, fmt.Errorf("LogN mismatch: paramsLow=%d, paramsHigh=%d",
-			paramsLow.LogN(), paramsHigh.LogN())
+	if paramsTarget.LogN() != paramsPK.LogN() {
+		return nil, fmt.Errorf("LogN mismatch: paramsTarget=%d, paramsPK=%d",
+			paramsTarget.LogN(), paramsPK.LogN())
 	}
 
-	if paramsHigh.QCount() < paramsLow.QCount()+paramsLow.PCount() {
-		return nil, fmt.Errorf("paramsHigh.QCount()=%d < paramsLow.QCount()+PCount()=%d",
-			paramsHigh.QCount(), paramsLow.QCount()+paramsLow.PCount())
+	if paramsPK.QCount() < paramsTarget.QCount()+paramsTarget.PCount() {
+		return nil, fmt.Errorf("paramsPK.QCount()=%d < paramsTarget.QCount()+PCount()=%d",
+			paramsPK.QCount(), paramsTarget.QCount()+paramsTarget.PCount())
 	}
 
-	levelQLow := paramsLow.MaxLevel()
-	levelPLow := paramsLow.MaxLevelP()
+	// Construction: given pk = (b, a) where b = -a*s + e, set for each gadget component i:
+	//   b_i = b' (pk b reduced to Q_target ∪ P_target)
+	//   a_i = a' + P*G_i (pk a reduced + gadget constant)
+	// Then b_i + a_i*s = e + P*G_i*s — a valid shift-0 evaluation key component.
 
-	ringQLow := paramsLow.RingQ()
-	ringPLow := paramsLow.RingP()
+	levelQLow := paramsTarget.MaxLevel()
+	levelPLow := paramsTarget.MaxLevelP()
 
-	// Allocate output shift-0 GaloisKey at paramsLow
+	ringQLow := paramsTarget.RingQ()
+	ringPLow := paramsTarget.RingP()
+
+	// Allocate output shift-0 GaloisKey at paramsTarget
 	outputKey := &rlwe.GaloisKey{
 		EvaluationKey: rlwe.EvaluationKey{
 			GadgetCiphertext: *rlwe.NewGadgetCiphertext(
-				paramsLow, 1, levelQLow, levelPLow, 0),
+				paramsTarget, 1, levelQLow, levelPLow, 0),
 		},
 		GaloisElement: 1, // identity automorphism
 		NthRoot:       ringQLow.NthRoot(),
@@ -69,7 +55,7 @@ func PubToRot(paramsLow, paramsHigh rlwe.Parameters, pk *rlwe.PublicKey) (*Maste
 	gc := &outputKey.GadgetCiphertext
 
 	// Index where P_low primes start in Q_high
-	pIdx := paramsLow.QCount()
+	pIdx := paramsTarget.QCount()
 
 	// Copy the public key into every gadget component.
 	// PublicKey values are in NTT+Montgomery form.
@@ -103,7 +89,7 @@ func PubToRot(paramsLow, paramsHigh rlwe.Parameters, pk *rlwe.PublicKey) (*Maste
 	}
 
 	// Add the gadget constants P * G_i to the 'a' part (component[1]).
-	if err := addGadgetToAPart(paramsLow, gc); err != nil {
+	if err := addGadgetToAPart(paramsTarget, gc); err != nil {
 		return nil, fmt.Errorf("addGadgetToAPart: %w", err)
 	}
 
