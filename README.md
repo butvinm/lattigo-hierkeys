@@ -32,19 +32,30 @@ Both produce standard lattigo Galois keys.
 import (
     hierkeys "github.com/butvinm/lattigo-hierkeys"
     "github.com/butvinm/lattigo-hierkeys/llkn"
+    "github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
 // LLKN k=2: one level of P primes
 params, _ := llkn.NewParameters(paramsEval, [][]int{{61}})
 
-// CLIENT
-kgen := llkn.NewKeyGenerator(params)
+// CLIENT: generate keys with standard lattigo, convert to MasterKeys
+kgen := rlwe.NewKeyGenerator(params.Top())
 sk := kgen.GenSecretKeyNew()
-tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
+pk := kgen.GenPublicKeyNew(sk)
+
+masterRots := hierkeys.MasterRotationsForBase(4, slots)
+masterKeys := make(map[int]*hierkeys.MasterKey)
+for _, rot := range masterRots {
+    gk := kgen.GenGaloisKeyNew(params.Top().GaloisElement(rot), sk)
+    masterKeys[rot], _ = hierkeys.GaloisKeyToMasterKey(params.Top(), gk)
+}
+tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 
 // SERVER: one-shot derivation
 eval := llkn.NewEvaluator(params)
 evk, _ := eval.DeriveGaloisKeys(tk, targetRotations)
+
+skEval, _ := params.ProjectToEvalKey(sk)
 ckksEval := ckks.NewEvaluator(paramsEval, evk)
 ```
 
@@ -54,31 +65,46 @@ ckksEval := ckks.NewEvaluator(paramsEval, evk)
 import (
     hierkeys "github.com/butvinm/lattigo-hierkeys"
     "github.com/butvinm/lattigo-hierkeys/kgplus"
+    "github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
 // KG+ k=3: two levels of P primes in R' (degree 2N)
 params, _ := kgplus.NewParameters(paramsEval, logPHK, logPExtra)
+topLevel := params.NumLevels() - 1
+topParams := params.RPrime[topLevel]
 
-// CLIENT: sends 2 master keys + enc-zero + homing key
-kgen := kgplus.NewKeyGenerator(params)
-sk := kgen.GenSecretKeyNew()
-tk, _ := kgen.GenTransmissionKeys(sk, []int{1, 4}) // {1, base}
+// CLIENT: generate keys with standard lattigo
+kgenHK := rlwe.NewKeyGenerator(params.HK)
+sk := kgenHK.GenSecretKeyNew()
+sk1 := kgenHK.GenSecretKeyNew()
+homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
+
+skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
+kgenRP := rlwe.NewKeyGenerator(topParams)
+pk := kgenRP.GenPublicKeyNew(skExt)
+
+masterKeys := make(map[int]*hierkeys.MasterKey)
+for _, rot := range []int{1, 4} { // {1, base}
+    gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
+    masterKeys[rot], _ = hierkeys.GaloisKeyToMasterKey(topParams, gk)
+}
+tk := &kgplus.TransmissionKeys{HomingKey: homingKey, PublicKey: pk, MasterRotKeys: masterKeys}
 
 // SERVER: per-level expansion with PubToRot
 eval := kgplus.NewEvaluator(params)
-topLevel := params.NumLevels() - 1
 
 // Phase 1 (inactive): derive full master set at intermediate level
-shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.EncZero)
+shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey)
 level1, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
 
 // Phase 2 (active): derive target keys at level 0
-shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.EncZero)
+shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
 level0, _ := eval.ExpandLevel(0, shift0L0, level1.Keys, targetRots)
 
 // Phase 3: ring-switch and finalize
 evk, _ := eval.FinalizeKeys(tk, level0)
-eval := ckks.NewEvaluator(paramsEval, evk)
+skEval, _ := params.ProjectToEvalKey(sk)
+ckksEval := ckks.NewEvaluator(paramsEval, evk)
 ```
 
 ## Architecture
@@ -87,26 +113,28 @@ eval := ckks.NewEvaluator(paramsEval, evk)
 
 Shared utilities:
 
-| Symbol                         | Purpose                                    |
-| ------------------------------ | ------------------------------------------ |
-| `MasterRotationsForBase`       | Generate p-ary master rotation set         |
-| `DecomposeRotation`            | Greedy p-ary decomposition                 |
-| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm with pre-alloc     |
-| `PubToRot`                     | Derive shift-0 key from encryption of zero |
-| `ConvertToLattigoConvention`   | Paper → lattigo convention conversion      |
-| `GenerateUniquePrimes`         | Collision-free NTT-friendly prime gen      |
+| Symbol                         | Purpose                                     |
+| ------------------------------ | ------------------------------------------- |
+| `MasterKey`                    | Paper-convention key type for RotToRot      |
+| `GaloisKeyToMasterKey`         | Lattigo GaloisKey → MasterKey (applies σ_r) |
+| `MasterKeyToGaloisKey`         | MasterKey → lattigo GaloisKey (applies σ⁻¹) |
+| `MasterRotationsForBase`       | Generate p-ary master rotation set          |
+| `DecomposeRotation`            | Greedy p-ary decomposition                  |
+| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm with pre-alloc      |
+| `PubToRot`                     | Derive shift-0 key from public key          |
+| `GenerateUniquePrimes`         | Collision-free NTT-friendly prime gen       |
 
 ### KG+ (`kgplus/`)
 
 Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N).
 
-Pipeline: `GenTransmissionKeys` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
+Pipeline: `GaloisKeyToMasterKey` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
 
 ### LLKN (`llkn/`)
 
 Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master.
 
-Pipeline: `GenTransmissionKeys` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
+Pipeline: `GaloisKeyToMasterKey` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
 
 ## Benchmarks
 
@@ -171,8 +199,10 @@ go test -v -count=1 -short ./llkn/...
 
 ```bash
 cd example
-go run ./llkn/     # LLKN k=2: one-shot DeriveGaloisKeys
-go run ./kgplus/   # KG+ k=3: per-level ExpandLevel with ring switching
+go run ./llkn/simple/       # LLKN k=2: single-party
+go run ./llkn/multiparty/   # LLKN k=2: N-out-of-N multiparty
+go run ./kgplus/simple/     # KG+ k=3: single-party with ring switching
+go run ./kgplus/multiparty/ # KG+ k=3: N-out-of-N multiparty
 ```
 
 ## License
