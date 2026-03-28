@@ -47,34 +47,38 @@ evk, _ := llkn.DeriveGaloisKeys(params, tk, targetRotations)
 eval := ckks.NewEvaluator(paramsEval, evk)
 ```
 
-### k=3 with gradual expansion
+### KG+ k=3 with gradual expansion
 
 ```go
-// LLKN k=3: two levels of P primes (P ≈ Q at each level for noise control)
-params, _ := llkn.NewParameters(paramsEval, [][]int{
-    {61, 61, 61, 61, 61, 61}, // P for level 1
-    {61, 61, 61, 61, 61, 61}, // P for level 2
-})
+import (
+    hierkeys "github.com/butvinm/lattigo-hierkeys"
+    "github.com/butvinm/lattigo-hierkeys/kgplus"
+)
 
-kgen := llkn.NewKeyGenerator(params)
+// KG+ k=3: two levels of P primes in R' (degree 2N)
+params, _ := kgplus.NewParameters(paramsEval, logPHK, logPExtra)
+
+// CLIENT: sends 2 master keys + enc-zero + homing key
+kgen := kgplus.NewKeyGenerator(params)
 sk := kgen.GenSecretKeyNew()
-tk, _ := kgen.GenTransmissionKeys(sk, masterRots)
+tk, _ := kgen.GenTransmissionKeys(sk, []int{1, 4}) // {1, base}
 
-eval := llkn.NewEvaluator(params)
+// SERVER: per-level expansion with PubToRot
+eval := kgplus.NewEvaluator(params)
+topLevel := params.NumLevels() - 1
 
-// Phase 1 (rare): top masters → level-1 keys
-level1, _ := eval.ExpandLevel(1, tk.Shift0Keys[1], tk.MasterRotKeys, masterRots)
-// store level1 to disk...
+// Phase 1 (inactive): derive full master set at intermediate level
+shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.EncZero)
+level1, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
 
-// Phase 2 (occasional): level-1 → level-0 keys
-level0, _ := eval.ExpandLevel(0, tk.Shift0Keys[0], level1.Keys, targetRots)
-// store level0 to disk...
+// Phase 2 (active): derive target keys at level 0
+shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.EncZero)
+level0, _ := eval.ExpandLevel(0, shift0L0, level1.Keys, targetRots)
 
-// Phase 3 (on-demand): finalize to eval keys
-evk, _ := eval.FinalizeKeys(level0)
+// Phase 3: ring-switch and finalize
+evk, _ := eval.FinalizeKeys(tk, level0)
+eval := ckks.NewEvaluator(paramsEval, evk)
 ```
-
-Replace `llkn` with `kgplus` for the KG+ scheme — the API pattern is the same (KG+ adds a homing key for ring switching).
 
 ## Architecture
 
