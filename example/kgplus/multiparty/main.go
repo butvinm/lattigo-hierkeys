@@ -71,14 +71,13 @@ func main() {
 	kgen := kgplus.NewKeyGenerator(hkParams)
 
 	// Secret keys at HK level (degree N)
-	sks := make([]*rlwe.SecretKey, nParties)   // s_i
+	sks := make([]*rlwe.SecretKey, nParties)    // s_i
 	skS1s := make([]*rlwe.SecretKey, nParties)  // s̃₁_i
 	skExts := make([]*rlwe.SecretKey, nParties) // s̃_i in R' at top level
-	kgenHK := rlwe.NewKeyGenerator(hkParams.HK)
 
 	for i := range sks {
-		sks[i] = kgenHK.GenSecretKeyNew()
-		skS1s[i] = kgenHK.GenSecretKeyNew()
+		sks[i] = kgen.GenSecretKeyNew()
+		skS1s[i] = kgen.GenSecretKeyNew()
 		skExts[i] = kgplus.ConstructExtendedSK(hkParams.HK, paramsTop, sks[i], skS1s[i])
 	}
 
