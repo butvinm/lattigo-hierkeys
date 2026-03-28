@@ -33,23 +33,27 @@ Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofm
 
 ### Parent package (`hierkeys`)
 
-Shared utilities: `MasterRotationsForBase`, `DecomposeRotation`, `RotToRot`, `PubToRot`, `ConvertToLattigoConvention`, `GenerateUniquePrimes`.
+Shared primitives: `MasterKey` type, `GaloisKeyToMasterKey`/`MasterKeyToGaloisKey` (convention conversion), `RotToRot`, `PubToRot`, `MasterRotationsForBase`, `DecomposeRotation`, `GenerateUniquePrimes`.
 
 ### KG+ (`kgplus/`)
 
 Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N).
 
-Key pipeline: GenTransmissionKeys → PubToRot → ExpandLevel → FinalizeKeys → standard rlwe.GaloisKey.
+No KeyGenerator — users generate keys with standard `rlwe.KeyGenerator` and convert via `GaloisKeyToMasterKey`. `ConstructExtendedSK` builds s̃ = s + Y·s̃₁ in R' from two HK-level secrets.
 
-Ring-switched keys are post-converted from paper convention to lattigo convention via π⁻¹ automorphism. Only supports Standard ring type (not ConjugateInvariant).
+Key pipeline: `GaloisKeyToMasterKey` → `PubToRot` → `ExpandLevel` → `FinalizeKeys` (ring-switch + convention convert) → standard `rlwe.GaloisKey`.
+
+Only supports Standard ring type (not ConjugateInvariant).
 
 ### LLKN (`llkn/`)
 
 Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master.
 
-Key pipeline: GenTransmissionKeys → PubToRot → ExpandLevel → FinalizeKeys → standard rlwe.GaloisKey.
+No KeyGenerator — same pattern as KG+.
 
-Both ExpandLevel and FinalizeKeys support inactive/active key management pattern. Convention conversion is applied in FinalizeKeys. Output keys work with standard lattigo evaluators.
+Key pipeline: `GaloisKeyToMasterKey` → `PubToRot` → `ExpandLevel` → `FinalizeKeys` (convention convert) → standard `rlwe.GaloisKey`.
+
+ExpandLevel and FinalizeKeys support inactive/active key management pattern. Output keys work with standard lattigo evaluators.
 
 Supports both Standard and ConjugateInvariant ring types.
 
@@ -62,8 +66,7 @@ Top-down cascade: at each intermediate level, derive the full master rotation se
 - **CopyLvl direction**: `pol.CopyLvl(level, p1)` copies FROM p1 TO pol. Double-check every call.
 - **IMForm before INTT**: R' GadgetCiphertext is NTT+Montgomery. Must IMForm before INTT+extraction, or values mix with non-Montgomery GadgetProduct output.
 - **NTT prime constraint (KG+ only)**: All primes must satisfy q ≡ 1 mod 4N (NTT-friendly for degree 2N). LogQ-generated primes for degree N may fail.
-- **Convention mismatch (KG+)**: Ring switching produces paper-convention keys. Must post-convert (π⁻¹ automorphism) for standard lattigo evaluator compatibility.
-- **Convention conversion**: Both KG+ and LLKN use ConvertToLattigoConvention (π⁻¹ automorphism) to convert RotToRot output from paper convention to lattigo convention.
+- **Convention conversion**: `GaloisKeyToMasterKey` applies σ_r (forward automorphism) to convert lattigo→paper convention. `MasterKeyToGaloisKey` applies σ⁻¹_r (inverse) for paper→lattigo. Both mutate in-place and consume the input. KG+ `FinalizeKeys` uses a private buffered version for the post-ring-switch conversion.
 - **Prime collision in multi-level**: When building parameter chains (Q\_{i+1} = Q_i ∪ P_i), P primes at each level MUST be distinct from all Q primes at that level. Lattigo's `GenModuli` does not enforce this. Both packages use `GenerateUniquePrimes` with an exclusion set.
 - **Noise in multi-level (k>2)**: Derived keys used as masters amplify noise by Q/P in GadgetProduct. Intermediate levels need P ≈ Q primes (dnum ≈ 1) to keep noise manageable.
 - **ConstructExtendedSK for k>2 (KG+)**: When RPrime Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
