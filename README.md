@@ -43,8 +43,9 @@ sk := kgen.GenSecretKeyNew()
 tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
 
 // SERVER: one-shot derivation
-evk, _ := llkn.DeriveGaloisKeys(params, tk, targetRotations)
-eval := ckks.NewEvaluator(paramsEval, evk)
+eval := llkn.NewEvaluator(params)
+evk, _ := eval.DeriveGaloisKeys(tk, targetRotations)
+ckksEval := ckks.NewEvaluator(paramsEval, evk)
 ```
 
 ### KG+ k=3 with gradual expansion
@@ -86,12 +87,14 @@ eval := ckks.NewEvaluator(paramsEval, evk)
 
 Shared utilities:
 
-| Symbol                         | Purpose                                 |
-| ------------------------------ | --------------------------------------- |
-| `MasterRotationsForBase`       | Generate p-ary master rotation set      |
-| `DecomposeRotation`            | Greedy p-ary decomposition              |
-| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm (parameterized) |
-| `ConvertToLattigoConvention`   | Paper → lattigo convention conversion   |
+| Symbol                         | Purpose                                    |
+| ------------------------------ | ------------------------------------------ |
+| `MasterRotationsForBase`       | Generate p-ary master rotation set         |
+| `DecomposeRotation`            | Greedy p-ary decomposition                 |
+| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm with pre-alloc     |
+| `PubToRot`                     | Derive shift-0 key from encryption of zero |
+| `ConvertToLattigoConvention`   | Paper → lattigo convention conversion      |
+| `GenerateUniquePrimes`         | Collision-free NTT-friendly prime gen      |
 
 ### KG+ (`kgplus/`)
 
