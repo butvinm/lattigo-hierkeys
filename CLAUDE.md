@@ -33,13 +33,13 @@ Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofm
 
 ### Parent package (`hierkeys`)
 
-Shared utilities: `MasterRotationsForBase`, `DecomposeRotation`, `RotToRot` (parameterized), `ConvertToLattigoConvention`.
+Shared utilities: `MasterRotationsForBase`, `DecomposeRotation`, `RotToRot` (parameterized), `PubToRot` (shift-0 from enc-zero), `ConvertToLattigoConvention`, `GenerateUniquePrimes`.
 
 ### KG+ (`kgplus/`)
 
 Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N).
 
-Key pipeline: GenTransmissionKeys (client) → Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
+Key pipeline: GenTransmissionKeys (client, sends EncZero + masters + homing key) → PubToRot + Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
 
 Ring-switched keys are post-converted from paper convention to lattigo convention via π⁻¹ automorphism. Only supports Standard ring type (not ConjugateInvariant).
 
@@ -47,7 +47,7 @@ Ring-switched keys are post-converted from paper convention to lattigo conventio
 
 Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master.
 
-Key pipeline: GenTransmissionKeys (client) → Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
+Key pipeline: GenTransmissionKeys (client, sends EncZero + masters) → PubToRot + Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
 
 Both Expand and FinalizeKeys support inactive/active key management pattern. Convention conversion is applied in FinalizeKeys. Output keys work with standard lattigo evaluators.
 
