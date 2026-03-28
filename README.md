@@ -1,6 +1,6 @@
 # Hierarchical Rotation Keys
 
-[![Go](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
 Hierarchical rotation key generation for [lattigo](https://github.com/tuneinsight/lattigo) v6 FHE library, reducing client-to-server key transmission cost.
