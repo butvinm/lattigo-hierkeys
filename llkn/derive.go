@@ -16,13 +16,6 @@ type IntermediateKeys struct {
 	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
 }
 
-// DeriveGaloisKeys is a convenience wrapper that creates a temporary
-// Evaluator internally. For repeated calls, use [Evaluator.DeriveGaloisKeys].
-func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
-	eval := NewEvaluator(params)
-	return eval.DeriveGaloisKeys(tk, targetRotations)
-}
-
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
 // transmission keys in one shot. The returned keys are in lattigo convention
 // and work directly with rlwe.Evaluator.Automorphism, ckks.Evaluator.Rotate,

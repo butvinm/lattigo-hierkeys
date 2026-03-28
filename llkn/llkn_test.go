@@ -156,7 +156,8 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "DeriveGaloisKeys"), func(t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
-		evk, err := DeriveGaloisKeys(params, tc.tk, targetRots)
+		eval := NewEvaluator(params)
+		evk, err := eval.DeriveGaloisKeys(tc.tk, targetRots)
 		require.NoError(t, err)
 		require.NotNil(t, evk)
 

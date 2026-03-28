@@ -18,51 +18,6 @@ type IntermediateKeys struct {
 	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
 }
 
-// DeriveGaloisKeys is a convenience wrapper that creates a temporary
-// Evaluator internally. For repeated calls or when performance matters,
-// use [Evaluator.DeriveGaloisKeys].
-func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
-	eval := NewEvaluator(params)
-	return eval.DeriveGaloisKeys(tk, targetRotations)
-}
-
-// RotToRot is a convenience wrapper that creates a temporary Evaluator
-// internally. For repeated calls, use [Evaluator.RotToRot].
-func RotToRot(
-	paramsLow rlwe.Parameters,
-	paramsHigh rlwe.Parameters,
-	inputKey *rlwe.GaloisKey,
-	masterKey *rlwe.GaloisKey,
-	combinedGalEl uint64,
-) (*rlwe.GaloisKey, error) {
-	params := Parameters{
-		Eval:   paramsLow, // placeholder
-		HK:     paramsLow, // placeholder
-		RPrime: []rlwe.Parameters{paramsLow, paramsHigh},
-	}
-	eval := NewEvaluator(params)
-	return eval.RotToRot(0, inputKey, masterKey, combinedGalEl)
-}
-
-// RingSwitchGaloisKey is a convenience wrapper that creates a temporary
-// Evaluator internally. For repeated calls, use [Evaluator.RingSwitchGaloisKey].
-func RingSwitchGaloisKey(
-	paramsEval rlwe.Parameters,
-	paramsHK rlwe.Parameters,
-	paramsRPrime rlwe.Parameters,
-	masterKeyRPrime *rlwe.GaloisKey,
-	homingKey *rlwe.EvaluationKey,
-	galoisElement uint64,
-) (*rlwe.GaloisKey, error) {
-	params := Parameters{
-		Eval:   paramsEval,
-		HK:     paramsHK,
-		RPrime: []rlwe.Parameters{paramsRPrime, paramsHK}, // placeholder
-	}
-	eval := NewEvaluator(params)
-	return eval.RingSwitchGaloisKey(masterKeyRPrime, homingKey, galoisElement)
-}
-
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
 // transmission keys in one shot. The returned keys work with lattigo's standard
 // rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.

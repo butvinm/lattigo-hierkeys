@@ -316,12 +316,12 @@ func testRotToRot(tc *testContext, t *testing.T) {
 
 		// RotToRot: shift0 + master -> rotation key at level-0
 		galElRPLow := paramsRPLow.GaloisElement(rot)
-		rotKey, err := RotToRot(paramsRPLow, paramsRPHigh, shift0Key, masterKey, galElRPLow)
+		rotKey, err := tc.hkEval.RotToRot(0, shift0Key, masterKey, galElRPLow)
 		require.NoError(t, err)
 
 		// Ring-switch from R' to R
 		galElR := paramsEval.GaloisElement(rot)
-		rsGK, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rotKey, homingKey, galElR)
+		rsGK, err := tc.hkEval.RingSwitchGaloisKey(rotKey, homingKey, galElR)
 		require.NoError(t, err)
 
 		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK))
@@ -398,13 +398,13 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 
 		// Step 1: shift0 + master(1) -> rot-1
 		galEl1Low := paramsRPLow.GaloisElement(rot1)
-		rot1Key, err := RotToRot(paramsRPLow, paramsRPHigh, shift0Key, masterKey1, galEl1Low)
+		rot1Key, err := tc.hkEval.RotToRot(0, shift0Key, masterKey1, galEl1Low)
 		require.NoError(t, err)
 
 		// Step 2: rot-1 + master(4) -> rot-5
 		rot5 := rot1 + rot4
 		galEl5Low := paramsRPLow.GaloisElement(rot5)
-		rot5Key, err := RotToRot(paramsRPLow, paramsRPHigh, rot1Key, masterKey4, galEl5Low)
+		rot5Key, err := tc.hkEval.RotToRot(0, rot1Key, masterKey4, galEl5Low)
 		require.NoError(t, err)
 
 		threshold := float64(1 << 25)
@@ -414,14 +414,14 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 
 		// Ring-switch and verify rot-1
 		galElR1 := paramsEval.GaloisElement(rot1)
-		rsGK1, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rot1Key, homingKey, galElR1)
+		rsGK1, err := tc.hkEval.RingSwitchGaloisKey(rot1Key, homingKey, galElR1)
 		require.NoError(t, err)
 		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK1))
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1, rot1, threshold)
 
 		// Ring-switch and verify rot-5
 		galElR5 := paramsEval.GaloisElement(rot5)
-		rsGK5, err := RingSwitchGaloisKey(paramsEval, paramsHK, paramsRPLow, rot5Key, homingKey, galElR5)
+		rsGK5, err := tc.hkEval.RingSwitchGaloisKey(rot5Key, homingKey, galElR5)
 		require.NoError(t, err)
 		require.NoError(t, hierkeys.ConvertToLattigoConvention(paramsEval, rsGK5))
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5, rot5, threshold)
@@ -522,7 +522,7 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 
-		evk, err := DeriveGaloisKeys(params, tc.tk, targetRots)
+		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, targetRots)
 		require.NoError(t, err)
 		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
 
@@ -680,7 +680,8 @@ func testSerialization(tc *testContext, t *testing.T) {
 		}
 
 		// Functional test: derive keys from deserialized transmission keys
-		evk, err := DeriveGaloisKeys(params, tk2, []int{1, 2, 3, 4, 5})
+		hkEval := NewEvaluator(params)
+		evk, err := hkEval.DeriveGaloisKeys(tk2, []int{1, 2, 3, 4, 5})
 		require.NoError(t, err)
 		require.Equal(t, 5, len(evk.GetGaloisKeysList()))
 	})
@@ -764,7 +765,7 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 
 		// Derive rotation keys for rotation by 1
 		rot := 1
-		evk, err := DeriveGaloisKeys(params, tc.tk, []int{rot})
+		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, []int{rot})
 		require.NoError(t, err)
 
 		// CKKS primitives
