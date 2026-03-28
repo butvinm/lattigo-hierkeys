@@ -49,14 +49,25 @@ func main() {
 		fmt.Printf("  Level[%d]: Q=%d, P=%d primes\n", i, lvl.QCount(), lvl.PCount())
 	}
 
-	// CLIENT: generate and send transmission keys
-	kgen := llkn.NewKeyGenerator(llknParams)
+	// CLIENT: generate keys and assemble transmission keys
+	topParams := llknParams.Top()
+	kgen := rlwe.NewKeyGenerator(topParams)
 	sk := kgen.GenSecretKeyNew()
-	masterRots := hierkeys.MasterRotationsForBase(4, slots)
+	pk := kgen.GenPublicKeyNew(sk)
 
-	var tk *llkn.TransmissionKeys
-	if tk, err = kgen.GenTransmissionKeys(sk, masterRots); err != nil {
-		panic(err)
+	masterRots := hierkeys.MasterRotationsForBase(4, slots)
+	masterKeys := make(map[int]*hierkeys.MasterKey)
+	for _, rot := range masterRots {
+		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
+		masterKeys[rot], err = hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	tk := &llkn.TransmissionKeys{
+		PublicKey:     pk,
+		MasterRotKeys: masterKeys,
 	}
 	fmt.Printf("\nClient: %d master keys for rotations %v\n", len(masterRots), masterRots)
 	fmt.Printf("Client: TX size = %d bytes (%.1f MB)\n", tk.BinarySize(), float64(tk.BinarySize())/(1024*1024))
@@ -73,7 +84,7 @@ func main() {
 
 	// SERVER: use derived keys with standard CKKS evaluator
 	var skEval *rlwe.SecretKey
-	if skEval, err = kgen.ProjectToEvalKey(sk); err != nil {
+	if skEval, err = llknParams.ProjectToEvalKey(sk); err != nil {
 		panic(err)
 	}
 	ecd := ckks.NewEncoder(params)

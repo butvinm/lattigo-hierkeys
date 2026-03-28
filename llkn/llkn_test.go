@@ -24,7 +24,7 @@ func testString(params Parameters, opname string) string {
 
 type testContext struct {
 	params     Parameters
-	kgen       *KeyGenerator
+	kgenTop    *rlwe.KeyGenerator
 	sk         *rlwe.SecretKey // at top level
 	skEval     *rlwe.SecretKey // projected to eval level
 	tk         *TransmissionKeys
@@ -33,23 +33,33 @@ type testContext struct {
 }
 
 func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
-	kgen := NewKeyGenerator(params)
-	sk := kgen.GenSecretKeyNew()
-	skEval, err := kgen.ProjectToEvalKey(sk)
+	kgenTop := rlwe.NewKeyGenerator(params.Top())
+	sk := kgenTop.GenSecretKeyNew()
+	skEval, err := params.ProjectToEvalKey(sk)
 	if err != nil {
 		return nil, err
 	}
 
-	tk, err := kgen.GenTransmissionKeys(sk, masterRots)
-	if err != nil {
-		return nil, err
+	// Generate public key
+	pk := kgenTop.GenPublicKeyNew(sk)
+	// Generate master rotation keys
+	masterKeys := make(map[int]*hierkeys.MasterKey)
+	for _, rot := range masterRots {
+		galEl := params.Top().GaloisElement(rot)
+		gk := kgenTop.GenGaloisKeyNew(galEl, sk)
+		mk, err := hierkeys.NewMasterKeyFromGaloisKey(params.Top(), gk)
+		if err != nil {
+			return nil, err
+		}
+		masterKeys[rot] = mk
 	}
+	tk := &TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 
 	eval := NewEvaluator(params)
 
 	return &testContext{
 		params:     params,
-		kgen:       kgen,
+		kgenTop:    kgenTop,
 		sk:         sk,
 		skEval:     skEval,
 		tk:         tk,
@@ -71,7 +81,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 	topLevel := k - 1
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Levels[topLevel], tk.EncZero)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Levels[topLevel], tk.PublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +91,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 		}
 		currentMasters = derived.Keys
 	}
-	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Levels[topLevel], tk.EncZero)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Levels[topLevel], tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -122,28 +132,27 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 
 	params := tc.params
 
-	t.Run(testString(params, "KeyGenerator"), func(t *testing.T) {
+	t.Run(testString(params, "KeyGeneration"), func(t *testing.T) {
 
 		t.Run("GenSecretKeyNew", func(t *testing.T) {
-			sk := tc.kgen.GenSecretKeyNew()
+			sk := tc.kgenTop.GenSecretKeyNew()
 			require.NotNil(t, sk)
 			require.Equal(t, params.Top().QCount(), sk.LevelQ()+1)
 			require.Equal(t, params.Top().PCount(), sk.LevelP()+1)
 		})
 
 		t.Run("ProjectToEvalKey", func(t *testing.T) {
-			skEval, err := tc.kgen.ProjectToEvalKey(tc.sk)
+			skEval, err := params.ProjectToEvalKey(tc.sk)
 			require.NoError(t, err)
 			require.NotNil(t, skEval)
 			require.Equal(t, params.Eval().QCount(), skEval.LevelQ()+1)
 			require.Equal(t, params.Eval().PCount(), skEval.LevelP()+1)
 		})
 
-		t.Run("GenTransmissionKeys", func(t *testing.T) {
+		t.Run("TransmissionKeys", func(t *testing.T) {
 			tk := tc.tk
 			require.NotNil(t, tk)
-			require.NotNil(t, tk.EncZero)
-			require.Equal(t, 1, tk.EncZero.Degree())
+			require.NotNil(t, tk.PublicKey)
 			require.Len(t, tk.MasterRotKeys, len(tc.masterRots))
 			for _, rot := range tc.masterRots {
 				_, ok := tk.MasterRotKeys[rot]
@@ -252,9 +261,9 @@ func testPubToRot(tc *testContext, t *testing.T) {
 
 	t.Run(testString(params, "PubToRot"), func(t *testing.T) {
 
-		// The EncZero in TransmissionKeys is the encryption of zero at the
-		// top level. PubToRot is now integrated into the pipeline, so we
-		// verify that the full derive flow works with PubToRot-derived
+		// The PublicKey in TransmissionKeys is at the top level.
+		// PubToRot is now integrated into the pipeline, so we verify
+		// that the full derive flow works with PubToRot-derived
 		// shift-0 keys at each level.
 		k := params.NumLevels()
 		for level := 0; level < k-1; level++ {
@@ -263,7 +272,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 				paramsLevel := params.Levels[level]
 
 				// Derive shift-0 key via PubToRot
-				derivedShift0, err := hierkeys.PubToRot(paramsLevel, params.Top(), tc.tk.EncZero)
+				derivedShift0, err := hierkeys.PubToRot(paramsLevel, params.Top(), tc.tk.PublicKey)
 				require.NoError(t, err)
 				require.NotNil(t, derivedShift0)
 				require.Equal(t, uint64(1), derivedShift0.GaloisElement())
@@ -287,7 +296,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 					// Need to expand down from top to this level+1 first
 					currentMasters = tc.tk.MasterRotKeys
 					for lvl := k - 2; lvl > level; lvl-- {
-						shift0, err := hierkeys.PubToRot(params.Levels[lvl], params.Top(), tc.tk.EncZero)
+						shift0, err := hierkeys.PubToRot(params.Levels[lvl], params.Top(), tc.tk.PublicKey)
 						require.NoError(t, err)
 						derived, err := eval.ExpandLevel(lvl, shift0, currentMasters, masterRots)
 						require.NoError(t, err)

@@ -53,26 +53,44 @@ func main() {
 			i, rp.QCount(), rp.PCount(), rp.N())
 	}
 
-	// CLIENT: generate and send transmission keys with {1, base} masters
-	kgen := kgplus.NewKeyGenerator(hkParams)
-	sk := kgen.GenSecretKeyNew()
-	k3Masters := []int{1, 4}
+	// CLIENT: generate keys and assemble transmission keys
+	kgenHK := rlwe.NewKeyGenerator(hkParams.HK)
+	sk := kgenHK.GenSecretKeyNew()
+	sk1 := kgenHK.GenSecretKeyNew()
+	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	var tk *kgplus.TransmissionKeys
-	if tk, err = kgen.GenTransmissionKeys(sk, k3Masters); err != nil {
-		panic(err)
+	topLevel := hkParams.NumLevels() - 1
+	topParams := hkParams.RPrime[topLevel]
+	skExt := kgplus.ConstructExtendedSK(hkParams.HK, topParams, sk, sk1)
+
+	kgenRP := rlwe.NewKeyGenerator(topParams)
+	pk := kgenRP.GenPublicKeyNew(skExt)
+
+	k3Masters := []int{1, 4}
+	masterKeys := make(map[int]*hierkeys.MasterKey)
+	for _, rot := range k3Masters {
+		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
+		masterKeys[rot], err = hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	tk := &kgplus.TransmissionKeys{
+		HomingKey:     homingKey,
+		PublicKey:     pk,
+		MasterRotKeys: masterKeys,
 	}
 	fmt.Printf("\nClient: %d master keys for rotations %v\n", len(k3Masters), k3Masters)
 	fmt.Printf("Client: TX size = %d bytes (%.1f MB)\n", tk.BinarySize(), float64(tk.BinarySize())/(1024*1024))
 
 	// SERVER: per-level expansion
 	eval := kgplus.NewEvaluator(hkParams)
-	topLevel := hkParams.NumLevels() - 1
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
 	// Phase 1 (inactive): derive full master rotation set at intermediate level
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 	var level1Keys *kgplus.IntermediateKeys
@@ -84,7 +102,7 @@ func main() {
 	// Phase 2 (active): derive target rotation keys at level 0
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 	var level0Keys *kgplus.IntermediateKeys
@@ -102,7 +120,7 @@ func main() {
 
 	// SERVER: use derived keys with standard CKKS evaluator
 	var skEval *rlwe.SecretKey
-	if skEval, err = kgen.ProjectToEvalKey(sk); err != nil {
+	if skEval, err = hkParams.ProjectToEvalKey(sk); err != nil {
 		panic(err)
 	}
 	ecd := ckks.NewEncoder(params)

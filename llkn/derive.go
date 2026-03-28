@@ -25,17 +25,17 @@ type IntermediateKeys struct {
 // inactive/active pattern), derive shift-0 keys via PubToRot and use
 // [Evaluator.ExpandLevel] directly:
 //
-//	shift0L1, _ := hierkeys.PubToRot(params.Levels[1], params.Top(), tk.EncZero)
+//	shift0L1, _ := hierkeys.PubToRot(params.Levels[1], params.Top(), tk.PublicKey)
 //	level1Keys, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
 //	// store level1Keys to disk...
-//	shift0L0, _ := hierkeys.PubToRot(params.Levels[0], params.Top(), tk.EncZero)
+//	shift0L0, _ := hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey)
 //	level0Keys, _ := eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots)
 //	// store level0Keys to disk...
 //	evk, _ := eval.FinalizeKeys(level0Keys)
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
-	if tk == nil || tk.EncZero == nil {
-		return nil, fmt.Errorf("transmission keys and EncZero must not be nil")
+	if tk == nil || tk.PublicKey == nil {
+		return nil, fmt.Errorf("transmission keys and PublicKey must not be nil")
 	}
 
 	k := eval.params.NumLevels()
@@ -45,7 +45,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 
 	isDerived := false // tracks whether currentMasters is derived (safe to nil) vs original TX data
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Top(), tk.EncZero)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Top(), tk.PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("PubToRot at level %d: %w", level, err)
 		}
@@ -66,7 +66,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 		isDerived = true
 	}
 
-	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Top(), tk.EncZero)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Top(), tk.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("PubToRot at level 0: %w", err)
 	}
@@ -90,7 +90,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 //
 // Parameters:
 //   - level: the hierarchy level to derive keys at (0 = eval level)
-//   - shift0Key: the identity (shift-0) key at this level (derived via PubToRot from TransmissionKeys.EncZero)
+//   - shift0Key: the identity (shift-0) key at this level (derived via PubToRot from TransmissionKeys.PublicKey)
 //   - masterKeys: keys at level+1, indexed by rotation (either from TransmissionKeys.MasterRotKeys
 //     or from a previous ExpandLevel call's IntermediateKeys.Keys)
 //   - targetRotations: which rotations to derive at this level
@@ -188,7 +188,7 @@ func (eval *Evaluator) FinalizeKeys(intermediate *IntermediateKeys) (*rlwe.MemEv
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
 	for rot, mk := range intermediate.Keys {
-		gk, err := hierkeys.ConvertToLattigoConvention(eval.params.Eval(), mk)
+		gk, err := hierkeys.NewGaloisKeyFromMasterKey(eval.params.Eval(), mk)
 		if err != nil {
 			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
 		}

@@ -10,15 +10,15 @@ import (
 	"github.com/tuneinsight/lattigo/v6/utils/bignum"
 )
 
-// PubToRot generates a shift-0 GaloisKey (identity automorphism, GaloisElement=1)
-// from an RLWE encryption of zero at a higher parameter level.
+// PubToRot generates a shift-0 MasterKey (identity automorphism, GaloisElement=1)
+// from a public key at a higher parameter level.
 //
 // This implements the PubToRot concept from the LLKN paper (Lee-Lee-Kim-No,
 // "Rotation Key Reduction for Client-Server Systems"). Instead of the client
-// transmitting full shift-0 GaloisKeys, it sends a compact encryption of zero
-// at the top level, and the server derives shift-0 keys at each lower level.
+// transmitting full shift-0 GaloisKeys, it sends a compact public key at the
+// top level, and the server derives shift-0 keys at each lower level.
 //
-// The construction works as follows. Given an encryption of zero (b, a) where
+// The construction works as follows. Given a public key (b, a) where
 // b = -a*s + e, we build a GadgetCiphertext at paramsLow by setting for each
 // gadget component i:
 //
@@ -30,18 +30,14 @@ import (
 // shift-0 evaluation key.
 //
 // PARAMETER REQUIREMENTS:
-//   - encZero must be a degree-1 ciphertext at paramsHigh in NTT+Montgomery form
+//   - pk must be a public key generated at paramsHigh (in NTT+Montgomery form)
 //   - paramsHigh.QCount() >= paramsLow.QCount() + paramsLow.PCount()
 //     (the high-level Q ring must contain all Q and P primes of the low level)
 //   - paramsLow.LogN() == paramsHigh.LogN()
-func PubToRot(paramsLow, paramsHigh rlwe.Parameters, encZero *rlwe.Ciphertext) (*MasterKey, error) {
+func PubToRot(paramsLow, paramsHigh rlwe.Parameters, pk *rlwe.PublicKey) (*MasterKey, error) {
 
-	if encZero == nil {
-		return nil, fmt.Errorf("encZero must not be nil")
-	}
-
-	if encZero.Degree() != 1 {
-		return nil, fmt.Errorf("encZero must be degree 1, got %d", encZero.Degree())
+	if pk == nil {
+		return nil, fmt.Errorf("public key must not be nil")
 	}
 
 	if paramsLow.LogN() != paramsHigh.LogN() {
@@ -75,31 +71,32 @@ func PubToRot(paramsLow, paramsHigh rlwe.Parameters, encZero *rlwe.Ciphertext) (
 	// Index where P_low primes start in Q_high
 	pIdx := paramsLow.QCount()
 
-	// Copy the encryption of zero into every gadget component.
-	// The encZero values are in NTT+Montgomery form in paramsHigh's Q ring.
+	// Copy the public key into every gadget component.
+	// PublicKey values are in NTT+Montgomery form.
+	// pk.Value[0].Q = b part, pk.Value[1].Q = a part (Q-ring coefficients).
 	// Q_low primes correspond to indices [0, levelQLow] in Q_high.
 	// P_low primes correspond to indices [pIdx, pIdx+levelPLow] in Q_high.
 	for i := range gc.Value {
 		for j := range gc.Value[i] {
 			component := gc.Value[i][j]
 
-			// Copy b' (encZero.Value[0]) into component[0]
+			// Copy b' (pk.Value[0].Q) into component[0]
 			for m := 0; m <= levelQLow; m++ {
-				copy(component[0].Q.Coeffs[m], encZero.Value[0].Coeffs[m])
+				copy(component[0].Q.Coeffs[m], pk.Value[0].Q.Coeffs[m])
 			}
 			if ringPLow != nil {
 				for m := 0; m <= levelPLow; m++ {
-					copy(component[0].P.Coeffs[m], encZero.Value[0].Coeffs[pIdx+m])
+					copy(component[0].P.Coeffs[m], pk.Value[0].Q.Coeffs[pIdx+m])
 				}
 			}
 
-			// Copy a' (encZero.Value[1]) into component[1]
+			// Copy a' (pk.Value[1].Q) into component[1]
 			for m := 0; m <= levelQLow; m++ {
-				copy(component[1].Q.Coeffs[m], encZero.Value[1].Coeffs[m])
+				copy(component[1].Q.Coeffs[m], pk.Value[1].Q.Coeffs[m])
 			}
 			if ringPLow != nil {
 				for m := 0; m <= levelPLow; m++ {
-					copy(component[1].P.Coeffs[m], encZero.Value[1].Coeffs[pIdx+m])
+					copy(component[1].P.Coeffs[m], pk.Value[1].Q.Coeffs[pIdx+m])
 				}
 			}
 		}
@@ -137,15 +134,6 @@ func addGadgetToAPart(params rlwe.Parameters, gc *rlwe.GadgetCiphertext) error {
 		nP = 1
 	}
 
-	// Compute the "P * 1" buffer in NTT+Montgomery form.
-	// Since the constant polynomial 1 in NTT domain is (1, 1, ..., 1),
-	// and in Montgomery form each 1 becomes MForm(1), the buffer P*1 in
-	// NTT+Montgomery form has MForm(P mod Q_k) at every position for each
-	// Q prime Q_k. (MulScalarBigint preserves the Montgomery domain.)
-	//
-	// But it's simpler to directly compute the scalar P mod Q_k in Montgomery
-	// form and add it to every coefficient.
-
 	var pBig *big.Int
 	if levelP >= 0 {
 		pBig = ringP.AtLevel(levelP).Modulus()
@@ -161,8 +149,6 @@ func addGadgetToAPart(params rlwe.Parameters, gc *rlwe.GadgetCiphertext) error {
 		pMontPerQ[k] = ring.MForm(pModQk.Uint64(), s.Modulus, s.BRedConstant)
 	}
 
-	// buff holds the current gadget scalar (multiplied by w^{2j} for base-two
-	// decomposition). Starts as P in Montgomery form at each Q prime.
 	buff := make([]uint64, levelQ+1)
 	copy(buff, pMontPerQ)
 
@@ -178,8 +164,6 @@ func addGadgetToAPart(params rlwe.Parameters, gc *rlwe.GadgetCiphertext) error {
 
 			if j < BaseTwoDecompositionVectorSize[i] {
 
-				// Add buff to the a-part at Q primes belonging to RNS group i.
-				// RNS group i corresponds to Q primes [i*nP, min((i+1)*nP-1, levelQ)].
 				for k := 0; k < nP; k++ {
 					index := i*nP + k
 
@@ -198,9 +182,6 @@ func addGadgetToAPart(params rlwe.Parameters, gc *rlwe.GadgetCiphertext) error {
 			}
 		}
 
-		// For base-two decomposition: multiply buff by 2^BaseTwoDecomposition.
-		// buff[k] is in Montgomery form, and BRed computes x*y mod q,
-		// so buff[k]*w stays in Montgomery form: (val*R)*w = (val*w)*R.
 		if gc.BaseTwoDecomposition > 0 {
 			w := uint64(1 << gc.BaseTwoDecomposition)
 			for k := 0; k <= levelQ; k++ {

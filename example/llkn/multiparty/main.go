@@ -1,12 +1,12 @@
 // Package main demonstrates LLKN hierarchical rotation keys for CKKS in
 // an N-out-of-N multiparty setting.
 //
-// N parties collectively generate transmission keys (EncZero + master rotation
+// N parties collectively generate transmission keys (PublicKey + master rotation
 // keys) without any single party knowing the full secret key. The server then
 // derives evaluation keys exactly as in the single-party case.
 //
-// The multiparty protocol uses lattigo's EvaluationKeyGenProtocol to generate
-// paper-convention master keys and PublicKeyGenProtocol for EncZero. The ideal
+// The multiparty protocol uses lattigo's GaloisKeyGenProtocol to generate
+// master keys and PublicKeyGenProtocol for the collective public key. The ideal
 // secret key s = sum(s_i) is computed only for verification.
 //
 // Parameters are 128-bit secure (HE Standard, LogN=14, eval QP=350 ≤ 438).
@@ -20,7 +20,6 @@ import (
 	"github.com/butvinm/lattigo-hierkeys/llkn"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/multiparty"
-	"github.com/tuneinsight/lattigo/v6/ring"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
 	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 )
@@ -61,7 +60,7 @@ func main() {
 	}
 
 	// --- PARTIES: each generates a secret key at top level ---
-	kgen := llkn.NewKeyGenerator(llknParams)
+	kgen := rlwe.NewKeyGenerator(topParams)
 	sks := make([]*rlwe.SecretKey, nParties)
 	for i := range sks {
 		sks[i] = kgen.GenSecretKeyNew()
@@ -74,7 +73,7 @@ func main() {
 		topParams.RingQP().Add(skIdeal.Value, sk.Value, skIdeal.Value)
 	}
 
-	// --- PHASE 1: Collective public key → EncZero ---
+	// --- PHASE 1: Collective public key ---
 	cpkProto := multiparty.NewPublicKeyGenProtocol(topParams)
 	cpkCRP := cpkProto.SampleCRP(crs)
 	cpkAgg := cpkProto.AllocateShare()
@@ -87,74 +86,42 @@ func main() {
 
 	collectivePK := rlwe.NewPublicKey(topParams)
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
+	fmt.Println("Collective public key generated")
 
-	// Encrypt zero using collective public key.
-	encZero := rlwe.NewCiphertext(topParams, 1, topParams.MaxLevel())
-	encZero.IsNTT = true
-	encZero.IsMontgomery = true
-	pkEnc := rlwe.NewEncryptor(topParams, collectivePK)
-	if err = pkEnc.EncryptZero(encZero); err != nil {
-		panic(err)
-	}
-	fmt.Println("Collective EncZero generated")
-
-	// --- PHASE 2: Collective master rotation keys (paper convention) ---
-	//
-	// LLKN's RotToRot expects paper convention: EvalKey(skIn=σ_r(s), skOut=s).
-	// We use EvaluationKeyGenProtocol directly (not GaloisKeyGenProtocol) so we
-	// can pass skIn=σ_r(s_i), skOut=s_i per party.
+	// --- PHASE 2: Collective master rotation keys via GaloisKeyGenProtocol ---
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
-	evkgProto := multiparty.NewEvaluationKeyGenProtocol(topParams)
-	masterRotKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
-
-	ringQ := topParams.RingQ()
-	ringP := topParams.RingP()
+	gkg := multiparty.NewGaloisKeyGenProtocol(topParams)
+	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 
 	for _, rot := range masterRots {
 		galEl := topParams.GaloisElement(rot)
-
-		autIdxQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galEl)
-		if err != nil {
-			panic(err)
-		}
-		autIdxP, err := ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galEl)
-		if err != nil {
-			panic(err)
-		}
-
-		crpEvk := evkgProto.SampleCRP(crs)
-		accShare := evkgProto.AllocateShare()
+		crp := gkg.SampleCRP(crs)
+		acc := gkg.AllocateShare()
+		acc.GaloisElement = galEl
 
 		for _, sk := range sks {
-			// Paper convention: skIn = σ_r(s_i), skOut = s_i
-			skAut := rlwe.NewSecretKey(topParams)
-			ringQ.AutomorphismNTTWithIndex(sk.Value.Q, autIdxQ, skAut.Value.Q)
-			ringP.AutomorphismNTTWithIndex(sk.Value.P, autIdxP, skAut.Value.P)
-
-			share := evkgProto.AllocateShare()
-			if err = evkgProto.GenShare(skAut, sk, crpEvk, &share); err != nil {
+			share := gkg.AllocateShare()
+			if err = gkg.GenShare(sk, galEl, crp, &share); err != nil {
 				panic(err)
 			}
-			if err = evkgProto.AggregateShares(accShare, share, &accShare); err != nil {
+			if err = gkg.AggregateShares(acc, share, &acc); err != nil {
 				panic(err)
 			}
 		}
 
 		gk := rlwe.NewGaloisKey(topParams)
-		if err = evkgProto.GenEvaluationKey(accShare, crpEvk, &gk.EvaluationKey); err != nil {
+		gkg.GenGaloisKey(acc, crp, gk)
+		masterKeys[rot], err = hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		if err != nil {
 			panic(err)
 		}
-		gk.GaloisElement = galEl
-		gk.NthRoot = ringQ.NthRoot()
-
-		masterRotKeys[rot] = hierkeys.NewMasterKey(gk)
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(masterRots), masterRots)
 
 	// --- SERVER: derive evaluation keys (identical to single-party) ---
 	tk := &llkn.TransmissionKeys{
-		MasterRotKeys: masterRotKeys,
-		EncZero:       encZero,
+		PublicKey:     collectivePK,
+		MasterRotKeys: masterKeys,
 	}
 	fmt.Printf("TX size = %d bytes (%.1f MB)\n", tk.BinarySize(), float64(tk.BinarySize())/(1024*1024))
 
@@ -169,7 +136,7 @@ func main() {
 
 	// --- VERIFY: encrypt, rotate, check precision ---
 	var skEval *rlwe.SecretKey
-	if skEval, err = kgen.ProjectToEvalKey(skIdeal); err != nil {
+	if skEval, err = llknParams.ProjectToEvalKey(skIdeal); err != nil {
 		panic(err)
 	}
 	ecd := ckks.NewEncoder(params)

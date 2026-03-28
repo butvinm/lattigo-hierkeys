@@ -36,6 +36,25 @@ func (p Parameters) NumLevels() int {
 	return len(p.RPrime)
 }
 
+// ProjectToEvalKey projects a homing-key-level secret key to evaluation level.
+// The evaluation key has Q = Q_eval and P = P_eval.
+//
+// Returns an error if the secret key is not at the expected HK level.
+func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, error) {
+	expectedQ := p.HK.QCount()
+	if skHK.LevelQ()+1 != expectedQ {
+		return nil, fmt.Errorf("sk has %d Q primes, want %d (HK level)", skHK.LevelQ()+1, expectedQ)
+	}
+	skEval := rlwe.NewSecretKey(p.Eval)
+	for m := 0; m <= p.Eval.MaxLevel(); m++ {
+		copy(skEval.Value.Q.Coeffs[m], skHK.Value.Q.Coeffs[m])
+	}
+	for m := 0; m <= p.Eval.MaxLevelP(); m++ {
+		copy(skEval.Value.P.Coeffs[m], skHK.Value.Q.Coeffs[p.Eval.QCount()+m])
+	}
+	return skEval, nil
+}
+
 // NewParameters constructs KG+ hierarchical key parameters from standard evaluation
 // parameters and auxiliary prime bit-sizes.
 //

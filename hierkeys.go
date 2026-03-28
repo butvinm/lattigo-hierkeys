@@ -59,35 +59,55 @@ func DecomposeRotation(target int, masterRots []int) []int {
 	return result
 }
 
-// ConvertToLattigoConvention converts a [MasterKey] (paper convention) to a
-// standard [rlwe.GaloisKey] (lattigo convention) by applying pi^{-1} to each
-// GadgetCiphertext component.
+// NewMasterKeyFromGaloisKey converts a standard lattigo-convention [rlwe.GaloisKey]
+// to a paper-convention [MasterKey] by applying σ_r (the forward automorphism)
+// to each GadgetCiphertext component.
+//
+// Use this to convert GaloisKeys produced by [rlwe.KeyGenerator.GenGaloisKeyNew]
+// or [multiparty.GaloisKeyGenProtocol] into MasterKeys for hierarchical derivation.
+//
+// This modifies the input key in-place. The GaloisKey must not be used after this call.
+func NewMasterKeyFromGaloisKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
+	if err := automorphGadgetCiphertext(params, gk, gk.GaloisElement); err != nil {
+		return nil, err
+	}
+	return &MasterKey{gk: gk}, nil
+}
+
+// NewGaloisKeyFromMasterKey converts a paper-convention [MasterKey] to a standard
+// lattigo-convention [rlwe.GaloisKey] by applying σ^{-1}_r (the inverse automorphism)
+// to each GadgetCiphertext component.
 //
 // This consumes the MasterKey — it must not be used after this call.
 //
 // This allocates temporary buffers per call. For repeated use in a hot loop,
 // consider pre-allocating buffers (see kgplus.Evaluator for an example).
-func ConvertToLattigoConvention(paramsEval rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
-
+func NewGaloisKeyFromMasterKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
 	gk := mk.gk
 	mk.gk = nil // consume
+	galElInv := params.ModInvGaloisElement(gk.GaloisElement)
+	if err := automorphGadgetCiphertext(params, gk, galElInv); err != nil {
+		return nil, err
+	}
+	return gk, nil
+}
 
-	galEl := gk.GaloisElement
-	galElInv := paramsEval.ModInvGaloisElement(galEl)
+// automorphGadgetCiphertext applies an automorphism (identified by galEl) to every
+// component of a GaloisKey's GadgetCiphertext in-place.
+func automorphGadgetCiphertext(params rlwe.Parameters, gk *rlwe.GaloisKey, galEl uint64) error {
+	ringQ := params.RingQ()
+	ringP := params.RingP()
 
-	ringQ := paramsEval.RingQ()
-	ringP := paramsEval.RingP()
-
-	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galElInv)
+	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galEl)
 	if err != nil {
-		return nil, fmt.Errorf("Q automorphism index: %w", err)
+		return fmt.Errorf("Q automorphism index: %w", err)
 	}
 
 	var indexP []uint64
 	if ringP != nil {
-		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galElInv)
+		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galEl)
 		if err != nil {
-			return nil, fmt.Errorf("P automorphism index: %w", err)
+			return fmt.Errorf("P automorphism index: %w", err)
 		}
 	}
 
@@ -107,7 +127,7 @@ func ConvertToLattigoConvention(paramsEval rlwe.Parameters, mk *MasterKey) (*rlw
 		}
 	}
 
-	return gk, nil
+	return nil
 }
 
 // automorphInPlace applies an automorphism to a polynomial using a pre-computed

@@ -27,7 +27,6 @@ func testString(params Parameters, opname string) string {
 
 type testContext struct {
 	params     Parameters
-	kgen       *KeyGenerator
 	sk         *rlwe.SecretKey // at HK level
 	skEval     *rlwe.SecretKey // projected to eval level
 	tk         *TransmissionKeys
@@ -36,23 +35,46 @@ type testContext struct {
 }
 
 func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
-	kgen := NewKeyGenerator(params)
-	sk := kgen.GenSecretKeyNew()
-	skEval, err := kgen.ProjectToEvalKey(sk)
+	kgenHK := rlwe.NewKeyGenerator(params.HK)
+
+	sk := kgenHK.GenSecretKeyNew()
+	skEval, err := params.ProjectToEvalKey(sk)
 	if err != nil {
 		return nil, err
 	}
 
-	tk, err := kgen.GenTransmissionKeys(sk, masterRots)
-	if err != nil {
-		return nil, err
+	// Build transmission keys manually
+	sk1 := kgenHK.GenSecretKeyNew()
+	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
+
+	topLevel := params.NumLevels() - 1
+	topParams := params.RPrime[topLevel]
+	skExt := ConstructExtendedSK(params.HK, topParams, sk, sk1)
+
+	pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
+
+	kgenRP := rlwe.NewKeyGenerator(topParams)
+	masterKeys := make(map[int]*hierkeys.MasterKey)
+	for _, rot := range masterRots {
+		galEl := topParams.GaloisElement(rot)
+		gk := kgenRP.GenGaloisKeyNew(galEl, skExt)
+		mk, err := hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		if err != nil {
+			return nil, err
+		}
+		masterKeys[rot] = mk
+	}
+
+	tk := &TransmissionKeys{
+		HomingKey:     homingKey,
+		PublicKey:     pk,
+		MasterRotKeys: masterKeys,
 	}
 
 	hkEval := NewEvaluator(params)
 
 	return &testContext{
 		params:     params,
-		kgen:       kgen,
 		sk:         sk,
 		skEval:     skEval,
 		tk:         tk,
@@ -74,7 +96,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.EncZero)
+		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.PublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -84,7 +106,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 		}
 		currentMasters = derived.Keys
 	}
-	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.EncZero)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +151,7 @@ func TestKGPlus(t *testing.T) {
 	testDeriveGaloisKeysLargeN(t)
 }
 
-// testKeyGenerator tests GenSecretKeyNew, ProjectToEvalKey, and GenTransmissionKeys.
+// testKeyGenerator tests secret key generation, ProjectToEvalKey, and transmission key construction.
 func testKeyGenerator(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -137,7 +159,8 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "KeyGenerator"), func(t *testing.T) {
 
 		t.Run("GenSecretKeyNew", func(t *testing.T) {
-			sk := tc.kgen.GenSecretKeyNew()
+			kgenHK := rlwe.NewKeyGenerator(params.HK)
+			sk := kgenHK.GenSecretKeyNew()
 			require.NotNil(t, sk)
 			// Key should have HK-level Q primes (Q_eval + P_eval)
 			require.Equal(t, params.HK.QCount()-1, sk.LevelQ())
@@ -145,18 +168,17 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 		})
 
 		t.Run("ProjectToEvalKey", func(t *testing.T) {
-			skEval, err := tc.kgen.ProjectToEvalKey(tc.sk)
+			skEval, err := params.ProjectToEvalKey(tc.sk)
 			require.NoError(t, err)
 			require.NotNil(t, skEval)
 			require.Equal(t, params.Eval.QCount()-1, skEval.LevelQ())
 			require.Equal(t, params.Eval.PCount()-1, skEval.LevelP())
 		})
 
-		t.Run("GenTransmissionKeys", func(t *testing.T) {
+		t.Run("TransmissionKeys", func(t *testing.T) {
 			tk := tc.tk
 			require.NotNil(t, tk.HomingKey)
-			require.NotNil(t, tk.EncZero)
-			require.Equal(t, 1, tk.EncZero.Degree())
+			require.NotNil(t, tk.PublicKey)
 			require.Equal(t, len(tc.masterRots), len(tk.MasterRotKeys))
 			for _, rot := range tc.masterRots {
 				_, ok := tk.MasterRotKeys[rot]
@@ -328,7 +350,7 @@ func testRotToRot(tc *testContext, t *testing.T) {
 		rsGK, err := tc.hkEval.RingSwitchGaloisKey(rotKey, homingKey, galElR)
 		require.NoError(t, err)
 
-		rsGKConverted, err := hierkeys.ConvertToLattigoConvention(paramsEval, hierkeys.NewMasterKey(rsGK))
+		rsGKConverted, err := hierkeys.NewGaloisKeyFromMasterKey(paramsEval, hierkeys.NewMasterKey(rsGK))
 		require.NoError(t, err)
 
 		threshold := float64(1 << 25)
@@ -421,7 +443,7 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		galElR1 := paramsEval.GaloisElement(rot1)
 		rsGK1, err := tc.hkEval.RingSwitchGaloisKey(rot1Key, homingKey, galElR1)
 		require.NoError(t, err)
-		rsGK1Converted, err := hierkeys.ConvertToLattigoConvention(paramsEval, hierkeys.NewMasterKey(rsGK1))
+		rsGK1Converted, err := hierkeys.NewGaloisKeyFromMasterKey(paramsEval, hierkeys.NewMasterKey(rsGK1))
 		require.NoError(t, err)
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK1Converted, rot1, threshold)
 
@@ -429,7 +451,7 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 		galElR5 := paramsEval.GaloisElement(rot5)
 		rsGK5, err := tc.hkEval.RingSwitchGaloisKey(rot5Key, homingKey, galElR5)
 		require.NoError(t, err)
-		rsGK5Converted, err := hierkeys.ConvertToLattigoConvention(paramsEval, hierkeys.NewMasterKey(rsGK5))
+		rsGK5Converted, err := hierkeys.NewGaloisKeyFromMasterKey(paramsEval, hierkeys.NewMasterKey(rsGK5))
 		require.NoError(t, err)
 		verifyRotationKey(t, paramsEval, paramsHK, skS, rsGK5Converted, rot5, threshold)
 	})
@@ -677,8 +699,7 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Verify structure
 		require.NotNil(t, tk2.HomingKey)
-		require.NotNil(t, tk2.EncZero)
-		require.Equal(t, 1, tk2.EncZero.Degree())
+		require.NotNil(t, tk2.PublicKey)
 		require.Equal(t, len(tc.tk.MasterRotKeys), len(tk2.MasterRotKeys))
 
 		for rot := range tc.tk.MasterRotKeys {
@@ -857,16 +878,38 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 			paramsEval.LogN(), paramsEval.QCount(), paramsEval.PCount(), paramsEval.N())
 
 		// Client
-		kgen := NewKeyGenerator(params)
-		sk := kgen.GenSecretKeyNew()
-		skEval, err := kgen.ProjectToEvalKey(sk)
+		kgenHK := rlwe.NewKeyGenerator(params.HK)
+		sk := kgenHK.GenSecretKeyNew()
+		skEval, err := params.ProjectToEvalKey(sk)
 		require.NoError(t, err)
 
 		masterRots := hierkeys.MasterRotationsForBase(4, paramsEval.N()/2)
 		t.Logf("master rotations (base-4): %v (%d keys)", masterRots, len(masterRots))
 
-		tk, err := kgen.GenTransmissionKeys(sk, masterRots)
-		require.NoError(t, err)
+		sk1 := kgenHK.GenSecretKeyNew()
+		homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
+
+		topLevel := params.NumLevels() - 1
+		topParams := params.RPrime[topLevel]
+		skExt := ConstructExtendedSK(params.HK, topParams, sk, sk1)
+
+		pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
+
+		kgenRP := rlwe.NewKeyGenerator(topParams)
+		masterKeys := make(map[int]*hierkeys.MasterKey)
+		for _, rot := range masterRots {
+			galEl := topParams.GaloisElement(rot)
+			gk := kgenRP.GenGaloisKeyNew(galEl, skExt)
+			mk, err := hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+			require.NoError(t, err)
+			masterKeys[rot] = mk
+		}
+
+		tk := &TransmissionKeys{
+			HomingKey:     homingKey,
+			PublicKey:     pk,
+			MasterRotKeys: masterKeys,
+		}
 
 		// Server: derive
 		targetRots := []int{1, 2, 3, 5, 7, 10, 17, 31, 64, 100, 255, 512, 1000}

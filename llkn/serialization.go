@@ -18,9 +18,9 @@ func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 
 	var written int64
 
-	// Write encryption of zero
-	if written, err = tk.EncZero.WriteTo(bw); err != nil {
-		return n, fmt.Errorf("write EncZero: %w", err)
+	// Write public key
+	if written, err = tk.PublicKey.WriteTo(bw); err != nil {
+		return n, fmt.Errorf("write PublicKey: %w", err)
 	}
 	n += written
 
@@ -63,10 +63,10 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 
 	var read int64
 
-	// Read encryption of zero
-	tk.EncZero = new(rlwe.Ciphertext)
-	if read, err = tk.EncZero.ReadFrom(br); err != nil {
-		return n, fmt.Errorf("read EncZero: %w", err)
+	// Read public key
+	tk.PublicKey = new(rlwe.PublicKey)
+	if read, err = tk.PublicKey.ReadFrom(br); err != nil {
+		return n, fmt.Errorf("read PublicKey: %w", err)
 	}
 	n += read
 
@@ -99,7 +99,7 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 
 // BinarySize returns the serialized size of the TransmissionKeys in bytes.
 func (tk *TransmissionKeys) BinarySize() int {
-	size := tk.EncZero.BinarySize()
+	size := tk.PublicKey.BinarySize()
 
 	size += 8 // master key count
 	for _, mk := range tk.MasterRotKeys {

@@ -1,14 +1,14 @@
 // Package main demonstrates KG+ hierarchical rotation keys for CKKS in
 // an N-out-of-N multiparty setting with a 3-level hierarchy (k=3).
 //
-// N parties collectively generate transmission keys (HomingKey, EncZero,
+// N parties collectively generate transmission keys (HomingKey, PublicKey,
 // master rotation keys) without any single party knowing the full secret.
 // Each party independently constructs their extended secret s̃_i = s_i + Y·s̃₁_i
 // in R' (degree 2N). The ideal extended secret s̃ = sum(s̃_i) is never materialized.
 //
 // The multiparty protocol uses:
-//   - PublicKeyGenProtocol at top RPrime level for EncZero
-//   - EvaluationKeyGenProtocol at top RPrime level for paper-convention master keys
+//   - PublicKeyGenProtocol at top RPrime level for the collective public key
+//   - GaloisKeyGenProtocol at top RPrime level for master rotation keys
 //   - EvaluationKeyGenProtocol at HK level for the homing key (s̃₁ → s)
 //
 // Parameters are 128-bit secure (HE Standard, LogN=14, eval QP=350 ≤ 438,
@@ -23,7 +23,6 @@ import (
 	"github.com/butvinm/lattigo-hierkeys/kgplus"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/multiparty"
-	"github.com/tuneinsight/lattigo/v6/ring"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
 	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 )
@@ -57,7 +56,7 @@ func main() {
 
 	slots := params.MaxSlots()
 	topLevel := hkParams.NumLevels() - 1
-	paramsTop := hkParams.RPrime[topLevel]
+	topParams := hkParams.RPrime[topLevel]
 	fmt.Printf("KG+ CKKS multiparty (N=%d, k=%d): LogN=%d, %d slots\n",
 		nParties, hkParams.NumLevels(), params.LogN(), slots)
 
@@ -68,7 +67,7 @@ func main() {
 	}
 
 	// --- PARTIES: each generates s_i and s̃₁_i, constructs s̃_i in R' ---
-	kgen := kgplus.NewKeyGenerator(hkParams)
+	kgenHK := rlwe.NewKeyGenerator(hkParams.HK)
 
 	// Secret keys at HK level (degree N)
 	sks := make([]*rlwe.SecretKey, nParties)    // s_i
@@ -76,20 +75,15 @@ func main() {
 	skExts := make([]*rlwe.SecretKey, nParties) // s̃_i in R' at top level
 
 	for i := range sks {
-		sks[i] = kgen.GenSecretKeyNew()
-		skS1s[i] = kgen.GenSecretKeyNew()
-		skExts[i] = kgplus.ConstructExtendedSK(hkParams.HK, paramsTop, sks[i], skS1s[i])
+		sks[i] = kgenHK.GenSecretKeyNew()
+		skS1s[i] = kgenHK.GenSecretKeyNew()
+		skExts[i] = kgplus.ConstructExtendedSK(hkParams.HK, topParams, sks[i], skS1s[i])
 	}
 
 	// Ideal secret keys for verification only.
 	skIdealHK := rlwe.NewSecretKey(hkParams.HK)
 	for _, sk := range sks {
 		hkParams.HK.RingQP().Add(skIdealHK.Value, sk.Value, skIdealHK.Value)
-	}
-
-	skIdealExt := rlwe.NewSecretKey(paramsTop)
-	for _, ske := range skExts {
-		paramsTop.RingQP().Add(skIdealExt.Value, ske.Value, skIdealExt.Value)
 	}
 
 	// --- PHASE 1: Collective homing key (s̃₁ → s at HK level) ---
@@ -114,8 +108,8 @@ func main() {
 	}
 	fmt.Println("Collective homing key generated")
 
-	// --- PHASE 2: Collective EncZero in R' at top level ---
-	cpkProto := multiparty.NewPublicKeyGenProtocol(paramsTop)
+	// --- PHASE 2: Collective public key in R' at top level ---
+	cpkProto := multiparty.NewPublicKeyGenProtocol(topParams)
 	cpkCRP := cpkProto.SampleCRP(crs)
 	cpkAgg := cpkProto.AllocateShare()
 
@@ -125,72 +119,45 @@ func main() {
 		cpkProto.AggregateShares(cpkAgg, share, &cpkAgg)
 	}
 
-	collectivePK := rlwe.NewPublicKey(paramsTop)
+	collectivePK := rlwe.NewPublicKey(topParams)
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
+	fmt.Println("Collective public key generated")
 
-	encZero := rlwe.NewCiphertext(paramsTop, 1, paramsTop.MaxLevel())
-	encZero.IsNTT = true
-	encZero.IsMontgomery = true
-	pkEnc := rlwe.NewEncryptor(paramsTop, collectivePK)
-	if err = pkEnc.EncryptZero(encZero); err != nil {
-		panic(err)
-	}
-	fmt.Println("Collective EncZero generated")
-
-	// --- PHASE 3: Collective master rotation keys in R' (paper convention) ---
+	// --- PHASE 3: Collective master rotation keys in R' via GaloisKeyGenProtocol ---
 	k3Masters := []int{1, 4}
-	evkgProto := multiparty.NewEvaluationKeyGenProtocol(paramsTop)
-	masterRotKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
-
-	ringQTop := paramsTop.RingQ()
-	ringPTop := paramsTop.RingP()
+	gkg := multiparty.NewGaloisKeyGenProtocol(topParams)
+	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 
 	for _, rot := range k3Masters {
-		galEl := paramsTop.GaloisElement(rot)
-
-		autIdxQ, err := ring.AutomorphismNTTIndex(ringQTop.N(), ringQTop.NthRoot(), galEl)
-		if err != nil {
-			panic(err)
-		}
-		autIdxP, err := ring.AutomorphismNTTIndex(ringPTop.N(), ringPTop.NthRoot(), galEl)
-		if err != nil {
-			panic(err)
-		}
-
-		crpEvk := evkgProto.SampleCRP(crs)
-		accShare := evkgProto.AllocateShare()
+		galEl := topParams.GaloisElement(rot)
+		crp := gkg.SampleCRP(crs)
+		acc := gkg.AllocateShare()
+		acc.GaloisElement = galEl
 
 		for _, ske := range skExts {
-			// Paper convention: skIn = σ_r(s̃_i), skOut = s̃_i
-			skAut := rlwe.NewSecretKey(paramsTop)
-			ringQTop.AutomorphismNTTWithIndex(ske.Value.Q, autIdxQ, skAut.Value.Q)
-			ringPTop.AutomorphismNTTWithIndex(ske.Value.P, autIdxP, skAut.Value.P)
-
-			share := evkgProto.AllocateShare()
-			if err = evkgProto.GenShare(skAut, ske, crpEvk, &share); err != nil {
+			share := gkg.AllocateShare()
+			if err = gkg.GenShare(ske, galEl, crp, &share); err != nil {
 				panic(err)
 			}
-			if err = evkgProto.AggregateShares(accShare, share, &accShare); err != nil {
+			if err = gkg.AggregateShares(acc, share, &acc); err != nil {
 				panic(err)
 			}
 		}
 
-		gk := rlwe.NewGaloisKey(paramsTop)
-		if err = evkgProto.GenEvaluationKey(accShare, crpEvk, &gk.EvaluationKey); err != nil {
+		gk := rlwe.NewGaloisKey(topParams)
+		gkg.GenGaloisKey(acc, crp, gk)
+		masterKeys[rot], err = hierkeys.NewMasterKeyFromGaloisKey(topParams, gk)
+		if err != nil {
 			panic(err)
 		}
-		gk.GaloisElement = galEl
-		gk.NthRoot = ringQTop.NthRoot()
-
-		masterRotKeys[rot] = hierkeys.NewMasterKey(gk)
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(k3Masters), k3Masters)
 
 	// --- SERVER: per-level expansion (identical to single-party) ---
 	tk := &kgplus.TransmissionKeys{
 		HomingKey:     homingKey,
-		MasterRotKeys: masterRotKeys,
-		EncZero:       encZero,
+		PublicKey:     collectivePK,
+		MasterRotKeys: masterKeys,
 	}
 	fmt.Printf("TX size = %d bytes (%.1f MB)\n", tk.BinarySize(), float64(tk.BinarySize())/(1024*1024))
 
@@ -199,7 +166,7 @@ func main() {
 
 	// Phase 1 (inactive): derive full master rotation set at intermediate level
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 	var level1Keys *kgplus.IntermediateKeys
@@ -211,7 +178,7 @@ func main() {
 	// Phase 2 (active): derive target rotation keys at level 0
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 	var level0Keys *kgplus.IntermediateKeys
@@ -229,7 +196,7 @@ func main() {
 
 	// --- VERIFY: encrypt, rotate, check precision ---
 	var skEval *rlwe.SecretKey
-	if skEval, err = kgen.ProjectToEvalKey(skIdealHK); err != nil {
+	if skEval, err = hkParams.ProjectToEvalKey(skIdealHK); err != nil {
 		panic(err)
 	}
 	ecd := ckks.NewEncoder(params)
