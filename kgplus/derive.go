@@ -18,89 +18,70 @@ type IntermediateKeys struct {
 	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
 }
 
-// DeriveGaloisKeys is a convenience wrapper that creates a temporary
-// Evaluator internally. For repeated calls or when performance matters,
-// use [Evaluator.DeriveGaloisKeys].
-func DeriveGaloisKeys(params Parameters, tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
-	eval := NewEvaluator(params)
-	return eval.DeriveGaloisKeys(tk, targetRotations)
-}
-
-// RotToRot is a convenience wrapper that creates a temporary Evaluator
-// internally. For repeated calls, use [Evaluator.RotToRot].
-func RotToRot(
-	paramsLow rlwe.Parameters,
-	paramsHigh rlwe.Parameters,
-	inputKey *rlwe.GaloisKey,
-	masterKey *rlwe.GaloisKey,
-	combinedGalEl uint64,
-) (*rlwe.GaloisKey, error) {
-	params := Parameters{
-		Eval:   paramsLow, // placeholder
-		HK:     paramsLow, // placeholder
-		RPrime: []rlwe.Parameters{paramsLow, paramsHigh},
-	}
-	eval := NewEvaluator(params)
-	return eval.RotToRot(0, inputKey, masterKey, combinedGalEl)
-}
-
-// RingSwitchGaloisKey is a convenience wrapper that creates a temporary
-// Evaluator internally. For repeated calls, use [Evaluator.RingSwitchGaloisKey].
-func RingSwitchGaloisKey(
-	paramsEval rlwe.Parameters,
-	paramsHK rlwe.Parameters,
-	paramsRPrime rlwe.Parameters,
-	masterKeyRPrime *rlwe.GaloisKey,
-	homingKey *rlwe.EvaluationKey,
-	galoisElement uint64,
-) (*rlwe.GaloisKey, error) {
-	params := Parameters{
-		Eval:   paramsEval,
-		HK:     paramsHK,
-		RPrime: []rlwe.Parameters{paramsRPrime, paramsHK}, // placeholder
-	}
-	eval := NewEvaluator(params)
-	return eval.RingSwitchGaloisKey(masterKeyRPrime, homingKey, galoisElement)
-}
-
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
 // transmission keys in one shot. The returned keys work with lattigo's standard
 // rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.
 //
 // For per-level control (e.g., storing intermediates at each level for the
-// inactive/active pattern), use [Evaluator.ExpandLevel] directly:
+// inactive/active pattern), derive shift-0 keys via PubToRot and use
+// [Evaluator.ExpandLevel] directly:
 //
-//	level1Keys, _ := eval.ExpandLevel(1, tk.Shift0Keys[1], tk.MasterRotKeys, masterRots)
+//	shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.EncZero)
+//	level1Keys, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
 //	// store level1Keys to disk...
-//	level0Keys, _ := eval.ExpandLevel(0, tk.Shift0Keys[0], level1Keys.Keys, targetRots)
+//	shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.EncZero)
+//	level0Keys, _ := eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots)
 //	// store level0Keys to disk...
 //	evk, _ := eval.FinalizeKeys(tk, level0Keys)
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
-	if tk == nil || len(tk.Shift0Keys) == 0 {
-		return nil, fmt.Errorf("transmission keys and shift-0 keys must not be nil")
+	if tk == nil || tk.EncZero == nil {
+		return nil, fmt.Errorf("transmission keys and EncZero must not be nil")
 	}
 
 	k := eval.params.NumLevels()
-
-	if len(tk.Shift0Keys) != k-1 {
-		return nil, fmt.Errorf("expected %d shift-0 keys (k-1), got %d", k-1, len(tk.Shift0Keys))
-	}
+	topLevel := k - 1
 
 	masterRots := sortedKeys(tk.MasterRotKeys)
 	currentMasters := tk.MasterRotKeys
 
+	isDerived := false // tracks whether currentMasters is derived (safe to nil) vs original TX data
 	for level := k - 2; level >= 1; level-- {
-		derived, err := eval.ExpandLevel(level, tk.Shift0Keys[level], currentMasters, masterRots)
+		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.EncZero)
+		if err != nil {
+			return nil, fmt.Errorf("PubToRot at level %d: %w", level, err)
+		}
+		derived, err := eval.ExpandLevel(level, shift0Key, currentMasters, masterRots)
 		if err != nil {
 			return nil, fmt.Errorf("expand R' level %d: %w", level, err)
 		}
+
+		// Release previous level's derived keys — no longer needed.
+		// Skip if currentMasters is tk.MasterRotKeys (don't mutate caller's data).
+		if isDerived {
+			for rot := range currentMasters {
+				currentMasters[rot] = nil // permit early GC
+			}
+		}
+
 		currentMasters = derived.Keys
+		isDerived = true
 	}
 
-	level0Keys, err := eval.ExpandLevel(0, tk.Shift0Keys[0], currentMasters, targetRotations)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.EncZero)
+	if err != nil {
+		return nil, fmt.Errorf("PubToRot at level 0: %w", err)
+	}
+	level0Keys, err := eval.ExpandLevel(0, shift0Key0, currentMasters, targetRotations)
 	if err != nil {
 		return nil, fmt.Errorf("expand R' level 0: %w", err)
+	}
+
+	// Release intermediate masters — no longer needed after level-0 expansion.
+	if isDerived {
+		for rot := range currentMasters {
+			currentMasters[rot] = nil // permit early GC
+		}
 	}
 
 	return eval.FinalizeKeys(tk, level0Keys)
@@ -111,7 +92,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 //
 // Parameters:
 //   - level: the R' hierarchy level to derive keys at (0 = lowest R' level)
-//   - shift0Key: the identity (shift-0) key at this level (from TransmissionKeys.Shift0Keys)
+//   - shift0Key: the identity (shift-0) key at this level (derived via PubToRot from TransmissionKeys.EncZero)
 //   - masterKeys: keys at level+1, indexed by rotation (either from TransmissionKeys.MasterRotKeys
 //     or from a previous ExpandLevel call's IntermediateKeys.Keys)
 //   - targetRotations: which rotations to derive at this level
@@ -210,7 +191,7 @@ func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
 }
 
 // FinalizeKeys ring-switches R' intermediate keys to R and post-converts
-// to lattigo's standard convention. This is the cheaper phase (~20% of cost).
+// to lattigo's standard convention.
 //
 // The result is a standard MemEvaluationKeySet usable with [rlwe.Evaluator].
 func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
@@ -233,6 +214,9 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *Intermed
 		if err != nil {
 			return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
 		}
+
+		// Release R' key — no longer needed after ring switching
+		intermediate.Keys[rot] = nil
 
 		// Post-convert from paper convention to lattigo convention
 		if err := eval.convertToLattigoConvention(rsGK); err != nil {

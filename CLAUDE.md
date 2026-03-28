@@ -21,24 +21,25 @@ Reference papers are in `./papers/` (gitignored). Read them for algorithm detail
 
 ```bash
 go build ./...
-gofmt -w hierkeys.go rottorot.go kgplus/*.go llkn/*.go  # always format before commit
 go test -v -count=1 -short ./kgplus/...   # KG+ tests
 go test -v -count=1 -short ./llkn/...     # LLKN tests
 go test -v -count=1 ./...                  # full suite including LogN=14
 go test -run "TestKGPlus/CKKSRotation" ./kgplus/...  # specific subtest
 ```
 
+Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofmt.sh`).
+
 ## Architecture
 
 ### Parent package (`hierkeys`)
 
-Shared utilities: `MasterRotationsForBase`, `DecomposeRotation`, `RotToRot` (parameterized), `ConvertToLattigoConvention`.
+Shared utilities: `MasterRotationsForBase`, `DecomposeRotation`, `RotToRot`, `PubToRot`, `ConvertToLattigoConvention`, `GenerateUniquePrimes`.
 
 ### KG+ (`kgplus/`)
 
 Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N).
 
-Key pipeline: GenTransmissionKeys (client) → Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
+Key pipeline: GenTransmissionKeys → PubToRot → ExpandLevel → FinalizeKeys → standard rlwe.GaloisKey.
 
 Ring-switched keys are post-converted from paper convention to lattigo convention via π⁻¹ automorphism. Only supports Standard ring type (not ConjugateInvariant).
 
@@ -46,9 +47,9 @@ Ring-switched keys are post-converted from paper convention to lattigo conventio
 
 Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master.
 
-Key pipeline: GenTransmissionKeys (client) → Expand + FinalizeKeys (server) → standard rlwe.GaloisKey.
+Key pipeline: GenTransmissionKeys → PubToRot → ExpandLevel → FinalizeKeys → standard rlwe.GaloisKey.
 
-Both Expand and FinalizeKeys support inactive/active key management pattern. Convention conversion is applied in FinalizeKeys. Output keys work with standard lattigo evaluators.
+Both ExpandLevel and FinalizeKeys support inactive/active key management pattern. Convention conversion is applied in FinalizeKeys. Output keys work with standard lattigo evaluators.
 
 Supports both Standard and ConjugateInvariant ring types.
 
@@ -63,7 +64,7 @@ Top-down cascade: at each intermediate level, derive the full master rotation se
 - **NTT prime constraint (KG+ only)**: All primes must satisfy q ≡ 1 mod 4N (NTT-friendly for degree 2N). LogQ-generated primes for degree N may fail.
 - **Convention mismatch (KG+)**: Ring switching produces paper-convention keys. Must post-convert (π⁻¹ automorphism) for standard lattigo evaluator compatibility.
 - **Convention conversion**: Both KG+ and LLKN use ConvertToLattigoConvention (π⁻¹ automorphism) to convert RotToRot output from paper convention to lattigo convention.
-- **Prime collision in multi-level**: When building parameter chains (Q\_{i+1} = Q_i ∪ P_i), P primes at each level MUST be distinct from all Q primes at that level. Lattigo's `GenModuli` does not enforce this. Both packages use `generateUniquePrimes` with an exclusion set.
+- **Prime collision in multi-level**: When building parameter chains (Q\_{i+1} = Q_i ∪ P_i), P primes at each level MUST be distinct from all Q primes at that level. Lattigo's `GenModuli` does not enforce this. Both packages use `GenerateUniquePrimes` with an exclusion set.
 - **Noise in multi-level (k>2)**: Derived keys used as masters amplify noise by Q/P in GadgetProduct. Intermediate levels need P ≈ Q primes (dnum ≈ 1) to keep noise manageable.
 - **ConstructExtendedSK for k>2 (KG+)**: When RPrime Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
 

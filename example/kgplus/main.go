@@ -1,12 +1,14 @@
-// Package main demonstrates KG+ hierarchical rotation keys for CKKS using the
-// "inactive" key management pattern with a 3-level hierarchy (k=3).
+// Package main demonstrates KG+ hierarchical rotation keys for CKKS using a
+// 3-level hierarchy (k=3) with the per-level ExpandLevel API.
 //
 // KG+ uses ring switching (extension ring R' of degree 2N) to reduce
 // transmission key sizes. Only supports Standard ring type.
+//
+// Parameters are 128-bit secure (HE Standard, LogN=14, eval QP=350 ≤ 438,
+// KG+ top R' QP=462 ≤ Q_max(2N)=881).
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"math/cmplx"
 
@@ -19,23 +21,27 @@ import (
 func main() {
 	var err error
 
-	// CKKS parameters. Primes must be NTT-friendly for degree 2N (KG+ requirement).
+	// 128-bit secure CKKS parameters.
+	// LogN=14: Q_max=438, eval QP = 5×50 + 2×50 = 350.
+	// LogNthRoot=16 ensures primes are NTT-friendly for degree 2N (KG+ requirement).
 	var params ckks.Parameters
 	if params, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
-		LogN:            10,
-		Q:               []uint64{0x1fffffffffe00001, 0x1fffffffffc80001, 0x1fffffffffb40001, 0x1fffffffff500001, 0x1fffffffff380001},
-		P:               []uint64{0x1ffffffff6c80001},
-		LogDefaultScale: 45,
+		LogN:            14,
+		LogQ:            []int{50, 50, 50, 50, 50},
+		LogP:            []int{50, 50},
+		LogDefaultScale: 50,
+		LogNthRoot:      16, // q ≡ 1 mod 4N for KG+
 	}); err != nil {
 		panic(err)
 	}
 
-	// k=3 hierarchy: needs enough P primes at each intermediate level
-	// for noise control when derived keys are used as masters.
+	// KG+ k=3: two levels of P primes in R' (degree 2N).
+	// Top R' QP = 350 + 56 + 56 = 462 ≤ Q_max(2N=2^15) = 881.
 	var hkParams kgplus.Parameters
-	logPHK := []int{61, 61, 61, 61, 61, 61}    // P for RPrime[1] (also HK P)
-	logPExtra := []int{61, 61, 61, 61, 61, 61} // P for RPrime[2]
-	if hkParams, err = kgplus.NewParameters(params.Parameters, logPHK, logPExtra); err != nil {
+	if hkParams, err = kgplus.NewParameters(params.Parameters,
+		[]int{56}, // P for RPrime[1] (also HK P)
+		[]int{56}, // P for RPrime[2] (top level)
+	); err != nil {
 		panic(err)
 	}
 
@@ -43,81 +49,56 @@ func main() {
 	fmt.Printf("KG+ CKKS (k=%d): LogN=%d, %d slots, %d Q primes\n",
 		hkParams.NumLevels(), params.LogN(), slots, params.QCount())
 	for i, rp := range hkParams.RPrime {
-		fmt.Printf("  RPrime[%d]: Q=%d, P=%d primes\n", i, rp.QCount(), rp.PCount())
+		fmt.Printf("  RPrime[%d]: Q=%d, P=%d primes (degree 2N=%d)\n",
+			i, rp.QCount(), rp.PCount(), rp.N())
 	}
 
-	// CLIENT: generate and send master keys
+	// CLIENT: generate and send transmission keys with {1, base} masters
 	kgen := kgplus.NewKeyGenerator(hkParams)
 	sk := kgen.GenSecretKeyNew()
-	masterRots := hierkeys.MasterRotationsForBase(4, slots)
+	k3Masters := []int{1, 4}
 
 	var tk *kgplus.TransmissionKeys
-	if tk, err = kgen.GenTransmissionKeys(sk, masterRots); err != nil {
+	if tk, err = kgen.GenTransmissionKeys(sk, k3Masters); err != nil {
 		panic(err)
 	}
-	fmt.Printf("\nClient: %d master keys for rotations %v\n", len(masterRots), masterRots)
-	fmt.Printf("Client: %d shift-0 keys (one per level 0..%d)\n", len(tk.Shift0Keys), hkParams.NumLevels()-2)
+	fmt.Printf("\nClient: %d master keys for rotations %v\n", len(k3Masters), k3Masters)
+	fmt.Printf("Client: TX size = %d bytes (%.1f MB)\n", tk.BinarySize(), float64(tk.BinarySize())/(1024*1024))
 
-	// Serialize transmission keys
-	var tkBuf bytes.Buffer
-	if _, err = tk.WriteTo(&tkBuf); err != nil {
-		panic(err)
-	}
-	fmt.Printf("Client: transmitted %d bytes (%.1f KB)\n", tkBuf.Len(), float64(tkBuf.Len())/1024)
-
-	// SERVER: gradual expansion using per-level ExpandLevel
-	tk2 := new(kgplus.TransmissionKeys)
-	if _, err = tk2.ReadFrom(&tkBuf); err != nil {
-		panic(err)
-	}
-
+	// SERVER: per-level expansion
 	eval := kgplus.NewEvaluator(hkParams)
+	topLevel := hkParams.NumLevels() - 1
+	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
-	// Phase 1 (rare): derive level-1 keys from top masters
+	// Phase 1 (inactive): derive full master rotation set at intermediate level
+	var shift0L1 *rlwe.GaloisKey
+	if shift0L1, err = hierkeys.PubToRot(hkParams.RPrime[1], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
+		panic(err)
+	}
 	var level1Keys *kgplus.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, tk2.Shift0Keys[1], tk2.MasterRotKeys, masterRots); err != nil {
+	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
 		panic(err)
 	}
-	fmt.Printf("\nServer (phase 1): derived %d level-1 keys in R'\n", len(level1Keys.Keys))
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys.Keys))
 
-	// Serialize level-1 intermediates to disk
-	var l1Buf bytes.Buffer
-	if _, err = level1Keys.WriteTo(&l1Buf); err != nil {
+	// Phase 2 (active): derive target rotation keys at level 0
+	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+	var shift0L0 *rlwe.GaloisKey
+	if shift0L0, err = hierkeys.PubToRot(hkParams.RPrime[0], hkParams.RPrime[topLevel], tk.EncZero); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Server (phase 1): stored %d bytes (%.1f KB)\n", l1Buf.Len(), float64(l1Buf.Len())/1024)
-
-	// Phase 2 (occasional): derive level-0 keys from level-1 keys
-	level1Loaded := new(kgplus.IntermediateKeys)
-	if _, err = level1Loaded.ReadFrom(&l1Buf); err != nil {
-		panic(err)
-	}
-
-	allPossibleRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var level0Keys *kgplus.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, tk2.Shift0Keys[0], level1Loaded.Keys, allPossibleRots); err != nil {
+	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Server (phase 2): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
+	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
-	// Serialize level-0 intermediates
-	var ikBuf bytes.Buffer
-	if _, err = level0Keys.WriteTo(&ikBuf); err != nil {
-		panic(err)
-	}
-	fmt.Printf("Server (phase 2): stored %d bytes (%.1f KB)\n", ikBuf.Len(), float64(ikBuf.Len())/1024)
-
-	// Phase 3 (on-demand): finalize from stored level-0 intermediates
-	intermediate2 := new(kgplus.IntermediateKeys)
-	if _, err = intermediate2.ReadFrom(&ikBuf); err != nil {
-		panic(err)
-	}
-
+	// Phase 3: ring-switch R' keys to eval ring and convert to lattigo convention
 	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(tk2, intermediate2); err != nil {
+	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
 		panic(err)
 	}
-	fmt.Printf("\nServer (active): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// SERVER: use derived keys with standard CKKS evaluator
 	skEval := kgen.ProjectToEvalKey(sk)
@@ -142,7 +123,7 @@ func main() {
 	}
 
 	fmt.Println()
-	for _, rot := range allPossibleRots {
+	for _, rot := range targetRots {
 		ctRot := ckks.NewCiphertext(params, 1, ct.Level())
 		if err = ckksEval.Rotate(ct, rot, ctRot); err != nil {
 			panic(err)

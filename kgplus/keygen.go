@@ -18,10 +18,9 @@ type TransmissionKeys struct {
 	// Indexed by rotation index (not Galois element).
 	MasterRotKeys map[int]*rlwe.GaloisKey
 
-	// Shift0Keys[i] is the identity (shift-0) GaloisKey at RPrime[i].
-	// Each encrypts P_i·s̃ under s̃ and serves as the seed for RotToRot.
-	// Length is k-1 (one per level except the top).
-	Shift0Keys []*rlwe.GaloisKey
+	// EncZero is an encryption of zero at the top RPrime level under s̃.
+	// The server derives shift-0 keys at each lower level via PubToRot.
+	EncZero *rlwe.Ciphertext
 }
 
 // KeyGenerator generates transmission keys on the client side.
@@ -92,22 +91,22 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 	// Homing key: switches s̃₁ → s at HK level
 	homingKey := kgen.kgenHK.GenEvaluationKeyNew(skS1, sk)
 
-	// Generate shift-0 keys at each RPrime level 0..k-2
-	shift0Keys := make([]*rlwe.GaloisKey, k-1)
-	for level := 0; level < k-1; level++ {
-		skTilde := kgen.constructExtendedSKForParams(kgen.params.RPrime[level], sk, skS1)
-		shift0EK := kgen.kgenRP[level].GenEvaluationKeyNew(skTilde, skTilde)
-		shift0Keys[level] = &rlwe.GaloisKey{
-			EvaluationKey: *shift0EK,
-			GaloisElement: 1, // identity
-			NthRoot:       kgen.params.RPrime[level].RingQ().NthRoot(),
-		}
-	}
-
-	// Generate master rotation keys at the top RPrime level (paper convention)
+	// Generate encryption of zero at the top RPrime level under s̃.
+	// The server will derive shift-0 keys at each lower level via PubToRot.
 	topLevel := k - 1
 	paramsTop := kgen.params.RPrime[topLevel]
 	skTildeTop := kgen.constructExtendedSKForParams(paramsTop, sk, skS1)
+
+	encZero := rlwe.NewCiphertext(paramsTop, 1, paramsTop.MaxLevel())
+	encZero.IsNTT = true
+	encZero.IsMontgomery = true
+	encTop := rlwe.NewEncryptor(paramsTop, skTildeTop)
+	var err error
+	if err = encTop.EncryptZero(encZero); err != nil {
+		return nil, fmt.Errorf("encrypt zero: %w", err)
+	}
+
+	// Generate master rotation keys at the top RPrime level (paper convention)
 
 	masterRotKeys := make(map[int]*rlwe.GaloisKey, len(masterRotations))
 	for _, rot := range masterRotations {
@@ -133,7 +132,7 @@ func (kgen *KeyGenerator) GenTransmissionKeys(sk *rlwe.SecretKey, masterRotation
 	return &TransmissionKeys{
 		HomingKey:     homingKey,
 		MasterRotKeys: masterRotKeys,
-		Shift0Keys:    shift0Keys,
+		EncZero:       encZero,
 	}, nil
 }
 

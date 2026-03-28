@@ -65,15 +65,24 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 	}
 	sort.Ints(masterRots)
 
+	topLevel := k - 1
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		derived, err := eval.ExpandLevel(level, tk.Shift0Keys[level], currentMasters, masterRots)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Levels[topLevel], tk.EncZero)
+		if err != nil {
+			return nil, err
+		}
+		derived, err := eval.ExpandLevel(level, shift0Key, currentMasters, masterRots)
 		if err != nil {
 			return nil, err
 		}
 		currentMasters = derived.Keys
 	}
-	return eval.ExpandLevel(0, tk.Shift0Keys[0], currentMasters, targetRots)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Levels[topLevel], tk.EncZero)
+	if err != nil {
+		return nil, err
+	}
+	return eval.ExpandLevel(0, shift0Key0, currentMasters, targetRots)
 }
 
 func TestLLKN(t *testing.T) {
@@ -96,6 +105,7 @@ func TestLLKN(t *testing.T) {
 			testDeriveGaloisKeys,
 			testDeriveGaloisKeysWithEvaluator,
 			testExpandAndFinalize,
+			testPubToRot,
 		} {
 			testSet(tc, t)
 			runtime.GC()
@@ -128,10 +138,8 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 		t.Run("GenTransmissionKeys", func(t *testing.T) {
 			tk := tc.tk
 			require.NotNil(t, tk)
-			require.Len(t, tk.Shift0Keys, params.NumLevels()-1)
-			for i, gk := range tk.Shift0Keys {
-				require.NotNil(t, gk, "shift-0 key at level %d is nil", i)
-			}
+			require.NotNil(t, tk.EncZero)
+			require.Equal(t, 1, tk.EncZero.Degree())
 			require.Len(t, tk.MasterRotKeys, len(tc.masterRots))
 			for _, rot := range tc.masterRots {
 				_, ok := tk.MasterRotKeys[rot]
@@ -148,7 +156,8 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "DeriveGaloisKeys"), func(t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
-		evk, err := DeriveGaloisKeys(params, tc.tk, targetRots)
+		eval := NewEvaluator(params)
+		evk, err := eval.DeriveGaloisKeys(tc.tk, targetRots)
 		require.NoError(t, err)
 		require.NotNil(t, evk)
 
@@ -215,7 +224,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, intermediate2.Keys, len(targetRots))
 
-		// Finalize (cheap)
+		// Finalize
 		evk, err := tc.eval.FinalizeKeys(intermediate2)
 		require.NoError(t, err)
 
@@ -229,6 +238,88 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 
 		for _, rot := range targetRots {
 			verifyDeriveRotation(t, params.Eval(), tc.skEval, stdEval, ct, rot, threshold)
+		}
+	})
+}
+
+func testPubToRot(tc *testContext, t *testing.T) {
+
+	params := tc.params
+
+	t.Run(testString(params, "PubToRot"), func(t *testing.T) {
+
+		// The EncZero in TransmissionKeys is the encryption of zero at the
+		// top level. PubToRot is now integrated into the pipeline, so we
+		// verify that the full derive flow works with PubToRot-derived
+		// shift-0 keys at each level.
+		k := params.NumLevels()
+		for level := 0; level < k-1; level++ {
+			t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
+
+				paramsLevel := params.Levels[level]
+
+				// Derive shift-0 key via PubToRot
+				derivedShift0, err := hierkeys.PubToRot(paramsLevel, params.Top(), tc.tk.EncZero)
+				require.NoError(t, err)
+				require.NotNil(t, derivedShift0)
+				require.Equal(t, uint64(1), derivedShift0.GaloisElement)
+
+				masterRots := make([]int, 0, len(tc.tk.MasterRotKeys))
+				for rot := range tc.tk.MasterRotKeys {
+					masterRots = append(masterRots, rot)
+				}
+				sort.Ints(masterRots)
+
+				eval := tc.eval
+
+				// Use PubToRot-derived shift-0 key to derive rotation keys
+				targetRots := []int{1, 2, 3}
+				var currentMasters map[int]*rlwe.GaloisKey
+
+				if level == k-2 {
+					// Level directly below top: use top master keys
+					currentMasters = tc.tk.MasterRotKeys
+				} else {
+					// Need to expand down from top to this level+1 first
+					currentMasters = tc.tk.MasterRotKeys
+					for lvl := k - 2; lvl > level; lvl-- {
+						shift0, err := hierkeys.PubToRot(params.Levels[lvl], params.Top(), tc.tk.EncZero)
+						require.NoError(t, err)
+						derived, err := eval.ExpandLevel(lvl, shift0, currentMasters, masterRots)
+						require.NoError(t, err)
+						currentMasters = derived.Keys
+					}
+				}
+
+				// Now expand at this level using the PubToRot-derived shift-0 key
+				intermediate, err := eval.ExpandLevel(level, derivedShift0, currentMasters, targetRots)
+				require.NoError(t, err)
+
+				if level == 0 {
+					// At level 0, finalize and verify with actual rotation
+					evk, err := eval.FinalizeKeys(intermediate)
+					require.NoError(t, err)
+
+					ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)
+					stdEval := rlwe.NewEvaluator(params.Eval(), evk)
+
+					threshold := float64(1 << 25)
+					if params.NumLevels() > 2 {
+						threshold = float64(1 << 35)
+					}
+
+					for _, rot := range targetRots {
+						verifyDeriveRotation(t, params.Eval(), tc.skEval, stdEval, ct, rot, threshold)
+					}
+				} else {
+					// For intermediate levels, verify the keys are non-nil
+					require.NotEmpty(t, intermediate.Keys)
+					for _, rot := range targetRots {
+						_, ok := intermediate.Keys[rot]
+						require.True(t, ok, "missing key for rotation %d", rot)
+					}
+				}
+			})
 		}
 	})
 }

@@ -1,6 +1,6 @@
 # Hierarchical Rotation Keys
 
-[![Go](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
 Hierarchical rotation key generation for [lattigo](https://github.com/tuneinsight/lattigo) v6 FHE library, reducing client-to-server key transmission cost.
@@ -43,38 +43,43 @@ sk := kgen.GenSecretKeyNew()
 tk, _ := kgen.GenTransmissionKeys(sk, hierkeys.MasterRotationsForBase(4, slots))
 
 // SERVER: one-shot derivation
-evk, _ := llkn.DeriveGaloisKeys(params, tk, targetRotations)
-eval := ckks.NewEvaluator(paramsEval, evk)
+eval := llkn.NewEvaluator(params)
+evk, _ := eval.DeriveGaloisKeys(tk, targetRotations)
+ckksEval := ckks.NewEvaluator(paramsEval, evk)
 ```
 
-### k=3 with gradual expansion
+### KG+ k=3 with gradual expansion
 
 ```go
-// LLKN k=3: two levels of P primes (P ≈ Q at each level for noise control)
-params, _ := llkn.NewParameters(paramsEval, [][]int{
-    {61, 61, 61, 61, 61, 61}, // P for level 1
-    {61, 61, 61, 61, 61, 61}, // P for level 2
-})
+import (
+    hierkeys "github.com/butvinm/lattigo-hierkeys"
+    "github.com/butvinm/lattigo-hierkeys/kgplus"
+)
 
-kgen := llkn.NewKeyGenerator(params)
+// KG+ k=3: two levels of P primes in R' (degree 2N)
+params, _ := kgplus.NewParameters(paramsEval, logPHK, logPExtra)
+
+// CLIENT: sends 2 master keys + enc-zero + homing key
+kgen := kgplus.NewKeyGenerator(params)
 sk := kgen.GenSecretKeyNew()
-tk, _ := kgen.GenTransmissionKeys(sk, masterRots)
+tk, _ := kgen.GenTransmissionKeys(sk, []int{1, 4}) // {1, base}
 
-eval := llkn.NewEvaluator(params)
+// SERVER: per-level expansion with PubToRot
+eval := kgplus.NewEvaluator(params)
+topLevel := params.NumLevels() - 1
 
-// Phase 1 (rare): top masters → level-1 keys
-level1, _ := eval.ExpandLevel(1, tk.Shift0Keys[1], tk.MasterRotKeys, masterRots)
-// store level1 to disk...
+// Phase 1 (inactive): derive full master set at intermediate level
+shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.EncZero)
+level1, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
 
-// Phase 2 (occasional): level-1 → level-0 keys
-level0, _ := eval.ExpandLevel(0, tk.Shift0Keys[0], level1.Keys, targetRots)
-// store level0 to disk...
+// Phase 2 (active): derive target keys at level 0
+shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.EncZero)
+level0, _ := eval.ExpandLevel(0, shift0L0, level1.Keys, targetRots)
 
-// Phase 3 (on-demand): finalize to eval keys
-evk, _ := eval.FinalizeKeys(level0)
+// Phase 3: ring-switch and finalize
+evk, _ := eval.FinalizeKeys(tk, level0)
+eval := ckks.NewEvaluator(paramsEval, evk)
 ```
-
-Replace `llkn` with `kgplus` for the KG+ scheme — the API pattern is the same (KG+ adds a homing key for ring switching).
 
 ## Architecture
 
@@ -82,12 +87,14 @@ Replace `llkn` with `kgplus` for the KG+ scheme — the API pattern is the same 
 
 Shared utilities:
 
-| Symbol                         | Purpose                                 |
-| ------------------------------ | --------------------------------------- |
-| `MasterRotationsForBase`       | Generate p-ary master rotation set      |
-| `DecomposeRotation`            | Greedy p-ary decomposition              |
-| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm (parameterized) |
-| `ConvertToLattigoConvention`   | Paper → lattigo convention conversion   |
+| Symbol                         | Purpose                                    |
+| ------------------------------ | ------------------------------------------ |
+| `MasterRotationsForBase`       | Generate p-ary master rotation set         |
+| `DecomposeRotation`            | Greedy p-ary decomposition                 |
+| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm with pre-alloc     |
+| `PubToRot`                     | Derive shift-0 key from encryption of zero |
+| `ConvertToLattigoConvention`   | Paper → lattigo convention conversion      |
+| `GenerateUniquePrimes`         | Collision-free NTT-friendly prime gen      |
 
 ### KG+ (`kgplus/`)
 
@@ -103,38 +110,53 @@ Pipeline: `GenTransmissionKeys` → `ExpandLevel` (per-level) + `FinalizeKeys` �
 
 ## Benchmarks
 
-256 target rotation keys, base-4, single-threaded CPU. Parameters are **insecure** (small N for fast testing) — see the papers for production parameter selection under security constraints.
+256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret with h=N/2).
 
 **Scheme configurations** (each uses the same eval-level Q and P):
 
-| Scheme                         | Masters | m   | dnum      | Modulus bit length    | Max modulus |
-| ------------------------------ | ------- | --- | --------- | --------------------- | ----------- |
-| **LogN=10, Q=5×55b, P=1×56b**  |         |     |           |                       |             |
-| Conventional                   | —       | 256 | (5)       | (275, 56)             | 331         |
-| LLKN k=2                       | base-4  | 5   | (5, 6)    | (275, 56, 56)         | 387         |
-| KG+ k=3                        | {1, 4}  | 2   | (5, 2, 1) | (275, 56, 280, 616)   | 1227 / R'   |
-| **LogN=12, Q=8×55b, P=2×56b**  |         |     |           |                       |             |
-| Conventional                   | —       | 256 | (4)       | (440, 112)            | 552         |
-| LLKN k=2                       | base-4  | 6   | (4, 10)   | (440, 112, 56)        | 608         |
-| KG+ k=3                        | {1, 4}  | 2   | (4, 2, 1) | (440, 112, 448, 1008) | 2008 / R'   |
-| **LogN=14, Q=14×55b, P=3×56b** |         |     |           |                       |             |
-| Conventional                   | —       | 256 | (5)       | (770, 168)            | 938         |
-| LLKN k=2                       | base-4  | 7   | (5, 17)   | (770, 168, 56)        | 994         |
-| KG+ k=3                        | {1, 4}  | 2   | (5, 2, 1) | (770, 168, 784, 1736) | 3458 / R'   |
+| Scheme                            | Masters | m   | dnum       | Modulus bit length     | Max modulus |
+| --------------------------------- | ------- | --- | ---------- | ---------------------- | ----------- |
+| **LogN=14, Q=5×50b, P=2×50b**     |         |     |            |                        |             |
+| Conventional                      | —       | 256 | (3)        | (253, 101)             | 354         |
+| LLKN k=2                          | base-4  | 7   | (3, 7)     | (253, 101, 56)         | 411         |
+| KG+ k=3                           | {1, 4}  | 2   | (3, 7, 8)  | (253, 101, 56, 56)     | 467 / R'    |
+| **LogN=15, Q=55b+9×40b, P=3×61b** |         |     |            |                        |             |
+| Conventional                      | —       | 256 | (4)        | (419, 183)             | 602         |
+| LLKN k=2                          | base-4  | 7   | (4, 7)     | (419, 183, 122)        | 725         |
+| KG+ k=3                           | {1, 4}  | 2   | (4, 2, 5)  | (419, 183, 610, 305)   | 1527 / R'   |
+| **LogN=16, Q=24×55b, P=4×55b**    |         |     |            |                        |             |
+| Conventional                      | —       | 256 | (6)        | (1332, 222)            | 1554        |
+| LLKN k=2                          | base-4  | 8   | (6, 7)     | (1332, 222, 220)       | 1775        |
+| KG+ k=3                           | {1, 4}  | 2   | (6, 10, 1) | (1332, 222, 171, 1705) | 3450 / R'   |
 
-**Results:**
+**Transmission key sizes:**
 
-| LogN | Conventional | LLKN k=2    | KG+ k=3     |
-| ---- | ------------ | ----------- | ----------- |
-| 10   | 120 MB       | 4 MB / 1s   | 3 MB / 4s   |
-| 12   | 640 MB       | 44 MB / 11s | 21 MB / 27s |
-| 14   | 5.4 GB       | 557 MB / 3m | 151 MB / 5m |
+| LogN | Conventional | LLKN k=2        | KG+ k=3       |
+| ---- | ------------ | --------------- | ------------- |
+| 14   | 1,344 MB     | 100 MB (7.4%)   | 90 MB (6.7%)  |
+| 15   | 6,656 MB     | 374 MB (5.6%)   | 326 MB (4.9%) |
+| 16   | 43,009 MB    | 1,820 MB (4.2%) | 620 MB (1.4%) |
 
-Format: transmission key size / server derivation time.
+**Client TX generation time:**
+
+| LogN | LLKN k=2 | KG+ k=3 |
+| ---- | -------- | ------- |
+| 14   | 0.4s     | 0.3s    |
+| 15   | 1.3s     | 1.3s    |
+| 16   | 7.0s     | 3.2s    |
+
+**Server derivation time (sequential, single core):**
+
+| LogN | LLKN k=2 | KG+ k=3 |
+| ---- | -------- | ------- |
+| 14   | 14s      | 48s     |
+| 15   | 76s      | 217s    |
+| 16   | 528s     | 2,179s  |
 
 ```bash
 go test -bench BenchmarkKeySizes -benchtime 1x -run ^NONE ./...
 go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^NONE -timeout 60m ./...
+go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^NONE ./...
 ```
 
 ## Build & Test
@@ -147,12 +169,10 @@ go test -v -count=1 -short ./llkn/...
 
 ## Examples
 
-Both examples demonstrate k=3 hierarchy with the gradual (per-level) inactive/active expansion pattern:
-
 ```bash
 cd example
-go run ./kgplus/   # KG+ k=3 with ring switching
-go run ./llkn/     # LLKN k=3, same ring
+go run ./llkn/     # LLKN k=2: one-shot DeriveGaloisKeys
+go run ./kgplus/   # KG+ k=3: per-level ExpandLevel with ring switching
 ```
 
 ## License

@@ -3,6 +3,7 @@ package kgplus
 import (
 	"fmt"
 
+	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
@@ -79,7 +80,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 
 	// Generate HK P primes (avoiding existing primes).
 	// Must be NTT-friendly for degree 2N because they are also used as P in RPrime[1].
-	pHK, err := generateUniquePrimes(logPHK, nthRoot2N, usedPrimes)
+	pHK, err := hierkeys.GenerateUniquePrimes(logPHK, nthRoot2N, usedPrimes)
 	if err != nil {
 		return Parameters{}, fmt.Errorf("cannot generate HK P primes: %w", err)
 	}
@@ -141,7 +142,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 		qNext = append(qNext, prev.P()...)
 
 		// Generate fresh P primes avoiding all used primes, NTT-friendly for degree 2N
-		pNext, err := generateUniquePrimes(logPExtra[i], nthRoot2N, usedPrimes)
+		pNext, err := hierkeys.GenerateUniquePrimes(logPExtra[i], nthRoot2N, usedPrimes)
 		if err != nil {
 			return Parameters{}, fmt.Errorf("cannot generate P primes for R' level %d: %w", i+2, err)
 		}
@@ -167,42 +168,4 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 		HK:     paramsHK,
 		RPrime: rpLevels,
 	}, nil
-}
-
-// generateUniquePrimes generates NTT-friendly primes of the given bit sizes
-// that are not in the usedPrimes set.
-func generateUniquePrimes(logP []int, nthRoot uint64, usedPrimes map[uint64]bool) ([]uint64, error) {
-	primes := make([]uint64, 0, len(logP))
-
-	// Group by bit size to share generators
-	bySize := make(map[int]int)
-	for _, bits := range logP {
-		bySize[bits]++
-	}
-
-	generated := make(map[int][]uint64)
-	for bits, count := range bySize {
-		g := ring.NewNTTFriendlyPrimesGenerator(uint64(bits), nthRoot)
-		ps := make([]uint64, 0, count)
-		for len(ps) < count {
-			p, err := g.NextAlternatingPrime()
-			if err != nil {
-				return nil, fmt.Errorf("exhausted %d-bit NTT-friendly primes (need %d, got %d)", bits, count, len(ps))
-			}
-			if !usedPrimes[p] {
-				ps = append(ps, p)
-			}
-		}
-		generated[bits] = ps
-	}
-
-	// Reconstruct in original order
-	counters := make(map[int]int)
-	for _, bits := range logP {
-		idx := counters[bits]
-		primes = append(primes, generated[bits][idx])
-		counters[bits] = idx + 1
-	}
-
-	return primes, nil
 }
