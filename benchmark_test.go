@@ -68,7 +68,7 @@ var benchScenarios = []benchScenario{
 	},
 }
 
-// BenchmarkKeySizes measures and reports transmission key sizes for LLKN, KG+ k=2, and KG+ k=3.
+// BenchmarkKeySizes measures and reports transmission key sizes for LLKN k=2 and KG+ k=3.
 func BenchmarkKeySizes(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -124,34 +124,6 @@ func BenchmarkKeySizes(b *testing.B) {
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
 				b.Logf("LLKN k=2: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
-					dnumMaster, float64(tkSize)/(1024*1024), ratio)
-				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
-				b.ReportMetric(ratio, "vs_conv_%")
-				b.ReportMetric(float64(dnumMaster), "dnum_master")
-			})
-
-			b.Run("KGPlus_k2", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK)
-				if err != nil {
-					b.Skip("KG+ k=2 params failed:", err)
-					return
-				}
-
-				topRP := params.RPrime[params.NumLevels()-1]
-				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
-					topRP.MaxLevel(), topRP.MaxLevelP())
-
-				kgen := kgplus.NewKeyGenerator(params)
-				sk := kgen.GenSecretKeyNew()
-				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
-				if err != nil {
-					b.Fatal(err)
-				}
-
-				tkSize := tk.BinarySize()
-				ratio := float64(tkSize) / float64(conventionalBytes) * 100
-
-				b.Logf("KG+ k=2: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
 					dnumMaster, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
@@ -235,27 +207,6 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				}
 			})
 
-			b.Run("KGPlus_k2", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK)
-				if err != nil {
-					b.Skip("KG+ k=2 params failed:", err)
-					return
-				}
-				kgen := kgplus.NewKeyGenerator(params)
-				sk := kgen.GenSecretKeyNew()
-				tk, err := kgen.GenTransmissionKeys(sk, masterRots)
-				if err != nil {
-					b.Fatal(err)
-				}
-				eval := kgplus.NewEvaluator(params)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-
 			b.Run("KGPlus_k3", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
@@ -305,22 +256,6 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 					b.Fatal(err)
 				}
 				kgen := llkn.NewKeyGenerator(params)
-				sk := kgen.GenSecretKeyNew()
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					if _, err := kgen.GenTransmissionKeys(sk, masterRots); err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-
-			b.Run("KGPlus_k2", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK)
-				if err != nil {
-					b.Skip("KG+ k=2 params failed:", err)
-					return
-				}
-				kgen := kgplus.NewKeyGenerator(params)
 				sk := kgen.GenSecretKeyNew()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {

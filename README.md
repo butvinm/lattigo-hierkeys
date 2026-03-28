@@ -103,38 +103,44 @@ Pipeline: `GenTransmissionKeys` → `ExpandLevel` (per-level) + `FinalizeKeys` �
 
 ## Benchmarks
 
-256 target rotation keys, base-4, single-threaded CPU. Parameters are **insecure** (small N for fast testing) — see the papers for production parameter selection under security constraints.
+256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret with h=N/2).
 
-**Scheme configurations** (each uses the same eval-level Q and P):
+**Parameter sets:**
 
-| Scheme                         | Masters | m   | dnum      | Modulus bit length    | Max modulus |
-| ------------------------------ | ------- | --- | --------- | --------------------- | ----------- |
-| **LogN=10, Q=5×55b, P=1×56b**  |         |     |           |                       |             |
-| Conventional                   | —       | 256 | (5)       | (275, 56)             | 331         |
-| LLKN k=2                       | base-4  | 5   | (5, 6)    | (275, 56, 56)         | 387         |
-| KG+ k=3                        | {1, 4}  | 2   | (5, 2, 1) | (275, 56, 280, 616)   | 1227 / R'   |
-| **LogN=12, Q=8×55b, P=2×56b**  |         |     |           |                       |             |
-| Conventional                   | —       | 256 | (4)       | (440, 112)            | 552         |
-| LLKN k=2                       | base-4  | 6   | (4, 10)   | (440, 112, 56)        | 608         |
-| KG+ k=3                        | {1, 4}  | 2   | (4, 2, 1) | (440, 112, 448, 1008) | 2008 / R'   |
-| **LogN=14, Q=14×55b, P=3×56b** |         |     |           |                       |             |
-| Conventional                   | —       | 256 | (5)       | (770, 168)            | 938         |
-| LLKN k=2                       | base-4  | 7   | (5, 17)   | (770, 168, 56)        | 994         |
-| KG+ k=3                        | {1, 4}  | 2   | (5, 2, 1) | (770, 168, 784, 1736) | 3458 / R'   |
+| LogN | Eval Q    | Eval P | Eval QP | Q_max(N) | KG+ R' Q_max(2N) |
+| ---- | --------- | ------ | ------- | -------- | ---------------- |
+| 14   | 5x50b     | 2x50b  | 350     | 438      | 881              |
+| 15   | 55b+9x40b | 3x61b  | 598     | 881      | 1761             |
+| 16   | 24x55b    | 4x55b  | 1540    | 1761     | 3500             |
 
-**Results:**
+**Transmission key sizes (with PubToRot):**
 
-| LogN | Conventional | LLKN k=2    | KG+ k=3     |
-| ---- | ------------ | ----------- | ----------- |
-| 10   | 120 MB       | 4 MB / 1s   | 3 MB / 4s   |
-| 12   | 640 MB       | 44 MB / 11s | 21 MB / 27s |
-| 14   | 5.4 GB       | 557 MB / 3m | 151 MB / 5m |
+| LogN | Conventional | LLKN k=2        | KG+ k=3       |
+| ---- | ------------ | --------------- | ------------- |
+| 14   | 1,344 MB     | 100 MB (7.4%)   | 90 MB (6.7%)  |
+| 15   | 6,656 MB     | 374 MB (5.6%)   | 326 MB (4.9%) |
+| 16   | 43,009 MB    | 1,820 MB (4.2%) | 620 MB (1.4%) |
 
-Format: transmission key size / server derivation time.
+**Server derivation time (sequential):**
+
+| LogN | LLKN k=2 | KG+ k=3 |
+| ---- | -------- | ------- |
+| 14   | 14s      | 48s     |
+| 15   | 76s      | 217s    |
+| 16   | 528s     | 2,179s  |
+
+**Client TX generation time:**
+
+| LogN | LLKN k=2 | KG+ k=3 |
+| ---- | -------- | ------- |
+| 14   | 0.4s     | 0.3s    |
+| 15   | 1.3s     | 1.3s    |
+| 16   | 7.0s     | 3.2s    |
 
 ```bash
 go test -bench BenchmarkKeySizes -benchtime 1x -run ^NONE ./...
 go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^NONE -timeout 60m ./...
+go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^NONE ./...
 ```
 
 ## Build & Test
