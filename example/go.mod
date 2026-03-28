@@ -1,6 +1,6 @@
 module github.com/butvinm/lattigo-hierkeys/example
 
-go 1.25.6
+go 1.24.0
 
 replace github.com/butvinm/lattigo-hierkeys => ../
 
