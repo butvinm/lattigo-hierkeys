@@ -21,12 +21,13 @@ Reference papers are in `./papers/` (gitignored). Read them for algorithm detail
 
 ```bash
 go build ./...
-gofmt -w hierkeys.go rottorot.go kgplus/*.go llkn/*.go  # always format before commit
 go test -v -count=1 -short ./kgplus/...   # KG+ tests
 go test -v -count=1 -short ./llkn/...     # LLKN tests
 go test -v -count=1 ./...                  # full suite including LogN=14
 go test -run "TestKGPlus/CKKSRotation" ./kgplus/...  # specific subtest
 ```
+
+Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofmt.sh`).
 
 ## Architecture
 

@@ -1,2 +1,4 @@
 papers/
 .claude/skills/
+.claude/hooks/
+.claude/settings.local.json
