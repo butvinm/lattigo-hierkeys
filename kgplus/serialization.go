@@ -212,9 +212,18 @@ func (tk *TransmissionKeys) UnmarshalBinary(p []byte) error {
 	return err
 }
 
+// BinarySize returns the serialized size of the IntermediateKeys in bytes.
+func (ik *IntermediateKeys) BinarySize() int {
+	size := 8 // key count
+	for _, gk := range ik.Keys {
+		size += 8 + gk.BinarySize() // rotation index + key data
+	}
+	return size
+}
+
 // MarshalBinary encodes the IntermediateKeys into a byte slice.
 func (ik *IntermediateKeys) MarshalBinary() ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
+	buf := bytes.NewBuffer(make([]byte, 0, ik.BinarySize()))
 	if _, err := ik.WriteTo(buf); err != nil {
 		return nil, err
 	}
