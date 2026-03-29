@@ -5,7 +5,9 @@
 
 Hierarchical rotation key generation for [lattigo](https://github.com/tuneinsight/lattigo) v6 FHE library, reducing client-to-server key transmission cost.
 
-Instead of transmitting one rotation key per needed cyclic shift, the client generates a small set of master rotation keys and sends them to the server. The server expands these into all required evaluation keys via the RotToRot algorithm. Derived keys are standard `rlwe.GaloisKey` objects, compatible with `rlwe.Evaluator`, `ckks.Evaluator.Rotate`, and hoisted rotations.
+Instead of transmitting one rotation key per needed cyclic shift, the client generates a small set of master rotation keys and sends them to the server. The server expands these into all required evaluation keys using the LLKN or KG+ algorithms. Derived keys are standard `rlwe.GaloisKey` objects, compatible with `rlwe.Evaluator`, `ckks.Evaluator.Rotate`, and hoisted rotations.
+
+Both single-party and N-out-of-N multiparty key generation are supported (see [examples](#examples)).
 
 ## Installation
 
@@ -26,15 +28,9 @@ Both produce standard lattigo Galois keys.
 
 ## Quick Start
 
-### k=2 (two-level hierarchy)
+### LLKN k=2 (two-level hierarchy)
 
 ```go
-import (
-    hierkeys "github.com/butvinm/lattigo-hierkeys"
-    "github.com/butvinm/lattigo-hierkeys/llkn"
-    "github.com/tuneinsight/lattigo/v6/core/rlwe"
-)
-
 // LLKN k=2: one level of P primes
 params, _ := llkn.NewParameters(paramsEval, [][]int{{61}})
 
@@ -50,91 +46,18 @@ for _, rot := range masterRots {
     masterKeys[rot], _ = hierkeys.GaloisKeyToMasterKey(params.Top(), gk)
 }
 tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
+// send tk to server
 
-// SERVER: one-shot derivation
+// SERVER: one-shot derivation → standard lattigo evaluation keys
 eval := llkn.NewEvaluator(params)
 evk, _ := eval.DeriveGaloisKeys(tk, targetRotations)
-
-skEval, _ := params.ProjectToEvalKey(sk)
-ckksEval := ckks.NewEvaluator(paramsEval, evk)
 ```
 
 ### KG+ k=3 with gradual expansion
 
-```go
-import (
-    hierkeys "github.com/butvinm/lattigo-hierkeys"
-    "github.com/butvinm/lattigo-hierkeys/kgplus"
-    "github.com/tuneinsight/lattigo/v6/core/rlwe"
-)
+KG+ uses an extension ring R' (degree 2N) and ring switching. The client generates two independent secrets, constructs an extended secret in R', and sends a homing key for ring switching.
 
-// KG+ k=3: two levels of P primes in R' (degree 2N)
-params, _ := kgplus.NewParameters(paramsEval, logPHK, logPExtra)
-topLevel := params.NumLevels() - 1
-topParams := params.RPrime[topLevel]
-
-// CLIENT: generate keys with standard lattigo
-kgenHK := rlwe.NewKeyGenerator(params.HK)
-sk := kgenHK.GenSecretKeyNew()
-sk1 := kgenHK.GenSecretKeyNew()
-homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
-
-skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
-kgenRP := rlwe.NewKeyGenerator(topParams)
-pk := kgenRP.GenPublicKeyNew(skExt)
-
-masterKeys := make(map[int]*hierkeys.MasterKey)
-for _, rot := range []int{1, 4} { // {1, base}
-    gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
-    masterKeys[rot], _ = hierkeys.GaloisKeyToMasterKey(topParams, gk)
-}
-tk := &kgplus.TransmissionKeys{HomingKey: homingKey, PublicKey: pk, MasterRotKeys: masterKeys}
-
-// SERVER: per-level expansion with PubToRot
-eval := kgplus.NewEvaluator(params)
-
-// Phase 1 (inactive): derive full master set at intermediate level
-shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey)
-level1, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
-
-// Phase 2 (active): derive target keys at level 0
-shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
-level0, _ := eval.ExpandLevel(0, shift0L0, level1.Keys, targetRots)
-
-// Phase 3: ring-switch and finalize
-evk, _ := eval.FinalizeKeys(tk, level0)
-skEval, _ := params.ProjectToEvalKey(sk)
-ckksEval := ckks.NewEvaluator(paramsEval, evk)
-```
-
-## Architecture
-
-### Parent package (`hierkeys`)
-
-Shared utilities:
-
-| Symbol                         | Purpose                                     |
-| ------------------------------ | ------------------------------------------- |
-| `MasterKey`                    | Paper-convention key type for RotToRot      |
-| `GaloisKeyToMasterKey`         | Lattigo GaloisKey → MasterKey (applies σ_r) |
-| `MasterKeyToGaloisKey`         | MasterKey → lattigo GaloisKey (applies σ⁻¹) |
-| `MasterRotationsForBase`       | Generate p-ary master rotation set          |
-| `DecomposeRotation`            | Greedy p-ary decomposition                  |
-| `RotToRot` / `RotToRotBuffers` | Core RotToRot algorithm with pre-alloc      |
-| `PubToRot`                     | Derive shift-0 key from public key          |
-| `GenerateUniquePrimes`         | Collision-free NTT-friendly prime gen       |
-
-### KG+ (`kgplus/`)
-
-Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N).
-
-Pipeline: `GaloisKeyToMasterKey` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
-
-### LLKN (`llkn/`)
-
-Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master.
-
-Pipeline: `GaloisKeyToMasterKey` → `ExpandLevel` (per-level) + `FinalizeKeys` → `rlwe.GaloisKey`.
+See `example/kgplus/simple` for the complete flow.
 
 ## Benchmarks
 
