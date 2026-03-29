@@ -45,6 +45,27 @@ func (p Parameters) NumLevels() int {
 	return len(p.Levels)
 }
 
+// ProjectToEvalKey projects a top-level secret key to evaluation level.
+// The evaluation key has Q = Q_eval and P = P_eval.
+//
+// Returns an error if the secret key is not at the expected top level.
+func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, error) {
+	expectedQ := p.Top().QCount()
+	if skTop.LevelQ()+1 != expectedQ {
+		return nil, fmt.Errorf("sk has %d Q primes, want %d (top level)", skTop.LevelQ()+1, expectedQ)
+	}
+	// projectToLevel logic for level 0
+	paramsLevel := p.Levels[0]
+	skLevel := rlwe.NewSecretKey(paramsLevel)
+	for m := 0; m <= paramsLevel.MaxLevel(); m++ {
+		copy(skLevel.Value.Q.Coeffs[m], skTop.Value.Q.Coeffs[m])
+	}
+	for m := 0; m <= paramsLevel.MaxLevelP(); m++ {
+		copy(skLevel.Value.P.Coeffs[m], skTop.Value.Q.Coeffs[paramsLevel.QCount()+m])
+	}
+	return skLevel, nil
+}
+
 // NewParameters constructs LLKN hierarchical key parameters from standard
 // evaluation parameters and auxiliary prime bit-sizes for each level above eval.
 //

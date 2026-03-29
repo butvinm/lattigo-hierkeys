@@ -9,34 +9,23 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// IntermediateKeys holds R' GaloisKeys produced by RotToRot expansion at a
-// single hierarchy level. These are in the paper's convention (not yet
-// ring-switched or post-converted). They can be serialized, stored, and later
-// used as input to expand the next level down or finalized via
-// [Evaluator.FinalizeKeys] (level 0 only).
+// IntermediateKeys holds R' MasterKeys produced by [Evaluator.ExpandLevel] at a
+// single hierarchy level. Can be serialized, used as input to the next
+// ExpandLevel call, or finalized via [Evaluator.FinalizeKeys] (level 0 only).
 type IntermediateKeys struct {
-	Keys map[int]*rlwe.GaloisKey // indexed by rotation index
+	Keys map[int]*hierkeys.MasterKey // indexed by rotation index
 }
 
 // DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
-// transmission keys in one shot. The returned keys work with lattigo's standard
-// rlwe.Evaluator.Automorphism and ckks.Evaluator.Rotate.
+// transmission keys in one shot. The returned keys work with standard
+// lattigo evaluators.
 //
-// For per-level control (e.g., storing intermediates at each level for the
-// inactive/active pattern), derive shift-0 keys via PubToRot and use
-// [Evaluator.ExpandLevel] directly:
-//
-//	shift0L1, _ := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.EncZero)
-//	level1Keys, _ := eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots)
-//	// store level1Keys to disk...
-//	shift0L0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.EncZero)
-//	level0Keys, _ := eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots)
-//	// store level0Keys to disk...
-//	evk, _ := eval.FinalizeKeys(tk, level0Keys)
+// For per-level control (inactive/active pattern), use [Evaluator.ExpandLevel]
+// and [Evaluator.FinalizeKeys] directly. See example/kgplus.
 func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
 
-	if tk == nil || tk.EncZero == nil {
-		return nil, fmt.Errorf("transmission keys and EncZero must not be nil")
+	if tk == nil || tk.PublicKey == nil {
+		return nil, fmt.Errorf("transmission keys and PublicKey must not be nil")
 	}
 
 	k := eval.params.NumLevels()
@@ -47,7 +36,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 
 	isDerived := false // tracks whether currentMasters is derived (safe to nil) vs original TX data
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.EncZero)
+		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("PubToRot at level %d: %w", level, err)
 		}
@@ -68,7 +57,7 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 		isDerived = true
 	}
 
-	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.EncZero)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("PubToRot at level 0: %w", err)
 	}
@@ -87,26 +76,13 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	return eval.FinalizeKeys(tk, level0Keys)
 }
 
-// ExpandLevel derives keys at the given R' hierarchy level using RotToRot with
-// master keys from the level above.
-//
-// Parameters:
-//   - level: the R' hierarchy level to derive keys at (0 = lowest R' level)
-//   - shift0Key: the identity (shift-0) key at this level (derived via PubToRot from TransmissionKeys.EncZero)
-//   - masterKeys: keys at level+1, indexed by rotation (either from TransmissionKeys.MasterRotKeys
-//     or from a previous ExpandLevel call's IntermediateKeys.Keys)
-//   - targetRotations: which rotations to derive at this level
-//
-// The returned IntermediateKeys can be serialized for storage, then later
-// passed as masterKeys to the next ExpandLevel call (level-1), or finalized
-// via [Evaluator.FinalizeKeys] if level == 0.
-//
-// Intermediate RotToRot results within a level are cached: if multiple targets
-// share a decomposition prefix, the shared intermediate is computed once.
+// ExpandLevel derives keys at the given R' hierarchy level using RotToRot.
+// shift0Key comes from [hierkeys.PubToRot], masterKeys from [TransmissionKeys]
+// or a previous ExpandLevel call. Shared decomposition prefixes are cached.
 func (eval *Evaluator) ExpandLevel(
 	level int,
-	shift0Key *rlwe.GaloisKey,
-	masterKeys map[int]*rlwe.GaloisKey,
+	shift0Key *hierkeys.MasterKey,
+	masterKeys map[int]*hierkeys.MasterKey,
 	targetRotations []int,
 ) (*IntermediateKeys, error) {
 
@@ -125,7 +101,7 @@ func (eval *Evaluator) ExpandLevel(
 	masterRots := sortedKeys(masterKeys)
 
 	// Cache: normalized rotation index -> key at this level
-	cache := make(map[int]*rlwe.GaloisKey)
+	cache := make(map[int]*hierkeys.MasterKey)
 	cache[0] = shift0Key
 
 	for _, target := range targetRotations {
@@ -167,7 +143,7 @@ func (eval *Evaluator) ExpandLevel(
 	}
 
 	// Build result indexed by requested rotations
-	result := &IntermediateKeys{Keys: make(map[int]*rlwe.GaloisKey, len(targetRotations))}
+	result := &IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRotations))}
 	for _, target := range targetRotations {
 		normalized := ((target % nSlots) + nSlots) % nSlots
 		if normalized == 0 {
@@ -181,7 +157,7 @@ func (eval *Evaluator) ExpandLevel(
 }
 
 // sortedKeys extracts and sorts the integer keys from a map.
-func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
+func sortedKeys(m map[int]*hierkeys.MasterKey) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -190,10 +166,8 @@ func sortedKeys(m map[int]*rlwe.GaloisKey) []int {
 	return keys
 }
 
-// FinalizeKeys ring-switches R' intermediate keys to R and post-converts
-// to lattigo's standard convention.
-//
-// The result is a standard MemEvaluationKeySet usable with [rlwe.Evaluator].
+// FinalizeKeys ring-switches level-0 R' IntermediateKeys to R and converts
+// to standard [rlwe.MemEvaluationKeySet] usable with lattigo evaluators.
 func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
 
 	if tk == nil || tk.HomingKey == nil {
@@ -207,10 +181,10 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *Intermed
 	params := eval.params
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
-	for rot, rPrimeKey := range intermediate.Keys {
+	for rot, mk := range intermediate.Keys {
 		// Ring-switch from R' to R
 		galElR := params.Eval.GaloisElement(rot)
-		rsGK, err := eval.RingSwitchGaloisKey(rPrimeKey, tk.HomingKey, galElR)
+		rsGK, err := eval.RingSwitchGaloisKey(mk, tk.HomingKey, galElR)
 		if err != nil {
 			return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
 		}
@@ -229,10 +203,10 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *Intermed
 	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
 }
 
-// RingSwitchGaloisKey ring-switches a GaloisKey from R' (degree 2N) to a
+// RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a
 // standard GaloisKey in R (degree N) using a homing key.
 func (eval *Evaluator) RingSwitchGaloisKey(
-	masterKeyRPrime *rlwe.GaloisKey,
+	masterKeyRPrime *hierkeys.MasterKey,
 	homingKey *rlwe.EvaluationKey,
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
@@ -256,6 +230,8 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 		return nil, fmt.Errorf("masterKeyRPrime and homingKey must not be nil")
 	}
 
+	rpGK := masterKeyRPrime.GaloisKey()
+
 	N := paramsEval.N()
 	ringQHK := paramsHK.RingQ()
 
@@ -263,7 +239,7 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 	levelQEval := paramsEval.MaxLevel()
 	levelPEval := paramsEval.MaxLevelP()
 
-	gc := &masterKeyRPrime.GadgetCiphertext
+	gc := &rpGK.GadgetCiphertext
 	nRNS := len(gc.Value)
 
 	nEvalRNS := paramsEval.BaseRNSDecompositionVectorSize(levelQEval, levelPEval)

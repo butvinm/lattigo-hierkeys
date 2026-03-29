@@ -2,11 +2,9 @@ package llkn
 
 import (
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
-	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// Evaluator pre-allocates all buffers for server-side hierarchical key
-// derivation via RotToRot (no ring switching needed).
+// Evaluator pre-allocates buffers for server-side hierarchical key derivation.
 type Evaluator struct {
 	params Parameters
 	*evaluatorBuffers
@@ -47,10 +45,10 @@ func (eval *Evaluator) ConcurrentCopy() *Evaluator {
 // level-(i+1) key. See [hierkeys.RotToRot] for details.
 func (eval *Evaluator) RotToRot(
 	level int,
-	inputKey *rlwe.GaloisKey,
-	masterKey *rlwe.GaloisKey,
+	inputKey *hierkeys.MasterKey,
+	masterKey *hierkeys.MasterKey,
 	combinedGalEl uint64,
-) (*rlwe.GaloisKey, error) {
+) (*hierkeys.MasterKey, error) {
 	return hierkeys.RotToRot(
 		eval.rotBufs[level],
 		eval.params.Levels[level],

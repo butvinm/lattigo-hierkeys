@@ -1,3 +1,6 @@
+// Package hierkeys provides shared primitives for hierarchical rotation key
+// derivation with lattigo v6. See [llkn] and [kgplus] sub-packages for
+// scheme-specific implementations.
 package hierkeys
 
 import (
@@ -59,28 +62,43 @@ func DecomposeRotation(target int, masterRots []int) []int {
 	return result
 }
 
-// ConvertToLattigoConvention applies pi^{-1} to each GadgetCiphertext component
-// of a GaloisKey, converting from paper convention (automorph-then-keyswitch) to
-// lattigo convention (keyswitch-then-automorph) in-place.
-//
-// This allocates temporary buffers per call. For repeated use in a hot loop,
-// consider pre-allocating buffers (see kgplus.Evaluator for an example).
-func ConvertToLattigoConvention(paramsEval rlwe.Parameters, gk *rlwe.GaloisKey) error {
+// GaloisKeyToMasterKey converts a standard lattigo [rlwe.GaloisKey] to a
+// [MasterKey] by applying σ_r to all GadgetCiphertext components.
+// Consumes the input in-place.
+func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
+	if err := automorphGadgetCiphertext(params, gk, gk.GaloisElement); err != nil {
+		return nil, err
+	}
+	return &MasterKey{gk: gk}, nil
+}
 
-	galEl := gk.GaloisElement
-	galElInv := paramsEval.ModInvGaloisElement(galEl)
+// MasterKeyToGaloisKey converts a [MasterKey] back to a standard lattigo
+// [rlwe.GaloisKey] by applying σ^{-1}_r to all GadgetCiphertext components.
+// Consumes the MasterKey in-place.
+func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
+	gk := mk.gk
+	mk.gk = nil // consume
+	galElInv := params.ModInvGaloisElement(gk.GaloisElement)
+	if err := automorphGadgetCiphertext(params, gk, galElInv); err != nil {
+		return nil, err
+	}
+	return gk, nil
+}
 
-	ringQ := paramsEval.RingQ()
-	ringP := paramsEval.RingP()
+// automorphGadgetCiphertext applies an automorphism (identified by galEl) to every
+// component of a GaloisKey's GadgetCiphertext in-place.
+func automorphGadgetCiphertext(params rlwe.Parameters, gk *rlwe.GaloisKey, galEl uint64) error {
+	ringQ := params.RingQ()
+	ringP := params.RingP()
 
-	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galElInv)
+	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galEl)
 	if err != nil {
 		return fmt.Errorf("Q automorphism index: %w", err)
 	}
 
 	var indexP []uint64
 	if ringP != nil {
-		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galElInv)
+		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galEl)
 		if err != nil {
 			return fmt.Errorf("P automorphism index: %w", err)
 		}
