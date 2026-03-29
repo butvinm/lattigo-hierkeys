@@ -1,6 +1,7 @@
 package hierkeys_test
 
 import (
+	"sync"
 	"testing"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
@@ -236,6 +237,156 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
 						b.Fatal(err)
 					}
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkDeriveGaloisKeysConcurrent measures concurrent server-side derivation.
+// Uses LevelExpansion.Derive from goroutines + concurrent FinalizeKey.
+func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+				LogN:       sc.LogN,
+				LogQ:       sc.LogQ,
+				LogP:       sc.LogP,
+				NTTFlag:    true,
+				LogNthRoot: sc.LogN + 2,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			slots := paramsEval.N() / 2
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := make([]int, 0, benchNTargets)
+			for i := 1; i <= benchNTargets && i < slots; i++ {
+				targetRots = append(targetRots, i)
+			}
+
+			b.Run("LLKN", func(b *testing.B) {
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+				tk := genLLKNTransmissionKeys(b, params, masterRots)
+				eval := llkn.NewEvaluator(params)
+				topLevel := params.NumLevels() - 1
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					// Sequential cascade through intermediate levels
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						if err != nil {
+							b.Fatal(err)
+						}
+						currentMasters = intermediate.Keys
+					}
+
+					// Concurrent level-0 expansion
+					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
+					var wg sync.WaitGroup
+					for _, rot := range targetRots {
+						wg.Add(1)
+						go func(r int) {
+							defer wg.Done()
+							if _, err := exp.Derive(r); err != nil {
+								b.Error(err)
+							}
+						}(rot)
+					}
+					wg.Wait()
+
+					// Concurrent finalization
+					level0Keys := exp.IntermediateKeys(targetRots)
+					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
+					for j, rot := range targetRots {
+						wg.Add(1)
+						go func(idx, r int) {
+							defer wg.Done()
+							gk, err := eval.FinalizeKey(level0Keys.Keys[r])
+							if err != nil {
+								b.Error(err)
+							}
+							galoisKeys[idx] = gk
+						}(j, rot)
+					}
+					wg.Wait()
+				}
+			})
+
+			b.Run("KGPlus_k3", func(b *testing.B) {
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				if err != nil {
+					b.Skip("KG+ k=3 params failed:", err)
+					return
+				}
+				k3MasterRots := []int{1, sc.Base}
+				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
+				eval := kgplus.NewEvaluator(params)
+				topLevel := params.NumLevels() - 1
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					// Sequential cascade through intermediate levels
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						if err != nil {
+							b.Fatal(err)
+						}
+						currentMasters = intermediate.Keys
+					}
+
+					// Concurrent level-0 expansion
+					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
+					var wg sync.WaitGroup
+					for _, rot := range targetRots {
+						wg.Add(1)
+						go func(r int) {
+							defer wg.Done()
+							if _, err := exp.Derive(r); err != nil {
+								b.Error(err)
+							}
+						}(rot)
+					}
+					wg.Wait()
+
+					// Concurrent finalization
+					level0Keys := exp.IntermediateKeys(targetRots)
+					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
+					for j, rot := range targetRots {
+						wg.Add(1)
+						go func(idx, r int) {
+							defer wg.Done()
+							gk, err := eval.FinalizeKey(r, level0Keys.Keys[r], tk.HomingKey)
+							if err != nil {
+								b.Error(err)
+							}
+							galoisKeys[idx] = gk
+						}(j, rot)
+					}
+					wg.Wait()
 				}
 			})
 		})
