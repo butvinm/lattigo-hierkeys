@@ -89,7 +89,7 @@ func main() {
 	// ExpandLevel uses RotToRot to combine shift-0 with master keys, producing
 	// the full base-4 rotation set at level 1. These intermediate keys can be
 	// serialized and stored for later use.
-	var level1Keys *llkn.IntermediateKeys
+	var level1Keys *hierkeys.IntermediateKeys
 	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
 		panic(err)
 	}
@@ -107,7 +107,7 @@ func main() {
 		panic(err)
 	}
 
-	var level0Keys *llkn.IntermediateKeys
+	var level0Keys *hierkeys.IntermediateKeys
 	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
 		panic(err)
 	}

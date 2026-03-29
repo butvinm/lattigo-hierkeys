@@ -95,7 +95,7 @@ func main() {
 	// ExpandLevel combines shift-0 with the 2 master keys to produce the full
 	// set of 7+ rotation keys at this level. The intermediate keys can be
 	// serialized and stored between phases.
-	var level1Keys *kgplus.IntermediateKeys
+	var level1Keys *hierkeys.IntermediateKeys
 	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
 		panic(err)
 	}
@@ -113,7 +113,7 @@ func main() {
 		panic(err)
 	}
 
-	var level0Keys *kgplus.IntermediateKeys
+	var level0Keys *hierkeys.IntermediateKeys
 	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
 		panic(err)
 	}

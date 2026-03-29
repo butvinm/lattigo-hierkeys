@@ -4,113 +4,83 @@ import (
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
+	"github.com/tuneinsight/lattigo/v6/utils/structs"
 )
 
-// Evaluator pre-allocates buffers for server-side hierarchical key derivation.
-// Use [ConcurrentCopy] for concurrent derivation.
+// Evaluator performs server-side hierarchical key derivation for KG+.
+// Thread-safe: can be used concurrently from multiple goroutines.
 type Evaluator struct {
 	params Parameters
-	*evaluatorBuffers
+
+	// RotToRot per adjacent RPrime level pair (thread-safe)
+	rotEvals []*hierkeys.RotToRotEvaluator
+
+	// Ring-switch resources (all thread-safe)
+	evalHK  *rlwe.Evaluator  // HK-level evaluator for GadgetProduct
+	poolRPQ *ring.BufferPool // R' Q-domain (degree 2N)
+	poolRPP *ring.BufferPool // R' P-domain (degree 2N)
+	poolHK  *ring.BufferPool // HK level (degree N)
+
+	// Convention convert resources
+	poolEvQ *ring.BufferPool // eval Q (degree N)
+	poolEvP *ring.BufferPool // eval P (degree N), may be nil
 }
 
-type evaluatorBuffers struct {
-	// --- Buffers for RingSwitchGaloisKey ---
-
-	// R' Q-domain working space (degree 2N)
-	bQRPrime, aQRPrime ring.Poly // copy of component Q part
-	bQCoeff, aQCoeff   ring.Poly // after IMForm+INTT
-	// R' P-domain working space (degree 2N)
-	bPRPrime, aPRPrime ring.Poly // copy of component P part
-	bPCoeff, aPCoeff   ring.Poly // after IMForm+INTT
-	// Extracted even/odd at Q_hk level (degree N)
-	b0RS, a0RS, a1RS ring.Poly
-	Xa1RS            ring.Poly // X * a1
-	// Key-switch output and result at Q_hk level
-	rsBRS, rsARS ring.Poly
-	ctKSRS       *rlwe.Ciphertext
-	evalHK       *rlwe.Evaluator // evaluator at HK level for GadgetProduct
-
-	// --- RotToRot buffers for each adjacent RPrime level pair ---
-	rotBufs []*hierkeys.RotToRotBuffers
-
-	// --- Buffers for convertToLattigoConvention ---
-	autTmpQ ring.Poly // at eval Q level
-	autTmpP ring.Poly // at eval P level
-}
-
-// NewEvaluator creates an Evaluator with pre-allocated buffers for the
-// given hierarchical parameters.
+// NewEvaluator creates an Evaluator with thread-safe pool-based buffers.
 func NewEvaluator(params Parameters) *Evaluator {
-	return &Evaluator{
-		params:           params,
-		evaluatorBuffers: newEvaluatorBuffers(params),
-	}
-}
-
-func newEvaluatorBuffers(params Parameters) *evaluatorBuffers {
-	ringQRPrime := params.RPrime[0].RingQ()
-	ringPRPrime := params.RPrime[0].RingP()
-	ringQHK := params.HK.RingQ()
-	ringQEval := params.Eval.RingQ()
-
-	// RotToRot buffers for each adjacent RPrime level pair
 	k := params.NumLevels()
-	rotBufs := make([]*hierkeys.RotToRotBuffers, k-1)
+	rotEvals := make([]*hierkeys.RotToRotEvaluator, k-1)
 	for i := 0; i < k-1; i++ {
-		rotBufs[i] = hierkeys.NewRotToRotBuffers(params.RPrime[i], params.RPrime[i+1])
+		rotEvals[i] = hierkeys.NewRotToRotEvaluator(params.RPrime[i], params.RPrime[i+1])
 	}
 
-	buf := &evaluatorBuffers{
-		// RingSwitchGaloisKey buffers
-		bQRPrime: ringQRPrime.NewPoly(),
-		aQRPrime: ringQRPrime.NewPoly(),
-		bQCoeff:  ringQRPrime.NewPoly(),
-		aQCoeff:  ringQRPrime.NewPoly(),
-		bPRPrime: ringPRPrime.NewPoly(),
-		aPRPrime: ringPRPrime.NewPoly(),
-		bPCoeff:  ringPRPrime.NewPoly(),
-		aPCoeff:  ringPRPrime.NewPoly(),
-		b0RS:     ringQHK.NewPoly(),
-		a0RS:     ringQHK.NewPoly(),
-		a1RS:     ringQHK.NewPoly(),
-		Xa1RS:    ringQHK.NewPoly(),
-		rsBRS:    ringQHK.NewPoly(),
-		rsARS:    ringQHK.NewPoly(),
-		ctKSRS:   rlwe.NewCiphertext(params.HK, 1, params.HK.MaxLevel()),
+	eval := &Evaluator{
+		params:   params,
+		rotEvals: rotEvals,
 		evalHK:   rlwe.NewEvaluator(params.HK, nil),
-
-		// Shared RotToRot buffers
-		rotBufs: rotBufs,
-
-		// automorphInPlace buffers
-		autTmpQ: ringQEval.NewPoly(),
+		poolRPQ:  ring.NewPool(params.RPrime[0].RingQ(), structs.NewSyncPoolUint64(params.RPrime[0].N())),
+		poolRPP:  ring.NewPool(params.RPrime[0].RingP(), structs.NewSyncPoolUint64(params.RPrime[0].N())),
+		poolHK:   ring.NewPool(params.HK.RingQ(), structs.NewSyncPoolUint64(params.HK.N())),
+		poolEvQ:  ring.NewPool(params.Eval.RingQ(), structs.NewSyncPoolUint64(params.Eval.N())),
 	}
-
-	buf.ctKSRS.IsNTT = true
 
 	if params.Eval.RingP() != nil {
-		buf.autTmpP = params.Eval.RingP().NewPoly()
+		eval.poolEvP = ring.NewPool(params.Eval.RingP(), structs.NewSyncPoolUint64(params.Eval.N()))
 	}
 
-	return buf
+	return eval
 }
 
-// ConcurrentCopy creates a copy of this Evaluator that shares read-only
-// data (parameters) but has its own mutable buffers.
-func (eval *Evaluator) ConcurrentCopy() *Evaluator {
-	return &Evaluator{
-		params:           eval.params,
-		evaluatorBuffers: newEvaluatorBuffers(eval.params),
-	}
+// RotToRot at a specific R' level. Thread-safe.
+func (eval *Evaluator) RotToRot(level int, inputKey, masterKey *hierkeys.MasterKey, targetGalEl uint64) (*hierkeys.MasterKey, error) {
+	return eval.rotEvals[level].RotToRot(inputKey, masterKey, targetGalEl)
 }
 
-// RotToRot generates a combined rotation key from a level-i key and a
-// level-(i+1) key in the extension ring R'. See [hierkeys.RotToRot] for details.
-func (eval *Evaluator) RotToRot(
+// NewLevelExpansion creates a thread-safe expansion session at the given R' level.
+func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKey, masterKeys map[int]*hierkeys.MasterKey) *hierkeys.LevelExpansion {
+	return hierkeys.NewLevelExpansion(
+		eval.rotEvals[level].RotToRot,
+		eval.params.RPrime[level],
+		eval.params.Eval.N()/2,
+		shift0Key,
+		masterKeys,
+	)
+}
+
+// ExpandLevel derives keys at the given R' hierarchy level sequentially.
+// For concurrent derivation, use [Evaluator.NewLevelExpansion].
+func (eval *Evaluator) ExpandLevel(
 	level int,
-	inputKey *hierkeys.MasterKey,
-	masterKey *hierkeys.MasterKey,
-	combinedGalEl uint64,
-) (*hierkeys.MasterKey, error) {
-	return hierkeys.RotToRot(eval.rotBufs[level], eval.params.RPrime[level], eval.params.RPrime[level+1], inputKey, masterKey, combinedGalEl)
+	shift0Key *hierkeys.MasterKey,
+	masterKeys map[int]*hierkeys.MasterKey,
+	targetRotations []int,
+) (*hierkeys.IntermediateKeys, error) {
+	return hierkeys.ExpandLevel(
+		eval.rotEvals[level].RotToRot,
+		eval.params.RPrime[level],
+		eval.params.Eval.N()/2,
+		shift0Key,
+		masterKeys,
+		targetRotations,
+	)
 }

@@ -70,7 +70,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 
 // expandAll cascades ExpandLevel through all levels. Used by tests that
 // need level-0 IntermediateKeys.
-func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*IntermediateKeys, error) {
+func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
 	for rot := range tk.MasterRotKeys {
@@ -232,7 +232,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		require.NoError(t, err)
 		t.Logf("intermediate keys: %d bytes (%.2f KB)", buf.Len(), float64(buf.Len())/1024)
 
-		intermediate2 := new(IntermediateKeys)
+		intermediate2 := new(hierkeys.IntermediateKeys)
 		_, err = intermediate2.ReadFrom(&buf)
 		require.NoError(t, err)
 		require.Len(t, intermediate2.Keys, len(targetRots))

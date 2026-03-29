@@ -85,7 +85,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 
 // expandAll cascades ExpandLevel through all levels, replicating what the
 // removed Expand method did. Used by tests that need level-0 IntermediateKeys.
-func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*IntermediateKeys, error) {
+func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
 	topLevel := k - 1
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
@@ -667,7 +667,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 
 		for _, rot := range targetRots {
 			// Finalize the single key from the batch
-			singleIntermediate := &IntermediateKeys{
+			singleIntermediate := &hierkeys.IntermediateKeys{
 				Keys: map[int]*hierkeys.MasterKey{rot: intermediate.Keys[rot]},
 			}
 			evk, err := tc.hkEval.FinalizeKeys(tc.tk, singleIntermediate)
@@ -728,7 +728,7 @@ func testSerialization(tc *testContext, t *testing.T) {
 		t.Logf("intermediate keys: %d bytes (%.2f KB)", n, float64(n)/1024)
 
 		// Deserialize
-		intermediate2 := new(IntermediateKeys)
+		intermediate2 := new(hierkeys.IntermediateKeys)
 		_, err = intermediate2.ReadFrom(&buf)
 		require.NoError(t, err)
 
