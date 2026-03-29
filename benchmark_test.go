@@ -292,13 +292,15 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					// Sequential cascade through intermediate levels
+					// Pass master key indices as targets (matching DeriveGaloisKeys)
+					masterKeyRots := hierkeys.SortedIntKeys(tk.MasterRotKeys)
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterKeyRots)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -356,13 +358,15 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					// Sequential cascade through intermediate levels
+					// Pass master key indices as targets (matching DeriveGaloisKeys)
+					masterKeyRots := hierkeys.SortedIntKeys(tk.MasterRotKeys)
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterKeyRots)
 						if err != nil {
 							b.Fatal(err)
 						}
