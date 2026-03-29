@@ -260,7 +260,8 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 }
 
 // BenchmarkDeriveGaloisKeysConcurrent measures concurrent server-side derivation.
-// Uses LevelExpansion.Derive from goroutines + concurrent FinalizeKey.
+// Uses the same pattern as the concurrent examples: ExpandLevel for intermediate
+// levels, NewLevelExpansion + goroutines for level 0, concurrent FinalizeKey.
 func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -291,52 +292,32 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Sequential cascade through intermediate levels
-					// Pass master key indices as targets (matching DeriveGaloisKeys)
-					masterKeyRots := hierkeys.SortedIntKeys(tk.MasterRotKeys)
+					// Intermediate levels (sequential) — uses ExpandLevel directly
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
-						if err != nil {
-							b.Fatal(err)
-						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterKeyRots)
-						if err != nil {
-							b.Fatal(err)
-						}
+						shift0, _ := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
 						currentMasters = intermediate.Keys
 					}
 
-					// Concurrent level-0 expansion
-					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
-					if err != nil {
-						b.Fatal(err)
-					}
+					// Level 0 (concurrent) — uses NewLevelExpansion
+					shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
-						go func(r int) {
-							defer wg.Done()
-							if _, err := exp.Derive(r); err != nil {
-								b.Error(err)
-							}
-						}(rot)
+						go func(r int) { defer wg.Done(); exp.Derive(r) }(rot)
 					}
 					wg.Wait()
 
-					// Concurrent finalization
+					// Finalize (concurrent)
 					level0Keys := exp.IntermediateKeys(targetRots)
 					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 					for j, rot := range targetRots {
 						wg.Add(1)
 						go func(idx, r int) {
 							defer wg.Done()
-							gk, err := eval.FinalizeKey(level0Keys.Keys[r])
-							if err != nil {
-								b.Error(err)
-							}
-							galoisKeys[idx] = gk
+							galoisKeys[idx], _ = eval.FinalizeKey(level0Keys.Keys[r])
 						}(j, rot)
 					}
 					wg.Wait()
@@ -357,52 +338,32 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Sequential cascade through intermediate levels
-					// Pass master key indices as targets (matching DeriveGaloisKeys)
-					masterKeyRots := hierkeys.SortedIntKeys(tk.MasterRotKeys)
+					// Intermediate levels (sequential) — uses ExpandLevel directly
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
-						if err != nil {
-							b.Fatal(err)
-						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterKeyRots)
-						if err != nil {
-							b.Fatal(err)
-						}
+						shift0, _ := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
 						currentMasters = intermediate.Keys
 					}
 
-					// Concurrent level-0 expansion
-					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
-					if err != nil {
-						b.Fatal(err)
-					}
+					// Level 0 (concurrent) — uses NewLevelExpansion
+					shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
-						go func(r int) {
-							defer wg.Done()
-							if _, err := exp.Derive(r); err != nil {
-								b.Error(err)
-							}
-						}(rot)
+						go func(r int) { defer wg.Done(); exp.Derive(r) }(rot)
 					}
 					wg.Wait()
 
-					// Concurrent finalization
+					// Finalize (concurrent)
 					level0Keys := exp.IntermediateKeys(targetRots)
 					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 					for j, rot := range targetRots {
 						wg.Add(1)
 						go func(idx, r int) {
 							defer wg.Done()
-							gk, err := eval.FinalizeKey(r, level0Keys.Keys[r], tk.HomingKey)
-							if err != nil {
-								b.Error(err)
-							}
-							galoisKeys[idx] = gk
+							galoisKeys[idx], _ = eval.FinalizeKey(r, level0Keys.Keys[r], tk.HomingKey)
 						}(j, rot)
 					}
 					wg.Wait()
