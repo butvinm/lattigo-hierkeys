@@ -91,23 +91,14 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *hierkeys
 		return nil, fmt.Errorf("intermediate keys must not be nil or empty")
 	}
 
-	params := eval.params
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 
 	for rot, mk := range intermediate.Keys {
-		galElR := params.Eval.GaloisElement(rot)
-		rsGK, err := eval.RingSwitchGaloisKey(mk, tk.HomingKey, galElR)
+		gk, err := eval.FinalizeKey(rot, mk, tk.HomingKey)
 		if err != nil {
-			return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
+			return nil, err
 		}
-
-		intermediate.Keys[rot] = nil
-
-		if err := eval.convertToLattigoConvention(rsGK); err != nil {
-			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
-		}
-
-		galoisKeys = append(galoisKeys, rsGK)
+		galoisKeys = append(galoisKeys, gk)
 	}
 
 	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil

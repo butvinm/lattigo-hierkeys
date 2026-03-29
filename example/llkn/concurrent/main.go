@@ -125,7 +125,7 @@ func main() {
 		len(level0Keys.Keys), len(targetRots))
 
 	// Phase 3 (concurrent): finalize — convert each key in parallel.
-	// MasterKeyToGaloisKey is thread-safe (allocates internally).
+	// FinalizeKey is thread-safe.
 	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 	finalizeErrs := make([]error, len(targetRots))
 	for i, rot := range targetRots {
@@ -133,7 +133,7 @@ func main() {
 		go func(idx, r int) {
 			defer wg.Done()
 			mk := level0Keys.Keys[r]
-			galoisKeys[idx], finalizeErrs[idx] = hierkeys.MasterKeyToGaloisKey(params.Eval(), mk)
+			galoisKeys[idx], finalizeErrs[idx] = eval.FinalizeKey(mk)
 		}(i, rot)
 	}
 	wg.Wait()
