@@ -124,12 +124,28 @@ func main() {
 	fmt.Printf("Phase 2 (concurrent): %d level-0 keys from %d goroutines\n",
 		len(level0Keys.Keys), len(targetRots))
 
-	// Phase 3: finalize to standard lattigo evaluation keys.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(level0Keys); err != nil {
-		panic(err)
+	// Phase 3 (concurrent): finalize — convert each key in parallel.
+	// MasterKeyToGaloisKey is thread-safe (allocates internally).
+	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
+	finalizeErrs := make([]error, len(targetRots))
+	for i, rot := range targetRots {
+		wg.Add(1)
+		go func(idx, r int) {
+			defer wg.Done()
+			mk := level0Keys.Keys[r]
+			galoisKeys[idx], finalizeErrs[idx] = hierkeys.MasterKeyToGaloisKey(params.Eval(), mk)
+		}(i, rot)
 	}
-	fmt.Printf("Phase 3: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	wg.Wait()
+
+	for i, e := range finalizeErrs {
+		if e != nil {
+			panic(fmt.Sprintf("finalize rotation %d: %v", targetRots[i], e))
+		}
+	}
+
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
+	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================
 	// VERIFY

@@ -127,12 +127,28 @@ func main() {
 	level0Keys := exp.IntermediateKeys(targetRots)
 	fmt.Printf("Phase 2 (concurrent): %d level-0 keys in R'\n", len(level0Keys.Keys))
 
-	// Phase 3: ring-switch R' → R and finalize.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
-		panic(err)
+	// Phase 3 (concurrent): ring-switch R' → R and convert each key in parallel.
+	// FinalizeKey is thread-safe (pool-based scratch buffers).
+	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
+	finalizeErrs := make([]error, len(targetRots))
+	for i, rot := range targetRots {
+		wg.Add(1)
+		go func(idx, r int) {
+			defer wg.Done()
+			mk := level0Keys.Keys[r]
+			galoisKeys[idx], finalizeErrs[idx] = eval.FinalizeKey(r, mk, tk.HomingKey)
+		}(i, rot)
 	}
-	fmt.Printf("Phase 3: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	wg.Wait()
+
+	for i, e := range finalizeErrs {
+		if e != nil {
+			panic(fmt.Sprintf("finalize rotation %d: %v", targetRots[i], e))
+		}
+	}
+
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
+	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================
 	// VERIFY

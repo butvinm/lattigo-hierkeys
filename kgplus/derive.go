@@ -65,6 +65,20 @@ func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []
 	return eval.FinalizeKeys(tk, level0Keys)
 }
 
+// FinalizeKey ring-switches one R' MasterKey to R and converts to a standard
+// lattigo GaloisKey. Thread-safe.
+func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *rlwe.EvaluationKey) (*rlwe.GaloisKey, error) {
+	galElR := eval.params.Eval.GaloisElement(rot)
+	rsGK, err := eval.RingSwitchGaloisKey(mk, homingKey, galElR)
+	if err != nil {
+		return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
+	}
+	if err = eval.convertToLattigoConvention(rsGK); err != nil {
+		return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
+	}
+	return rsGK, nil
+}
+
 // FinalizeKeys ring-switches level-0 R' IntermediateKeys to R and converts
 // to standard [rlwe.MemEvaluationKeySet] usable with lattigo evaluators.
 func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *hierkeys.IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
