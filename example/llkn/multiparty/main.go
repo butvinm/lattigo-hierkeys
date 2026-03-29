@@ -1,15 +1,16 @@
-// Package main demonstrates LLKN hierarchical rotation keys for CKKS in
-// an N-out-of-N multiparty setting.
+// LLKN hierarchical rotation keys — N-out-of-N multiparty key generation.
 //
-// N parties collectively generate transmission keys (PublicKey + master rotation
-// keys) without any single party knowing the full secret key. The server then
-// derives evaluation keys exactly as in the single-party case.
+// N parties collectively generate transmission keys without any single party
+// knowing the full secret key. The server derives evaluation keys exactly as
+// in the single-party case — it cannot distinguish multiparty keys from
+// single-party ones.
 //
-// The multiparty protocol uses lattigo's GaloisKeyGenProtocol to generate
-// master keys and PublicKeyGenProtocol for the collective public key. The ideal
-// secret key s = sum(s_i) is computed only for verification.
+// Uses lattigo's standard multiparty protocols:
+//   - PublicKeyGenProtocol for the collective public key
+//   - GaloisKeyGenProtocol for master rotation keys
 //
-// Parameters are 128-bit secure (HE Standard, LogN=14, eval QP=350 ≤ 438).
+// The ideal secret key s = sum(s_i) is computed only for verification.
+// In a real deployment, parties use a collective decryption protocol instead.
 package main
 
 import (
@@ -29,9 +30,9 @@ const nParties = 3
 func main() {
 	var err error
 
-	// 128-bit secure CKKS parameters (same as simple example).
-	var params ckks.Parameters
-	if params, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
+	// --- CKKS + LLKN parameters (same as simple example) ---
+	var ckksParams ckks.Parameters
+	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
 		LogQ:            []int{50, 50, 50, 50, 50},
 		LogP:            []int{50, 50},
@@ -40,40 +41,53 @@ func main() {
 		panic(err)
 	}
 
-	// LLKN k=2: one level of P primes for the master keys.
-	var llknParams llkn.Parameters
-	if llknParams, err = llkn.NewParameters(params.Parameters, [][]int{
+	var params llkn.Parameters
+	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{56},
 	}); err != nil {
 		panic(err)
 	}
 
-	slots := params.MaxSlots()
-	topParams := llknParams.Top()
+	slots := ckksParams.MaxSlots()
+	topParams := params.Top()
 	fmt.Printf("LLKN CKKS multiparty (N=%d, k=%d): LogN=%d, %d slots\n",
-		nParties, llknParams.NumLevels(), params.LogN(), slots)
+		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
-	// Common reference string shared by all parties.
-	crs, err := sampling.NewPRNG()
-	if err != nil {
-		panic(err)
-	}
+	// =========================================================================
+	// PARTIES: each generates a secret key independently
+	// =========================================================================
+	// All parties use the same parameters. Each sk_i is generated at the top
+	// (master) level, same as single-party GenSecretKeyNew.
 
-	// --- PARTIES: each generates a secret key at top level ---
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sks := make([]*rlwe.SecretKey, nParties)
 	for i := range sks {
 		sks[i] = kgen.GenSecretKeyNew()
 	}
 
-	// Compute ideal secret key (sum of all shares) for verification only.
+	// Common Reference String (CRS) — shared by all parties for deterministic
+	// "a"-part generation in the multiparty protocols.
+	crs, err := sampling.NewPRNG()
+	if err != nil {
+		panic(err)
+	}
+
+	// Ideal secret key s = sum(s_i) — for verification only.
 	// In a real deployment, no single entity holds this.
 	skIdeal := rlwe.NewSecretKey(topParams)
 	for _, sk := range sks {
 		topParams.RingQP().Add(skIdeal.Value, sk.Value, skIdeal.Value)
 	}
 
-	// --- PHASE 1: Collective public key ---
+	// =========================================================================
+	// PHASE 1: Collective public key
+	// =========================================================================
+	// Each party generates a share from their sk_i. The aggregated shares
+	// produce a public key for the ideal secret s = sum(s_i).
+	// This public key serves two purposes:
+	//   1. The server uses it in PubToRot to derive shift-0 keys
+	//   2. Clients can use it for encryption (same pk works for both)
+
 	cpkProto := multiparty.NewPublicKeyGenProtocol(topParams)
 	cpkCRP := cpkProto.SampleCRP(crs)
 	cpkAgg := cpkProto.AllocateShare()
@@ -88,16 +102,27 @@ func main() {
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
 	fmt.Println("Collective public key generated")
 
-	// --- PHASE 2: Collective master rotation keys via GaloisKeyGenProtocol ---
+	// =========================================================================
+	// PHASE 2: Collective master rotation keys
+	// =========================================================================
+	// Each party generates a GaloisKey share for each master rotation.
+	// GaloisKeyGenProtocol produces standard lattigo-convention GaloisKeys.
+	// GaloisKeyToMasterKey converts them for use with RotToRot — same as
+	// single-party, no multiparty-specific knowledge needed.
+	//
+	// Note: the accumulator's GaloisElement must be set before aggregation,
+	// otherwise AggregateShares returns a mismatch error.
+
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 	gkg := multiparty.NewGaloisKeyGenProtocol(topParams)
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 
 	for _, rot := range masterRots {
 		galEl := topParams.GaloisElement(rot)
+
 		crp := gkg.SampleCRP(crs)
 		acc := gkg.AllocateShare()
-		acc.GaloisElement = galEl
+		acc.GaloisElement = galEl // must set before first AggregateShares
 
 		for _, sk := range sks {
 			share := gkg.AllocateShare()
@@ -109,23 +134,25 @@ func main() {
 			}
 		}
 
+		// Finalize the collective GaloisKey, then convert to MasterKey.
 		gk := rlwe.NewGaloisKey(topParams)
-		gkg.GenGaloisKey(acc, crp, gk)
-		masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk)
-		if err != nil {
+		if err = gkg.GenGaloisKey(acc, crp, gk); err != nil {
+			panic(err)
+		}
+		if masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk); err != nil {
 			panic(err)
 		}
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(masterRots), masterRots)
 
-	// --- SERVER: derive evaluation keys (identical to single-party) ---
-	tk := &llkn.TransmissionKeys{
-		PublicKey:     collectivePK,
-		MasterRotKeys: masterKeys,
-	}
-	fmt.Printf("TX size = %d bytes (%.1f MB)\n", tk.BinarySize(), float64(tk.BinarySize())/(1024*1024))
+	// =========================================================================
+	// SERVER: derive evaluation keys (identical to single-party)
+	// =========================================================================
 
-	eval := llkn.NewEvaluator(llknParams)
+	tk := &llkn.TransmissionKeys{PublicKey: collectivePK, MasterRotKeys: masterKeys}
+	fmt.Printf("TX size = %.1f MB\n", float64(tk.BinarySize())/(1024*1024))
+
+	eval := llkn.NewEvaluator(params)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var evk *rlwe.MemEvaluationKeySet
@@ -134,22 +161,25 @@ func main() {
 	}
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// --- VERIFY: encrypt, rotate, check precision ---
+	// =========================================================================
+	// VERIFY
+	// =========================================================================
+
 	var skEval *rlwe.SecretKey
-	if skEval, err = llknParams.ProjectToEvalKey(skIdeal); err != nil {
+	if skEval, err = params.ProjectToEvalKey(skIdeal); err != nil {
 		panic(err)
 	}
-	ecd := ckks.NewEncoder(params)
-	enc := rlwe.NewEncryptor(params, skEval)
-	dec := rlwe.NewDecryptor(params, skEval)
-	ckksEval := ckks.NewEvaluator(params, evk)
+	ecd := ckks.NewEncoder(ckksParams)
+	enc := rlwe.NewEncryptor(ckksParams, skEval)
+	dec := rlwe.NewDecryptor(ckksParams, skEval)
+	ckksEval := ckks.NewEvaluator(ckksParams, evk)
 
 	values := make([]complex128, slots)
 	for i := range values {
 		values[i] = complex(float64(i+1), 0)
 	}
 
-	pt := ckks.NewPlaintext(params, params.MaxLevel())
+	pt := ckks.NewPlaintext(ckksParams, ckksParams.MaxLevel())
 	if err = ecd.Encode(values, pt); err != nil {
 		panic(err)
 	}
@@ -161,7 +191,7 @@ func main() {
 
 	fmt.Println()
 	for _, rot := range targetRots {
-		ctRot := ckks.NewCiphertext(params, 1, ct.Level())
+		ctRot := ckks.NewCiphertext(ckksParams, 1, ct.Level())
 		if err = ckksEval.Rotate(ct, rot, ctRot); err != nil {
 			panic(err)
 		}
@@ -171,7 +201,7 @@ func main() {
 			want[i] = values[(i+rot)%slots]
 		}
 
-		printPrecision(params, ctRot, want, rot, ecd, dec)
+		printPrecision(ckksParams, ctRot, want, rot, ecd, dec)
 	}
 }
 
