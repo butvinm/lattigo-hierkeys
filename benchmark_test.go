@@ -1,6 +1,7 @@
 package hierkeys_test
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 
@@ -275,6 +276,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				eval := llkn.NewEvaluator(params)
 				topLevel := params.NumLevels() - 1
 
+				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					// Sequential cascade through intermediate levels
@@ -338,6 +340,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				eval := kgplus.NewEvaluator(params)
 				topLevel := params.NumLevels() - 1
 
+				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					// Sequential cascade through intermediate levels
