@@ -122,10 +122,12 @@ go test -v -count=1 -short ./llkn/...
 
 ```bash
 cd example
-go run ./llkn/simple/       # LLKN k=2: single-party
-go run ./llkn/multiparty/   # LLKN k=2: N-out-of-N multiparty
-go run ./kgplus/simple/     # KG+ k=3: single-party with ring switching
-go run ./kgplus/multiparty/ # KG+ k=3: N-out-of-N multiparty
+go run ./llkn/simple/       # one-shot DeriveGaloisKeys
+go run ./llkn/leveled/      # per-level ExpandLevel (inactive/active pattern)
+go run ./llkn/multiparty/   # N-out-of-N multiparty
+go run ./kgplus/simple/     # one-shot DeriveGaloisKeys with ring switching
+go run ./kgplus/leveled/    # per-level ExpandLevel with ring switching
+go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 ```
 
 ## License

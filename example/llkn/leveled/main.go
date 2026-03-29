@@ -1,10 +1,12 @@
-// LLKN hierarchical rotation keys — one-shot DeriveGaloisKeys API.
+// LLKN hierarchical rotation keys — per-level ExpandLevel API.
 //
-// Shows the simplest usage: client generates master keys and a public key,
-// server derives all target rotation keys in one call.
+// Shows the inactive/active pattern: the server derives keys level by level,
+// allowing intermediate results to be serialized and stored between phases.
+// This is useful when:
+//   - The server pre-computes keys during an offline (inactive) phase
+//   - Target rotations are only known later, during the online (active) phase
 //
-// LLKN operates entirely in the evaluation ring (no ring switching),
-// making it simpler than KG+ and compatible with any ring type.
+// For the simpler one-shot API, see ../simple.
 package main
 
 import (
@@ -20,9 +22,7 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS parameters ---
-	// 128-bit secure (HE Standard, LogN=14, Q_max=438).
-	// Eval QP = 5×50 + 2×50 = 350 ≤ 438.
+	// --- CKKS + LLKN parameters (same as simple example) ---
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
@@ -33,77 +33,98 @@ func main() {
 		panic(err)
 	}
 
-	// --- LLKN parameters ---
-	// k=2: one extra level of P primes for master keys.
-	// Master level: Q = Q_eval ∪ P_eval (7 primes), P = {56-bit} (1 prime).
-	// Total master QP = 350 + 56 = 406 ≤ 438.
+	// k=3: two extra P levels — enables a 3-tier hierarchy with an intermediate
+	// level between eval and master. With k=2 this example would be trivial
+	// (only one ExpandLevel call), so we use k=3 to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{56}, // P for master level (one 56-bit prime)
+		{56}, // P for level 1 (intermediate)
+		{56}, // P for level 2 (top master)
 	}); err != nil {
 		panic(err)
 	}
 
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
+	topLevel := params.NumLevels() - 1
 	fmt.Printf("LLKN CKKS (k=%d): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
-	// CLIENT: generate keys with standard lattigo, convert to hierkeys types
+	// CLIENT: same key generation as simple example
 	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
-
-	// Secret key at the top (master) level — has more Q primes than eval level.
-	// Use params.ProjectToEvalKey(sk) to get the eval-level key for encryption.
 	sk := kgen.GenSecretKeyNew()
-
-	// Public key at the top level — used by server's PubToRot to derive
-	// shift-0 (identity) keys at each hierarchy level.
 	pk := kgen.GenPublicKeyNew(sk)
 
-	// Master rotation keys: a small set of GaloisKeys covering base-4 powers
-	// {1, 4, 16, 64, ...}. Any target rotation can be decomposed as a sum of
-	// these masters and derived server-side via RotToRot.
-	masterRots := hierkeys.MasterRotationsForBase(4, slots)
-	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
-	for _, rot := range masterRots {
-		// Generate a standard lattigo GaloisKey, then convert to MasterKey.
-		// GaloisKeyToMasterKey applies a convention transformation needed by
-		// the RotToRot algorithm — the user doesn't need to know the details.
+	// With k=3, only {1, base} master rotations are needed at the top level.
+	// The full base-4 set is derived at the intermediate level by the server.
+	k3Masters := []int{1, 4}
+	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
+	for _, rot := range k3Masters {
 		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
 		if masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk); err != nil {
 			panic(err)
 		}
 	}
 
-	// Bundle and send to server.
 	tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
-		len(masterRots), float64(tk.BinarySize())/(1024*1024))
+		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
 	// =========================================================================
-	// SERVER: one-shot derivation — all target keys from transmission keys
+	// SERVER PHASE 1 (inactive): expand master set at intermediate level
 	// =========================================================================
-
+	// PubToRot derives a shift-0 (identity) key at the target level from the
+	// client's public key. This is the starting point for RotToRot combinations.
 	eval := llkn.NewEvaluator(params)
-	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
-	// DeriveGaloisKeys handles PubToRot + ExpandLevel + FinalizeKeys internally.
-	// For per-level control (e.g. inactive/active pattern), see ../leveled.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+	var shift0L1 *hierkeys.MasterKey
+	if shift0L1, err = hierkeys.PubToRot(params.Levels[1], params.Levels[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+
+	// ExpandLevel uses RotToRot to combine shift-0 with master keys, producing
+	// the full base-4 rotation set at level 1. These intermediate keys can be
+	// serialized and stored for later use.
+	var level1Keys *llkn.IntermediateKeys
+	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
+		panic(err)
+	}
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys.Keys))
 
 	// =========================================================================
-	// VERIFY: encrypt, rotate, check precision
-	// (In a real system, client encrypts and server evaluates — here we do
-	// both locally for demonstration.)
+	// SERVER PHASE 2 (active): derive target rotations at eval level
 	// =========================================================================
+	// Target rotations are now known. Derive them at level 0 using the
+	// intermediate keys from phase 1 as the new master set.
+	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
+	var shift0L0 *hierkeys.MasterKey
+	if shift0L0, err = hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey); err != nil {
+		panic(err)
+	}
+
+	var level0Keys *llkn.IntermediateKeys
+	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
+
+	// =========================================================================
+	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys
+	// =========================================================================
+	var evk *rlwe.MemEvaluationKeySet
+	if evk, err = eval.FinalizeKeys(level0Keys); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+
+	// =========================================================================
+	// VERIFY
+	// =========================================================================
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {
 		panic(err)

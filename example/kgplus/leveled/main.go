@@ -1,12 +1,13 @@
-// KG+ hierarchical rotation keys — one-shot DeriveGaloisKeys API.
+// KG+ hierarchical rotation keys — per-level ExpandLevel API.
 //
-// KG+ uses ring switching (extension ring R' of degree 2N) to further reduce
-// transmission key sizes compared to LLKN. The trade-off: only supports
-// Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
+// Shows the inactive/active pattern with ring switching:
+//   - Phase 1 (inactive): expand {1, base} masters into the full base-4 set
+//     at an intermediate R' level. These can be stored for reuse.
+//   - Phase 2 (active): derive target rotations at R' level 0 using the
+//     intermediate keys.
+//   - Phase 3: ring-switch R' keys to R and finalize as standard lattigo keys.
 //
-// The client generates two independent secrets (sk, sk1), constructs an
-// extended secret in R', and sends a homing key for ring switching.
-// The server derives evaluation keys in one call.
+// For the simpler one-shot API, see ../simple.
 package main
 
 import (
@@ -22,27 +23,22 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS parameters ---
-	// 128-bit secure (HE Standard, LogN=14, Q_max=438).
-	// LogNthRoot=16 ensures primes are NTT-friendly for degree 2N (KG+ requirement).
+	// --- CKKS + KG+ parameters (same as simple example) ---
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
 		LogQ:            []int{50, 50, 50, 50, 50},
 		LogP:            []int{50, 50},
 		LogDefaultScale: 50,
-		LogNthRoot:      16, // q ≡ 1 mod 4N for KG+
+		LogNthRoot:      16,
 	}); err != nil {
 		panic(err)
 	}
 
-	// --- KG+ parameters ---
-	// k=3: two extra P levels in R' (degree 2N).
-	// Top R' QP = 350 + 56 + 56 = 462 ≤ Q_max(2N=2^15) = 881.
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{56}, // P for RPrime[1] (also homing key P)
-		[]int{56}, // P for RPrime[2] (top level)
+		[]int{56},
+		[]int{56},
 	); err != nil {
 		panic(err)
 	}
@@ -54,29 +50,18 @@ func main() {
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
-	// CLIENT: generate keys
+	// CLIENT: same key generation as simple example
 	// =========================================================================
 
-	// Two independent secrets at the homing-key (HK) level.
-	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
 	kgenHK := rlwe.NewKeyGenerator(params.HK)
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
-
-	// Homing key: EvalKey(sk1 → sk) at HK level. Enables the server to
-	// ring-switch derived keys from R' (degree 2N) back to R (degree N).
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N). This is the secret
-	// under which master keys and the public key are generated in R'.
 	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
-
-	// Public key and master rotation keys in R' at the top level.
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	// With k=3, only {1, base} masters are needed — the server derives the
-	// full base-4 set at the intermediate level.
 	k3Masters := []int{1, 4}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
@@ -95,25 +80,60 @@ func main() {
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
 	// =========================================================================
-	// SERVER: one-shot derivation
+	// SERVER PHASE 1 (inactive): expand {1,4} → full base-4 set at level 1
 	// =========================================================================
-
+	// PubToRot derives a shift-0 key from the public key. In KG+ this operates
+	// in R' (degree 2N) — the extension ring where all intermediate keys live.
 	eval := kgplus.NewEvaluator(params)
-	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
-	// DeriveGaloisKeys handles all levels internally:
-	// PubToRot → ExpandLevel (per level) → FinalizeKeys (ring-switch + convert).
-	// For per-level control, see ../leveled.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+	var shift0L1 *hierkeys.MasterKey
+	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
-	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+
+	// ExpandLevel combines shift-0 with the 2 master keys to produce the full
+	// set of 7+ rotation keys at this level. The intermediate keys can be
+	// serialized and stored between phases.
+	var level1Keys *kgplus.IntermediateKeys
+	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
+		panic(err)
+	}
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys.Keys))
+
+	// =========================================================================
+	// SERVER PHASE 2 (active): derive target rotations at R' level 0
+	// =========================================================================
+	// Now that target rotations are known, derive them using the level-1 keys
+	// as the new master set.
+	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+
+	var shift0L0 *hierkeys.MasterKey
+	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+		panic(err)
+	}
+
+	var level0Keys *kgplus.IntermediateKeys
+	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
+
+	// =========================================================================
+	// SERVER PHASE 3: ring-switch R' → R and convert to lattigo convention
+	// =========================================================================
+	// FinalizeKeys uses the homing key to ring-switch each level-0 key from
+	// R' (degree 2N) back to R (degree N), then converts to standard lattigo
+	// GaloisKeys usable with ckks.Evaluator.
+	var evk *rlwe.MemEvaluationKeySet
+	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================
 	// VERIFY
 	// =========================================================================
-
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {
 		panic(err)
