@@ -7,7 +7,7 @@
 //     intermediate keys.
 //   - Phase 3: ring-switch R' keys to R and finalize as standard lattigo keys.
 //
-// For the simpler one-shot API, see ../simple.
+// For a simpler k=3 example, see ../simple.
 package main
 
 import (

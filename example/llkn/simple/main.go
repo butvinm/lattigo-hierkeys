@@ -1,7 +1,7 @@
-// LLKN hierarchical rotation keys — one-shot DeriveGaloisKeys API.
+// LLKN hierarchical rotation keys — minimal server-side derivation example.
 //
 // Shows the simplest usage: client generates master keys and a public key,
-// server derives all target rotation keys in one call.
+// server derives all target rotation keys using PubToRot + ExpandLevel + FinalizeKeys.
 //
 // LLKN operates entirely in the evaluation ring (no ring switching),
 // making it simpler than KG+ and compatible with any ring type.
@@ -84,16 +84,25 @@ func main() {
 		len(masterRots), float64(tk.BinarySize())/(1024*1024))
 
 	// =========================================================================
-	// SERVER: one-shot derivation — all target keys from transmission keys
+	// SERVER: derive target rotation keys via PubToRot + ExpandLevel + FinalizeKeys
 	// =========================================================================
 
 	eval := llkn.NewEvaluator(params)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	// DeriveGaloisKeys handles PubToRot + ExpandLevel + FinalizeKeys internally.
-	// For per-level control (e.g. inactive/active pattern), see ../leveled.
+	// PubToRot derives a shift-0 (identity) key from the public key.
+	// ExpandLevel combines it with master keys to produce all target rotations.
+	// FinalizeKeys converts to standard lattigo GaloisKeys.
+	var shift0 *hierkeys.MasterKey
+	if shift0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
+		panic(err)
+	}
+	var level0 *hierkeys.IntermediateKeys
+	if level0, err = eval.ExpandLevel(0, shift0, tk.MasterRotKeys, targetRots); err != nil {
+		panic(err)
+	}
 	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+	if evk, err = eval.FinalizeKeys(level0); err != nil {
 		panic(err)
 	}
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))

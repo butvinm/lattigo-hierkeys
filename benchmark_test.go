@@ -231,9 +231,18 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				}
 				tk := genLLKNTransmissionKeys(b, params, masterRots)
 				eval := llkn.NewEvaluator(params)
+				topLevel := params.NumLevels() - 1
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, _ := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
+						currentMasters = intermediate.Keys
+					}
+					shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					level0, _ := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
+					if _, err := eval.FinalizeKeys(level0); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -248,9 +257,18 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				k3MasterRots := []int{1, sc.Base}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
+				topLevel := params.NumLevels() - 1
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, _ := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
+						currentMasters = intermediate.Keys
+					}
+					shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					level0, _ := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
+					if _, err := eval.FinalizeKeys(tk, level0); err != nil {
 						b.Fatal(err)
 					}
 				}

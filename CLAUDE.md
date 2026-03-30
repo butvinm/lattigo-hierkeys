@@ -55,10 +55,7 @@ No KeyGenerator — users generate keys with standard `rlwe.KeyGenerator` and co
 
 `ConstructExtendedSK` builds s̃ = s + Y·s̃₁ in R' from two HK-level secrets. `ProjectToEvalKey` on Parameters projects top-level SK to eval level (with validation).
 
-Two server-side paths:
-
-- One-shot: `DeriveGaloisKeys(tk, targetRots)` — handles everything internally.
-- Per-level: `PubToRot` → `ExpandLevel` → `FinalizeKeys` (ring-switch + convention convert) — enables inactive/active pattern.
+Server-side derivation: `PubToRot` → `ExpandLevel` → `FinalizeKeys` (ring-switch + convention convert). Supports inactive/active pattern.
 
 ### LLKN (`llkn/`)
 
@@ -72,7 +69,7 @@ Same key generation and server-side paths as KG+ (without ring switching).
 
 Each scheme has three examples in `example/<scheme>/`:
 
-- `simple/` — one-shot `DeriveGaloisKeys`
+- `simple/` — minimal leveled derivation (PubToRot + ExpandLevel + FinalizeKeys)
 - `leveled/` — per-level `ExpandLevel` with inactive/active pattern
 - `multiparty/` — N-out-of-N collective key generation via lattigo `GaloisKeyGenProtocol`
 

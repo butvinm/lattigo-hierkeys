@@ -170,7 +170,9 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 		eval := NewEvaluator(params)
-		evk, err := eval.DeriveGaloisKeys(tc.tk, targetRots)
+		intermediate, err := expandAll(eval, tc.tk, targetRots)
+		require.NoError(t, err)
+		evk, err := eval.FinalizeKeys(intermediate)
 		require.NoError(t, err)
 		require.NotNil(t, evk)
 
@@ -196,7 +198,9 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "DeriveGaloisKeys/WithEvaluator"), func(t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
-		evk, err := tc.eval.DeriveGaloisKeys(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.eval, tc.tk, targetRots)
+		require.NoError(t, err)
+		evk, err := tc.eval.FinalizeKeys(intermediate)
 		require.NoError(t, err)
 
 		ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)

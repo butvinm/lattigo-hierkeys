@@ -155,8 +155,16 @@ func main() {
 	eval := llkn.NewEvaluator(params)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
+	var shift0 *hierkeys.MasterKey
+	if shift0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
+		panic(err)
+	}
+	var level0 *hierkeys.IntermediateKeys
+	if level0, err = eval.ExpandLevel(0, shift0, tk.MasterRotKeys, targetRots); err != nil {
+		panic(err)
+	}
 	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+	if evk, err = eval.FinalizeKeys(level0); err != nil {
 		panic(err)
 	}
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))

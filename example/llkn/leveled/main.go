@@ -6,7 +6,7 @@
 //   - The server pre-computes keys during an offline (inactive) phase
 //   - Target rotations are only known later, during the online (active) phase
 //
-// For the simpler one-shot API, see ../simple.
+// For a simpler k=2 example, see ../simple.
 package main
 
 import (

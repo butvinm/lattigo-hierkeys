@@ -542,7 +542,7 @@ func prepareTestCiphertext(t *testing.T, paramsEval rlwe.Parameters, skEval *rlw
 }
 
 // testDeriveGaloisKeys tests the full production API end-to-end:
-// NewParameters -> KeyGenerator -> TransmissionKeys -> DeriveGaloisKeys -> standard Automorphism.
+// NewParameters -> KeyGenerator -> TransmissionKeys -> ExpandLevel -> FinalizeKeys -> standard Automorphism.
 func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -551,7 +551,9 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 
-		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
+		require.NoError(t, err)
+		evk, err := tc.hkEval.FinalizeKeys(tc.tk, intermediate)
 		require.NoError(t, err)
 		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
 
@@ -580,7 +582,9 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 
-		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
+		require.NoError(t, err)
+		evk, err := tc.hkEval.FinalizeKeys(tc.tk, intermediate)
 		require.NoError(t, err)
 		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
 
@@ -599,8 +603,8 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 	})
 }
 
-// testExpandAndFinalize verifies that the two-phase approach (Expand +
-// FinalizeKeys) produces the same results as the single-call DeriveGaloisKeys.
+// testExpandAndFinalize verifies the two-phase approach (Expand +
+// FinalizeKeys) produces correct rotation keys end-to-end.
 func testExpandAndFinalize(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -709,7 +713,9 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Functional test: derive keys from deserialized transmission keys
 		hkEval := NewEvaluator(params)
-		evk, err := hkEval.DeriveGaloisKeys(tk2, []int{1, 2, 3, 4, 5})
+		intermediate, err := expandAll(hkEval, tk2, []int{1, 2, 3, 4, 5})
+		require.NoError(t, err)
+		evk, err := hkEval.FinalizeKeys(tk2, intermediate)
 		require.NoError(t, err)
 		require.Equal(t, 5, len(evk.GetGaloisKeysList()))
 	})
@@ -793,7 +799,9 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 
 		// Derive rotation keys for rotation by 1
 		rot := 1
-		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, []int{rot})
+		intermediate, err := expandAll(tc.hkEval, tc.tk, []int{rot})
+		require.NoError(t, err)
+		evk, err := tc.hkEval.FinalizeKeys(tc.tk, intermediate)
 		require.NoError(t, err)
 
 		// CKKS primitives
@@ -914,7 +922,9 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		// Server: derive
 		targetRots := []int{1, 2, 3, 5, 7, 10, 17, 31, 64, 100, 255, 512, 1000}
 		hkEval := NewEvaluator(params)
-		evk, err := hkEval.DeriveGaloisKeys(tk, targetRots)
+		intermediate, err := expandAll(hkEval, tk, targetRots)
+		require.NoError(t, err)
+		evk, err := hkEval.FinalizeKeys(tk, intermediate)
 		require.NoError(t, err)
 		t.Logf("derived %d evaluation keys", len(evk.GetGaloisKeysList()))
 

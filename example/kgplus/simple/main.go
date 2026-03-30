@@ -1,4 +1,4 @@
-// KG+ hierarchical rotation keys — one-shot DeriveGaloisKeys API.
+// KG+ hierarchical rotation keys — leveled server-side derivation example.
 //
 // KG+ uses ring switching (extension ring R' of degree 2N) to further reduce
 // transmission key sizes compared to LLKN. The trade-off: only supports
@@ -6,7 +6,7 @@
 //
 // The client generates two independent secrets (sk, sk1), constructs an
 // extended secret in R', and sends a homing key for ring switching.
-// The server derives evaluation keys in one call.
+// The server derives evaluation keys using PubToRot + ExpandLevel + FinalizeKeys.
 package main
 
 import (
@@ -95,17 +95,36 @@ func main() {
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
 	// =========================================================================
-	// SERVER: one-shot derivation
+	// SERVER: per-level derivation via PubToRot + ExpandLevel + FinalizeKeys
 	// =========================================================================
 
 	eval := kgplus.NewEvaluator(params)
+	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	// DeriveGaloisKeys handles all levels internally:
-	// PubToRot → ExpandLevel (per level) → FinalizeKeys (ring-switch + convert).
-	// For per-level control, see ../leveled.
+	// Level 1: expand {1,4} masters into the full base-4 set at intermediate level.
+	var shift0L1 *hierkeys.MasterKey
+	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
+		panic(err)
+	}
+	var level1Keys *hierkeys.IntermediateKeys
+	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
+		panic(err)
+	}
+
+	// Level 0: derive target rotations from the expanded set.
+	var shift0L0 *hierkeys.MasterKey
+	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+		panic(err)
+	}
+	var level0Keys *hierkeys.IntermediateKeys
+	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
+		panic(err)
+	}
+
+	// FinalizeKeys ring-switches R' keys to R and converts to lattigo convention.
 	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
 		panic(err)
 	}
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))

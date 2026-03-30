@@ -48,9 +48,11 @@ for _, rot := range masterRots {
 tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 // send tk to server
 
-// SERVER: one-shot derivation → standard lattigo evaluation keys
+// SERVER: derive standard lattigo evaluation keys
 eval := llkn.NewEvaluator(params)
-evk, _ := eval.DeriveGaloisKeys(tk, targetRotations)
+shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey)
+level0, _ := eval.ExpandLevel(0, shift0, tk.MasterRotKeys, targetRotations)
+evk, _ := eval.FinalizeKeys(level0)
 ```
 
 ### KG+ k=3 with gradual expansion
@@ -122,10 +124,10 @@ go test -v -count=1 -short ./llkn/...
 
 ```bash
 cd example
-go run ./llkn/simple/       # one-shot DeriveGaloisKeys
+go run ./llkn/simple/       # minimal k=2 derivation
 go run ./llkn/leveled/      # per-level ExpandLevel (inactive/active pattern)
 go run ./llkn/multiparty/   # N-out-of-N multiparty
-go run ./kgplus/simple/     # one-shot DeriveGaloisKeys with ring switching
+go run ./kgplus/simple/     # k=3 derivation with ring switching
 go run ./kgplus/leveled/    # per-level ExpandLevel with ring switching
 go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 ```

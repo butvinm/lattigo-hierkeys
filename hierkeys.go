@@ -18,7 +18,6 @@ import (
 //
 // With these master keys, any rotation in [1, nSlots/2] can be decomposed as a
 // sum of at most ceil(log_base(nSlots)) master rotations via RotToRot.
-// Negative rotations are normalized to positive equivalents by DeriveGaloisKeys.
 func MasterRotationsForBase(base, nSlots int) []int {
 	if base < 2 || nSlots < 1 {
 		return nil
