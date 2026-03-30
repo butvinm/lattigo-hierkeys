@@ -36,10 +36,10 @@ func main() {
 	// --- LLKN parameters ---
 	// k=2: one extra level of P primes for master keys.
 	// Master level: Q = Q_eval ∪ P_eval (7 primes), P = {56-bit} (1 prime).
-	// Total master QP = 350 + 56 = 406 ≤ 438.
+	// Master level: Q=7 primes, P=3×20b primes → dnum=3, QP=416 ≤ 438.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{56}, // P for master level (one 56-bit prime)
+		{20, 20, 20}, // P for master level — dnum=3
 	}); err != nil {
 		panic(err)
 	}

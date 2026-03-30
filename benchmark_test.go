@@ -60,7 +60,7 @@ func buildLogQ(n, bitSize int) []int {
 var benchScenarios = []benchScenario{
 	{
 		Name: "LogN14_Q5_P2",
-		LogN: 14, LogQ: buildLogQ(5, 50), LogP: []int{50, 50}, LogPHK: []int{56},
+		LogN: 14, LogQ: buildLogQ(5, 50), LogP: []int{50, 50}, LogPHK: buildLogQ(3, 20),
 		Base:      4,
 		LogPHK3:   buildLogQ(4, 30),
 		LogPExtra: buildLogQ(12, 30),
@@ -68,7 +68,7 @@ var benchScenarios = []benchScenario{
 	{
 		Name: "LogN15_Q10_P3",
 		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: []int{61, 61, 61},
-		LogPHK:    []int{61, 61},
+		LogPHK:    buildLogQ(7, 25),
 		Base:      4,
 		LogPHK3:   buildLogQ(5, 30),
 		LogPExtra: buildLogQ(18, 30),
@@ -76,7 +76,7 @@ var benchScenarios = []benchScenario{
 	{
 		Name: "LogN16_Q24_P4",
 		LogN: 16, LogQ: buildLogQ(24, 55), LogP: []int{55, 55, 55, 55},
-		LogPHK:    []int{55, 55, 55, 55},
+		LogPHK:    buildLogQ(6, 30),
 		Base:      4,
 		LogPHK3:   buildLogQ(10, 30),
 		LogPExtra: buildLogQ(38, 30),

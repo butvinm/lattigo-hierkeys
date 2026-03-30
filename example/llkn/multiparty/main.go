@@ -43,7 +43,7 @@ func main() {
 
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{56},
+		{20, 20, 20}, // dnum=3
 	}); err != nil {
 		panic(err)
 	}

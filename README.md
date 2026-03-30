@@ -70,9 +70,9 @@ See `example/kgplus/simple` for the complete flow.
 ```
 LogN=14 (Q_max(N)=438, Q_max(2N)=881):
 
-  LLKN k=2: 7 master keys {1,4,16,64,256,1024,4096}, dnum=7
+  LLKN k=2: 7 master keys {1,4,16,64,256,1024,4096}, dnum=3
     Target level: Q=5×50b  P=2×50b  dnum=3  QP=350b
-    Master level: Q=7×50b  P=1×56b  dnum=7  QP=406b ≤ 438
+    Master level: Q=7×50b  P=3×20b  dnum=3  QP=416b ≤ 438
 
   KG+ k=3: 2 master keys {1,64}, dnum=1 (in R', degree 2N)
     Target level:       Q=5×50b   P=2×50b   dnum=3  QP=350b
@@ -81,9 +81,9 @@ LogN=14 (Q_max(N)=438, Q_max(2N)=881):
 
 LogN=15 (Q_max(N)=881, Q_max(2N)=1761):
 
-  LLKN k=2: 7 master keys {1,4,...,4096}, dnum=7
-    Target level: Q=10×~42b  P=3×61b  dnum=4  QP=602b
-    Master level: Q=13×~46b  P=2×61b  dnum=7  QP=725b ≤ 881
+  LLKN k=2: 7 master keys {1,4,...,4096}, dnum=2
+    Target level: Q=10×~42b  P=3×61b  dnum=4   QP=602b
+    Master level: Q=13×~46b  P=7×25b  dnum=2   QP=782b ≤ 881
 
   KG+ k=3: 2 master keys {1,64}, dnum=1 (in R', degree 2N)
     Target level:       Q=10×~42b  P=3×61b   dnum=4  QP=602b
@@ -92,9 +92,9 @@ LogN=15 (Q_max(N)=881, Q_max(2N)=1761):
 
 LogN=16 (Q_max(N)=1761, Q_max(2N)=3500):
 
-  LLKN k=2: 8 master keys {1,4,...,16384}, dnum=7
+  LLKN k=2: 8 master keys {1,4,...,16384}, dnum=5
     Target level: Q=24×55b  P=4×55b  dnum=6  QP=1540b
-    Master level: Q=28×55b  P=4×55b  dnum=7  QP=1760b ≤ 1761
+    Master level: Q=28×55b  P=6×30b  dnum=5  QP=1737b ≤ 1761
 
   KG+ k=3: 2 master keys {1,256}, dnum=1 (in R', degree 2N)
     Target level:       Q=24×55b  P=4×55b   dnum=6  QP=1540b

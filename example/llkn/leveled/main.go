@@ -38,8 +38,8 @@ func main() {
 	// (only one ExpandLevel call), so we use k=3 to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{56}, // P for level 1 (intermediate)
-		{56}, // P for level 2 (top master)
+		{20, 20, 20}, // P for level 1 (intermediate) — dnum=3
+		{20, 20, 20}, // P for level 2 (top master) — dnum=3
 	}); err != nil {
 		panic(err)
 	}
