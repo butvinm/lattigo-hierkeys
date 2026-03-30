@@ -2,6 +2,7 @@ package hierkeys_test
 
 import (
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -182,8 +183,7 @@ func BenchmarkKeySizes(b *testing.B) {
 			b.Run("KGPlus_k3", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
 
 				topRP := params.RPrime[params.NumLevels()-1]
@@ -207,6 +207,12 @@ func BenchmarkKeySizes(b *testing.B) {
 			})
 		})
 	}
+}
+
+func heapMB() uint64 {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapInuse / (1024 * 1024)
 }
 
 // BenchmarkDeriveGaloisKeys measures server-side key derivation time.
@@ -236,27 +242,43 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				tk := genLLKNTransmissionKeys(b, params, masterRots)
 				eval := llkn.NewEvaluator(params)
 				topLevel := params.NumLevels() - 1
+				runtime.GC()
+				b.Logf("after setup: heap=%d MB", heapMB())
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, _ := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						if err != nil {
+							b.Fatal(err)
+						}
 						currentMasters = intermediate.Keys
+						b.Logf("after ExpandLevel(%d): heap=%d MB", level, heapMB())
 					}
-					shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
-					level0, _ := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
+					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					level0, err := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Logf("after ExpandLevel(0): heap=%d MB", heapMB())
 					if _, err := eval.FinalizeKeys(level0); err != nil {
 						b.Fatal(err)
 					}
+					b.Logf("after FinalizeKeys: heap=%d MB", heapMB())
 				}
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
 				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
@@ -266,19 +288,36 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
 				topLevel := params.NumLevels() - 1
+				runtime.GC()
+				b.Logf("after setup: heap=%d MB", heapMB())
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, _ := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						if err != nil {
+							b.Fatal(err)
+						}
 						currentMasters = intermediate.Keys
+						b.Logf("after ExpandLevel(%d): heap=%d MB", level, heapMB())
 					}
-					shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
-					level0, _ := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
+					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					level0, err := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Logf("after ExpandLevel(0): heap=%d MB", heapMB())
 					if _, err := eval.FinalizeKeys(tk, level0); err != nil {
 						b.Fatal(err)
 					}
+					b.Logf("after FinalizeKeys: heap=%d MB", heapMB())
 				}
 			})
 		})
@@ -321,13 +360,22 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					// Intermediate levels (sequential) — uses ExpandLevel directly
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, _ := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						if err != nil {
+							b.Fatal(err)
+						}
 						currentMasters = intermediate.Keys
 					}
 
 					// Level 0 (concurrent) — uses NewLevelExpansion
-					shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
@@ -353,8 +401,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 			b.Run("KGPlus_k3", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
 				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
@@ -371,13 +418,22 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					// Intermediate levels (sequential) — uses ExpandLevel directly
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, _ := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
+						if err != nil {
+							b.Fatal(err)
+						}
 						currentMasters = intermediate.Keys
 					}
 
 					// Level 0 (concurrent) — uses NewLevelExpansion
-					shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
@@ -435,8 +491,7 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 			b.Run("KGPlus_k3", func(b *testing.B) {
 				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
 				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
@@ -716,23 +771,11 @@ func BenchmarkDecomposeRotation(b *testing.B) {
 	masters7 := []int{1, 4, 16, 64, 256, 1024, 4096}
 
 	for _, target := range []int{1, 16, 100, 1000, 4096, 8191} {
-		b.Run("target="+itoa(target), func(b *testing.B) {
+		b.Run("target="+strconv.Itoa(target), func(b *testing.B) {
 			steps2 := hierkeys.DecomposeRotation(target, masters2)
 			steps7 := hierkeys.DecomposeRotation(target, masters7)
 			b.Logf("target=%d: from {1,4}: %d steps, from base-4: %d steps",
 				target, len(steps2), len(steps7))
 		})
 	}
-}
-
-func itoa(n int) string {
-	s := ""
-	if n == 0 {
-		return "0"
-	}
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	return s
 }
