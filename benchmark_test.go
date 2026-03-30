@@ -56,7 +56,7 @@ func buildLogQ(n, bitSize int) []int {
 	return q
 }
 
-// 128-bit secure parameter sets (HE Standard, h=N/2 ternary secret).
+// 128-bit secure parameter sets (HE Standard, ternary secret).
 var benchScenarios = []benchScenario{
 	{
 		Name: "LogN14_Q5_P2",
