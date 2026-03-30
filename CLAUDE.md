@@ -39,9 +39,12 @@ Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofm
 Shared primitives:
 
 - `MasterKey` — rotation key type for hierarchical derivation. Wraps `*rlwe.GaloisKey`.
-- `GaloisKeyToMasterKey` / `MasterKeyToGaloisKey` — convention conversion (mutate in-place, consume input). KG+ `FinalizeKeys` uses a private buffered version for the post-ring-switch conversion.
-- `RotToRot` — core key combination: shift-r + shift-r' → shift-(r+r').
+- `GaloisKeyToMasterKey` / `MasterKeyToGaloisKey` — convention conversion (mutate in-place, consume input).
+- `RotToRotEvaluator` — thread-safe RotToRot with pool-based scratch buffers. Core key combination: shift-r + shift-r' → shift-(r+r').
 - `PubToRot` — derives shift-0 MasterKey from `*rlwe.PublicKey`.
+- `LevelExpansion` — thread-safe derivation session at one hierarchy level. Uses `sync.Once` per rotation for dedup. Created via `NewLevelExpansion`.
+- `ExpandLevel` — convenience wrapper: sequential derivation using `LevelExpansion`.
+- `IntermediateKeys` — output of `ExpandLevel` / `LevelExpansion`, input to next level or `FinalizeKeys`.
 - `MasterRotationsForBase`, `DecomposeRotation` — rotation set utilities.
 - `GenerateUniquePrimes` — collision-free NTT-friendly prime generation.
 
@@ -55,7 +58,7 @@ No KeyGenerator — users generate keys with standard `rlwe.KeyGenerator` and co
 
 `ConstructExtendedSK` builds s̃ = s + Y·s̃₁ in R' from two HK-level secrets. `ProjectToEvalKey` on Parameters projects top-level SK to eval level (with validation).
 
-Server-side derivation: `PubToRot` → `ExpandLevel` → `FinalizeKeys` (ring-switch + convention convert). Supports inactive/active pattern.
+Server-side derivation: `PubToRot` → `ExpandLevel` → `FinalizeKeys` (ring-switch + convention convert). Use `NewLevelExpansion` for concurrent derivation.
 
 ### LLKN (`llkn/`)
 
@@ -67,10 +70,11 @@ Same key generation and server-side paths as KG+ (without ring switching).
 
 ### Examples
 
-Each scheme has three examples in `example/<scheme>/`:
+Each scheme has four examples in `example/<scheme>/`:
 
 - `simple/` — minimal leveled derivation (PubToRot + ExpandLevel + FinalizeKeys)
 - `leveled/` — per-level `ExpandLevel` with inactive/active pattern
+- `concurrent/` — `NewLevelExpansion` + goroutines for concurrent derivation
 - `multiparty/` — N-out-of-N collective key generation via lattigo `GaloisKeyGenProtocol`
 
 ## Known Gotchas
@@ -82,6 +86,7 @@ Each scheme has three examples in `example/<scheme>/`:
 - **Noise in multi-level (k>2)**: Each RotToRot adds noise proportional to √(dnum) × Q/P. Use many small P primes (e.g., 30b) to maximize total P within the budget — this lowers both dnum and Q/P. The paper uses large primes with high dnum (10-30); our optimized params use small primes with low dnum (2-3) and comparable or better noise.
 - **ConstructExtendedSK for k>2 (KG+)**: When RPrime Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
 - **GaloisKeyGenProtocol accumulator**: When aggregating shares, the accumulator's `GaloisElement` must be set before the first `AggregateShares` call (it defaults to 0, causing a mismatch error).
+- **LLKN shares Q_max with eval**: LLKN hierarchy P primes consume the same Q_max(N) budget as eval Q and P primes. Heavy eval parameters leave little room for hierarchy. KG+ avoids this via R' with Q_max(2N) ≈ 2×Q_max(N).
 
 ## Code Style
 
@@ -90,5 +95,5 @@ Follow lattigo conventions:
 - `var err error` + `if err = ...; err != nil` pattern
 - Test functions: `func testXxx(tc *testContext, t *testing.T)` called from single entry point (`TestKGPlus`, `TestLLKN`)
 - Subtest names: `testString(params, "OpName")` → `"OpName/logN=X/Qi=Y/Pi=Z/k=K"`
-- Pre-allocated buffers in Evaluator struct, ConcurrentCopy for concurrency
+- Pool-based buffers in evaluators (sync.Pool via lattigo's `ring.BufferPool`), thread-safe by default
 - Error returns on public API, panics only for internal sanity checks
