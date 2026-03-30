@@ -37,8 +37,8 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{56},
-		[]int{56},
+		[]int{30, 30, 30, 30},                         // P for RPrime[1] — dnum=2
+		[]int{30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30}, // P for RPrime[2] — dnum=1
 	); err != nil {
 		panic(err)
 	}
@@ -62,7 +62,7 @@ func main() {
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	k3Masters := []int{1, 4}
+	k3Masters := []int{1, 64}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
 		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)

@@ -65,22 +65,42 @@ See `example/kgplus/simple` for the complete flow.
 
 256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret with h=N/2).
 
-**Scheme configurations** (each uses the same eval-level Q and P):
+**Scheme configurations:**
 
-| Scheme                            | Masters | m   | dnum       | Modulus bit length     | Max modulus |
-| --------------------------------- | ------- | --- | ---------- | ---------------------- | ----------- |
-| **LogN=14, Q=5×50b, P=2×50b**     |         |     |            |                        |             |
-| Conventional                      | —       | 256 | (3)        | (253, 101)             | 354         |
-| LLKN k=2                          | base-4  | 7   | (3, 7)     | (253, 101, 56)         | 411         |
-| KG+ k=3                           | {1, 4}  | 2   | (3, 7, 8)  | (253, 101, 56, 56)     | 467 / R'    |
-| **LogN=15, Q=55b+9×40b, P=3×61b** |         |     |            |                        |             |
-| Conventional                      | —       | 256 | (4)        | (419, 183)             | 602         |
-| LLKN k=2                          | base-4  | 7   | (4, 7)     | (419, 183, 122)        | 725         |
-| KG+ k=3                           | {1, 4}  | 2   | (4, 2, 5)  | (419, 183, 610, 305)   | 1527 / R'   |
-| **LogN=16, Q=24×55b, P=4×55b**    |         |     |            |                        |             |
-| Conventional                      | —       | 256 | (6)        | (1332, 222)            | 1554        |
-| LLKN k=2                          | base-4  | 8   | (6, 7)     | (1332, 222, 220)       | 1775        |
-| KG+ k=3                           | {1, 4}  | 2   | (6, 10, 1) | (1332, 222, 171, 1705) | 3450 / R'   |
+```
+LogN=14 (Q_max(N)=438, Q_max(2N)=881):
+
+  LLKN k=2: 7 master keys {1,4,16,64,256,1024,4096}, dnum=7
+    Target level: Q=5×50b  P=2×50b  dnum=3  QP=350b
+    Master level: Q=7×50b  P=1×56b  dnum=7  QP=406b ≤ 438
+
+  KG+ k=3: 2 master keys {1,64}, dnum=1 (in R', degree 2N)
+    Target level:       Q=5×50b   P=2×50b   dnum=3  QP=350b
+    Intermediate level: Q=7×50b   P=4×30b   dnum=2  QP=470b
+    Master level:       Q=11×~38b P=12×30b  dnum=1  QP=840b ≤ 881
+
+LogN=15 (Q_max(N)=881, Q_max(2N)=1761):
+
+  LLKN k=2: 7 master keys {1,4,...,4096}, dnum=7
+    Target level: Q=10×~42b  P=3×61b  dnum=4  QP=602b
+    Master level: Q=13×~46b  P=2×61b  dnum=7  QP=725b ≤ 881
+
+  KG+ k=3: 2 master keys {1,64}, dnum=1 (in R', degree 2N)
+    Target level:       Q=10×~42b  P=3×61b   dnum=4  QP=602b
+    Intermediate level: Q=13×~46b  P=5×30b   dnum=3  QP=752b
+    Master level:       Q=18×~40b  P=18×30b  dnum=1  QP=1305b ≤ 1761
+
+LogN=16 (Q_max(N)=1761, Q_max(2N)=3500):
+
+  LLKN k=2: 8 master keys {1,4,...,16384}, dnum=7
+    Target level: Q=24×55b  P=4×55b  dnum=6  QP=1540b
+    Master level: Q=28×55b  P=4×55b  dnum=7  QP=1760b ≤ 1761
+
+  KG+ k=3: 2 master keys {1,256}, dnum=1 (in R', degree 2N)
+    Target level:       Q=24×55b  P=4×55b   dnum=6  QP=1540b
+    Intermediate level: Q=28×55b  P=10×30b  dnum=3   QP=1840b
+    Master level:       Q=38×~40b P=38×30b  dnum=1   QP=3023b ≤ 3500
+```
 
 **Transmission key sizes:**
 

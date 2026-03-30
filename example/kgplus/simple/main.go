@@ -38,11 +38,12 @@ func main() {
 
 	// --- KG+ parameters ---
 	// k=3: two extra P levels in R' (degree 2N).
-	// Top R' QP = 350 + 56 + 56 = 462 ≤ Q_max(2N=2^15) = 881.
+	// RPrime[1] Q=7×50b P=4×50b → dnum=2, QP=550b
+	// RPrime[2] Q=11×50b P=8×50b → dnum=2, QP=950b ≤ Q_max(2N=2^15) = 881×2
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{56}, // P for RPrime[1] (also homing key P)
-		[]int{56}, // P for RPrime[2] (top level)
+		[]int{30, 30, 30, 30},                         // P for RPrime[1] — dnum=2
+		[]int{30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30}, // P for RPrime[2] — dnum=1
 	); err != nil {
 		panic(err)
 	}
@@ -75,9 +76,9 @@ func main() {
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	// With k=3, only {1, base} masters are needed — the server derives the
+	// With k=3, only {1, middle} masters are needed — the server derives the
 	// full base-4 set at the intermediate level.
-	k3Masters := []int{1, 4}
+	k3Masters := []int{1, 64}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
 		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
