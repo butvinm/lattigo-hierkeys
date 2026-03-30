@@ -63,7 +63,7 @@ See `example/kgplus/simple` for the complete flow.
 
 ## Benchmarks
 
-256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret with h=N/2).
+256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret).
 
 **Scheme configurations:**
 
