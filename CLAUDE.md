@@ -96,14 +96,18 @@ Each RLWE parameter set has Q primes (ciphertext modulus) and P primes (key-swit
 
 - **Q primes**: each prime = one multiplication level. Count = circuit depth. Size = precision per level.
 - **P primes**: used temporarily during key-switching, then divided out. More P = less noise, bigger keys.
-- **Q_max(N)**: maximum total log2(Q×P) for ring degree N at 128-bit security. From HE Standard:
+- **Q_max(N)**: maximum total log2(Q×P) for ring degree N at 128-bit security (uniform ternary secret, σ=3.19). From "Security Guidelines for Implementing Homomorphic Encryption" (Bossuat et al., ePrint 2024/463):
 
-  | Degree N | Q_max (ternary secret) |
-  | -------- | ---------------------- |
-  | 2^14     | 438 bits               |
-  | 2^15     | 881 bits               |
-  | 2^16     | ~1761 bits             |
-  | 2^17     | ~3500 bits             |
+  | Degree N | Q_max (bits) |
+  | -------- | ------------ |
+  | 2^12     | 106          |
+  | 2^13     | 214          |
+  | 2^14     | 430          |
+  | 2^15     | 868          |
+  | 2^16     | 1747         |
+  | 2^17     | 3523         |
+
+  Note: lattigo's CKKS README and HE Standard v1.1 list slightly higher values (109, 218, 438, 881 for 2^12-2^15) based on older attack estimates. We use the stricter 2024 values. The paper "Towards Lightweight CKKS" uses sparse ternary h=N/2 (not uniform), giving higher Q_max: 1782 for N=2^16.
 
 ### dnum (gadget decomposition number)
 
@@ -175,30 +179,13 @@ Constraint: primes must be NTT-friendly (q ≡ 1 mod NthRoot) and distinct from 
 
 ### Current optimized params
 
-All use many small primes for minimum dnum within Q_max:
-
-```
-LogN=14 (Q_max(N)=438, Q_max(2N)=881):
-  LLKN:  P_master = 3×20b → dnum=3, QP=416 ≤ 438
-  KG+:   P_hk = 4×30b → dnum_hk=2, dnum_mid=2
-         P_top = 12×30b → dnum_top=1, QP=840 ≤ 881
-
-LogN=15 (Q_max(N)=881, Q_max(2N)=1761):
-  LLKN:  P_master = 7×25b → dnum=2, QP=782 ≤ 881
-  KG+:   P_hk = 5×30b → dnum_hk=3, dnum_mid=3
-         P_top = 18×30b → dnum_top=1, QP=1305 ≤ 1761
-
-LogN=16 (Q_max(N)=1761, Q_max(2N)=3500):
-  LLKN:  P_master = 6×30b → dnum=5, QP=1737 ≤ 1761
-  KG+:   P_hk = 10×30b → dnum_hk=3, dnum_mid=3
-         P_top = 38×30b → dnum_top=1, QP=3023 ≤ 3500
-```
+See README.md "Scheme configurations" for concrete parameter values per LogN. All use many small P primes (20-30b) for minimum dnum within Q_max.
 
 ### Why KG+ over LLKN
 
 LLKN hierarchy shares Q_max(N) with the eval circuit. Heavy eval params (deep circuits) leave little room for hierarchy P primes → high dnum → large master keys.
 
-KG+ moves the hierarchy to R' (degree 2N) with Q_max(2N) ≈ 2×Q_max(N). The eval budget is untouched. This matters for production params (LogN=16) where Q_eval + P_eval = 1540 of 1761 available — only 221 bits left for LLKN hierarchy, but 1960 bits available in R'.
+KG+ moves the hierarchy to R' (degree 2N) with Q_max(2N) ≈ 2×Q_max(N). The eval budget is untouched. This matters for production params (LogN=16) where Q_eval + P_eval = 1540 of 1747 available — only 207 bits left for LLKN hierarchy (and 10b margin on the LLKN top QP=1737), but 1983 bits available in R'.
 
 ### Why k=3 over k=2
 
