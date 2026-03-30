@@ -190,7 +190,11 @@ func BenchmarkKeySizes(b *testing.B) {
 				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
 					topRP.MaxLevel(), topRP.MaxLevelP())
 
-				k3MasterRots := []int{1, sc.Base}
+				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// making level-1 expansion to the full base-p set efficient.
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
@@ -254,7 +258,11 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 					b.Skip("KG+ k=3 params failed:", err)
 					return
 				}
-				k3MasterRots := []int{1, sc.Base}
+				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// making level-1 expansion to the full base-p set efficient.
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
 				topLevel := params.NumLevels() - 1
@@ -348,7 +356,11 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					b.Skip("KG+ k=3 params failed:", err)
 					return
 				}
-				k3MasterRots := []int{1, sc.Base}
+				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// making level-1 expansion to the full base-p set efficient.
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
 				topLevel := params.NumLevels() - 1
@@ -426,7 +438,11 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 					b.Skip("KG+ k=3 params failed:", err)
 					return
 				}
-				k3MasterRots := []int{1, sc.Base}
+				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// making level-1 expansion to the full base-p set efficient.
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				k3MasterRots := []int{1, bigMaster}
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					genKGPlusTransmissionKeys(b, params, k3MasterRots)
