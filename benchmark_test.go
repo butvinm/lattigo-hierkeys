@@ -237,7 +237,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, _ := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
 						currentMasters = intermediate.Keys
 					}
 					shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
@@ -263,7 +263,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, _ := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
 						currentMasters = intermediate.Keys
 					}
 					shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
@@ -314,7 +314,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, _ := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
 						currentMasters = intermediate.Keys
 					}
 
@@ -360,7 +360,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, _ := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
-						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, hierkeys.SortedIntKeys(currentMasters))
+						intermediate, _ := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
 						currentMasters = intermediate.Keys
 					}
 
@@ -435,6 +435,7 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 		})
 	}
 }
+
 // Per-operation benchmarks for individual operations at LogN=14.
 // Run: go test -bench Benchmark -run ^$ -v -timeout 10m .
 
