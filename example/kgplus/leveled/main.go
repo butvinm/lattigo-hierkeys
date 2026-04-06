@@ -7,7 +7,7 @@
 //     intermediate keys.
 //   - Phase 3: ring-switch R' keys to R and finalize as standard lattigo keys.
 //
-// For a simpler k=3 example, see ../simple.
+// For a simpler 3-level example, see ../simple.
 package main
 
 import (
@@ -46,7 +46,7 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topLevel := params.NumLevels() - 1
 	topParams := params.RPrime[topLevel]
-	fmt.Printf("KG+ CKKS (k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("KG+ CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================

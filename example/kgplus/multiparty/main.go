@@ -51,7 +51,7 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topLevel := params.NumLevels() - 1
 	topParams := params.RPrime[topLevel]
-	fmt.Printf("KG+ CKKS multiparty (N=%d, k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("KG+ CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
 	crs, err := sampling.NewPRNG()

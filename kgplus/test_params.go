@@ -25,7 +25,7 @@ var (
 
 	// testInsecure are insecure parameters used for the sole purpose of fast testing.
 	testInsecure = []TestParametersLiteral{
-		// k=2, 5 Q primes, 1 P prime, 1 homing-key prime
+		// 2-level, 5 Q primes, 1 P prime, 1 homing-key prime
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:    10,
@@ -35,7 +35,7 @@ var (
 			},
 			LogPHK: []int{61},
 		},
-		// k=2, 3 Q primes, 1 P prime, 1 homing-key prime (fewer levels)
+		// 2-level, 3 Q primes, 1 P prime, 1 homing-key prime (fewer levels)
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:    10,
@@ -45,7 +45,7 @@ var (
 			},
 			LogPHK: []int{61},
 		},
-		// k=3, 5 Q primes, 1 P prime, 1 homing-key prime + extra level
+		// 3-level, 5 Q primes, 1 P prime, 1 homing-key prime + extra level
 		// Needs enough P primes at RPrime[1] to keep noise manageable.
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{

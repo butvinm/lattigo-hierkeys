@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// --- KG+ parameters ---
-	// k=3: two extra P levels in R' (degree 2N).
+	// 3-level: two extra P levels in R' (degree 2N).
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
 		[]int{55}, // LogPHK for RPrime[1]
@@ -49,7 +49,7 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topLevel := params.NumLevels() - 1
 	topParams := params.RPrime[topLevel]
-	fmt.Printf("KG+ CKKS (k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("KG+ CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
@@ -74,7 +74,7 @@ func main() {
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	// With k=3, only {1, middle} masters are needed — the server derives the
+	// With 3-level, only {1, middle} masters are needed — the server derives the
 	// full base-4 set at the intermediate level.
 	k3Masters := []int{1, 64}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))

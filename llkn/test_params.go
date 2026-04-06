@@ -25,7 +25,7 @@ var (
 	}
 
 	testInsecure = []TestParametersLiteral{
-		// k=2, Standard ring
+		// 2-level, Standard ring
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:     10,
@@ -36,7 +36,7 @@ var (
 			},
 			LogPPerLevel: [][]int{{61}},
 		},
-		// k=2, Standard ring, fewer levels
+		// 2-level, Standard ring, fewer levels
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:     10,
@@ -47,7 +47,7 @@ var (
 			},
 			LogPPerLevel: [][]int{{61}},
 		},
-		// k=2, ConjugateInvariant ring
+		// 2-level, ConjugateInvariant ring
 		{
 			ParametersLiteral: rlwe.ParametersLiteral{
 				LogN:     10,
@@ -58,7 +58,7 @@ var (
 			},
 			LogPPerLevel: [][]int{{61}},
 		},
-		// k=3, Standard ring (3-level hierarchy)
+		// 3-level, Standard ring (3-level hierarchy)
 		// Intermediate levels need P ≈ Q primes to keep Q/P ratio ~1,
 		// preventing noise amplification when derived keys are used as
 		// masters for the next level's RotToRot.

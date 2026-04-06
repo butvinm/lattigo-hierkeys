@@ -7,7 +7,7 @@
 // The concurrency model is the same as lattigo v6.2: one evaluator, multiple
 // goroutines, each goroutine allocates its own output.
 //
-// Uses k=3 to show two-phase expansion: intermediate level first (sequential),
+// Uses 3-level to show two-phase expansion: intermediate level first (sequential),
 // then target rotations at level 0 (concurrent).
 package main
 
@@ -36,7 +36,7 @@ func main() {
 		panic(err)
 	}
 
-	// k=3 to demonstrate two-phase expansion.
+	// 3-level to demonstrate two-phase expansion.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{55}, // P for level 1
@@ -48,7 +48,7 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
 	topLevel := params.NumLevels() - 1
-	fmt.Printf("LLKN concurrent (k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("LLKN concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================

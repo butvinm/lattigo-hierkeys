@@ -20,7 +20,7 @@ import (
 //   - RPrime[1]: Q = Q_eval ∪ P_eval, P = P_hk — first master level (same P as HK)
 //   - RPrime[i]: Q = RPrime[i-1].Q ∪ RPrime[i-1].P, P = P_i — higher levels
 //
-// For k=2, this is the standard KG+ scheme.
+// For 2-level, this is the standard KG+ scheme.
 // For k>2, extra levels provide additional hierarchy depth.
 //
 // KG+ only supports the Standard ring type (not ConjugateInvariant),
@@ -61,8 +61,8 @@ func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, err
 // logPHK specifies auxiliary primes for the homing key and RPrime[1].
 // logPExtra (optional) specifies P-prime bit-sizes for additional levels (k>2).
 //
-// For k=2 (standard): NewParameters(eval, logPHK)
-// For k=3: NewParameters(eval, logPHK, logP2)
+// For 2-level (standard): NewParameters(eval, logPHK)
+// For 3-level: NewParameters(eval, logPHK, logP2)
 //
 // All primes must be NTT-friendly for degree 2N. Returns an error if the evaluation
 // parameters use the ConjugateInvariant ring type.
@@ -119,7 +119,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 	}
 
 	// Build RPrime levels (degree 2N)
-	k := 2 + len(logPExtra) // k=2 minimum, +1 per extra level
+	k := 2 + len(logPExtra) // 2-level minimum, +1 per extra level
 
 	rpLevels := make([]rlwe.Parameters, k)
 

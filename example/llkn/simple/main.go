@@ -34,7 +34,7 @@ func main() {
 	}
 
 	// --- LLKN parameters ---
-	// k=2: one extra level of P primes for master keys.
+	// 2-level: one extra level of P primes for master keys.
 	// Master level: Q=7 primes, P=6×16b primes → dnum=2, QP=421 ≤ 430.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
@@ -45,7 +45,7 @@ func main() {
 
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
-	fmt.Printf("LLKN CKKS (k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================

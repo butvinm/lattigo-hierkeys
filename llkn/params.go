@@ -16,7 +16,7 @@ import (
 //   - Levels[i]: Q = Levels[i-1].Q ∪ Levels[i-1].P, P = P_i
 //   - Levels[k-1]: top master level
 //
-// For k=2, this is the standard LLKN two-tier scheme from Lee-Lee-Kim-No.
+// For 2-level, this is the standard LLKN two-tier scheme from Lee-Lee-Kim-No.
 // For k>2, intermediate levels enable further TX bandwidth reduction
 // at the cost of additional server-side computation.
 //
@@ -76,8 +76,8 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 // that level and from all primes used at lower levels. This prevents the
 // prime collision that would cause GadgetProduct/ModDown to fail.
 //
-// For k=2 (standard two-tier): NewParameters(eval, [][]int{{61}})
-// For k=3 (three-tier):        NewParameters(eval, [][]int{{61}, {61}})
+// For 2-level (standard two-tier): NewParameters(eval, [][]int{{61}})
+// For 3-level (three-tier):        NewParameters(eval, [][]int{{61}, {61}})
 func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, error) {
 
 	if len(logPPerLevel) == 0 {

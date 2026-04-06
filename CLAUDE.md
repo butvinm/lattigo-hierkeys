@@ -191,7 +191,7 @@ This is the OPPOSITE of what works for general dnum optimization theory — but 
 - LLKN: P_master primes share Q_max(N) with eval. Budget = Q_max - Q_eval - P_eval.
 - KG+: hierarchy is in R' with Q_max(2N). Separate budget, does not affect eval.
 
-**For KG+ k=3, `NewParameters(eval, logPHK, logPExtra)`**:
+**For KG+ 3-level, `NewParameters(eval, logPHK, logPExtra)`**:
 
 - `logPHK` serves DOUBLE DUTY: P primes for both HK level (degree N) and RPrime[1] (degree 2N)
   - Affects homing key size: dnum_hk = ceil(QCount_HK / len(logPHK))
@@ -209,23 +209,23 @@ LLKN hierarchy shares Q_max(N) with the eval circuit. Heavy eval params (deep ci
 
 KG+ moves the hierarchy to R' (degree 2N) with Q_max(2N) ≈ 2×Q_max(N). The eval budget is untouched. This matters for production params (LogN=16) where Q_eval + P_eval = 1355 of 1714 available — only 359 bits left for LLKN hierarchy, but 2073 bits available in R'.
 
-### Why k=3 over k=2
+### Why 3-level over 2-level
 
-With k=2, client sends m master keys (7-8 for base-4). With k=3, client sends 2 master keys; server expands at the intermediate level.
+With 2-level, client sends m master keys (7-8 for base-4). With 3-level, client sends 2 master keys; server expands at the intermediate level.
 
-k=3 benefits:
+3-level benefits:
 
 - Fewer transmitted keys (2 vs 7-8)
 - dnum=1 at top possible (smallest per-key size)
 - Offline/online pattern: expand at intermediate level once, derive targets quickly
 
-k=3 costs:
+3-level costs:
 
 - Extra level of RotToRot (server computation)
 - More P primes consumed (larger QP at top)
 - Level-1 chains from {1, bigMaster} can be long — use {1, p^(m/2)} to balance chain lengths
 
-k=2 is simpler and faster when the budget allows enough master keys with acceptable dnum.
+2-level is simpler and faster when the budget allows enough master keys with acceptable dnum.
 
 ## Code Style
 

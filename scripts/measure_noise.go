@@ -5,7 +5,7 @@
 //  2. log2(error) of the result after encrypting Δ·v, rotating with the key,
 //     and decrypting — this is the noise that an application would see
 //
-// Compares fresh / LLKN k=2 / KG+ k=3 derived keys.
+// Compares fresh / LLKN 2-level / KG+ 3-level derived keys.
 //
 // Run: go run scripts/measure_noise.go
 package main
@@ -104,16 +104,16 @@ func main() {
 		freshErr := rotateAndMeasure(ckksParams, sk, freshGk, c.TargetRot)
 		fmt.Printf("  Fresh:      log2(key noise) = %5.1f   log2(rot err) = %5.1f\n", freshNoise, freshErr)
 
-		// ── LLKN k=2 ──
+		// ── LLKN 2-level ──
 		llknParams, err := llkn.NewParameters(paramsEval, [][]int{c.LogPHK})
 		if err != nil {
 			fmt.Printf("  LLKN params error: %v\n", err)
 		} else {
 			n, e := measureLLKN(llknParams, ckksParams, c.TargetRot)
-			fmt.Printf("  LLKN k=2:   log2(key noise) = %5.1f   log2(rot err) = %5.1f\n", n, e)
+			fmt.Printf("  LLKN 2-level:   log2(key noise) = %5.1f   log2(rot err) = %5.1f\n", n, e)
 		}
 
-		// ── KG+ k=3 ──
+		// ── KG+ 3-level ──
 		if c.LogPExtra != nil {
 			kgpParams, err := kgplus.NewParameters(paramsEval, c.LogPHK, c.LogPExtra)
 			if err != nil {
@@ -122,11 +122,11 @@ func main() {
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
-							fmt.Printf("  KG+ k=3:    PANIC: %v\n", r)
+							fmt.Printf("  KG+ 3-level:    PANIC: %v\n", r)
 						}
 					}()
 					n, e := measureKGPlus(kgpParams, ckksParams, c.TargetRot)
-					fmt.Printf("  KG+ k=3:    log2(key noise) = %5.1f   log2(rot err) = %5.1f\n", n, e)
+					fmt.Printf("  KG+ 3-level:    log2(key noise) = %5.1f   log2(rot err) = %5.1f\n", n, e)
 				}()
 			}
 		}

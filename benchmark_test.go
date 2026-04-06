@@ -40,10 +40,10 @@ type benchScenario struct {
 	LogN   int
 	LogQ   []int // Q prime bit-sizes
 	LogP   []int // P prime bit-sizes
-	LogPHK []int // Homing key / master P prime bit-sizes (k=2)
+	LogPHK []int // Homing key / master P prime bit-sizes (2-level)
 	Base   int   // master rotation base
 
-	// k=3 KG+ parameters: P_hk with enough primes for noise control,
+	// 3-level KG+ parameters: P_hk with enough primes for noise control,
 	// P_extra large enough for dnum=1 at the top level.
 	LogPHK3   []int // P^(1) for RPrime[1] (≈ Q_eval primes for noise)
 	LogPExtra []int // P^(2) for RPrime[2] (≈ Q^(2) primes for dnum=1)
@@ -145,7 +145,7 @@ func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRot
 	return &kgplus.TransmissionKeys{HomingKey: homingKey, PublicKey: pk, MasterRotKeys: masterKeys}
 }
 
-// BenchmarkKeySizes measures and reports transmission key sizes for LLKN k=2 and KG+ k=3.
+// BenchmarkKeySizes measures and reports transmission key sizes for LLKN 2-level and KG+ 3-level.
 func BenchmarkKeySizes(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -191,7 +191,7 @@ func BenchmarkKeySizes(b *testing.B) {
 				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
-				b.Logf("LLKN k=2: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
+				b.Logf("LLKN 2-level: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
 					dnumMaster, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
@@ -208,7 +208,7 @@ func BenchmarkKeySizes(b *testing.B) {
 				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
 					topRP.MaxLevel(), topRP.MaxLevelP())
 
-				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
 				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
 				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
@@ -217,7 +217,7 @@ func BenchmarkKeySizes(b *testing.B) {
 				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
-				b.Logf("KG+ k=3: dnum_master=%d, masters=%v, TX=%.1f MB (%.0f%% of conventional)",
+				b.Logf("KG+ 3-level: dnum_master=%d, masters=%v, TX=%.1f MB (%.0f%% of conventional)",
 					dnumMaster, k3MasterRots, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
@@ -298,7 +298,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
 				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
 				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
@@ -421,7 +421,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
 				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
 				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
@@ -511,7 +511,7 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				// KG+ k=3: {1, p^(m/2)} masters — the large master jumps far,
+				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
 				// making level-1 expansion to the full base-p set efficient.
 				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
 				bigMaster := fullSet[len(fullSet)/2] // middle power of the base

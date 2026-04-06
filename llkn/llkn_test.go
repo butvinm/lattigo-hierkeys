@@ -14,7 +14,7 @@ import (
 )
 
 func testString(params Parameters, opname string) string {
-	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/k=%d",
+	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/%d-level",
 		opname,
 		params.Eval().LogN(),
 		params.Eval().QCount(),
@@ -179,7 +179,7 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 		ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)
 		stdEval := rlwe.NewEvaluator(params.Eval(), evk)
 
-		// Allow more noise for k=3 (2 RotToRot stages)
+		// Allow more noise for 3-level (2 RotToRot stages)
 		threshold := float64(1 << 25)
 		if params.NumLevels() > 2 {
 			threshold = float64(1 << 35)

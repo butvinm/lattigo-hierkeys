@@ -50,7 +50,7 @@ func main() {
 
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
-	fmt.Printf("LLKN CKKS multiparty (N=%d, k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("LLKN CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================

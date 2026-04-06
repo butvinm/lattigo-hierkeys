@@ -17,7 +17,7 @@ import (
 )
 
 func testString(params Parameters, opname string) string {
-	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/k=%d",
+	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/%d-level",
 		opname,
 		params.Eval.LogN(),
 		params.Eval.QCount(),

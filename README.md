@@ -28,10 +28,10 @@ Both produce standard lattigo Galois keys.
 
 ## Quick Start
 
-### LLKN k=2 (two-level hierarchy)
+### LLKN 2-level (two-level hierarchy)
 
 ```go
-// LLKN k=2: one level of P primes
+// LLKN 2-level: one level of P primes
 params, _ := llkn.NewParameters(paramsEval, [][]int{{61}})
 
 // CLIENT: generate keys with standard lattigo, convert to MasterKeys
@@ -55,7 +55,7 @@ level0, _ := eval.ExpandLevel(0, shift0, tk.MasterRotKeys, targetRotations)
 evk, _ := eval.FinalizeKeys(level0)
 ```
 
-### KG+ k=3 with gradual expansion
+### KG+ 3-level with gradual expansion
 
 KG+ uses an extension ring R' (degree 2N) and ring switching. The client generates two independent secrets, constructs an extended secret in R', and sends a homing key for ring switching.
 
@@ -80,10 +80,10 @@ LogN=14 (Q_max(N)=429, Q_max(2N)=857):
 
   Eval: Q=[55]+[40]×4=215b  P=[55]×2=110b  QP=325/429  depth=4  dnum=3
 
-  LLKN k=2 (7 masters {1,4,16,64,256,1024,4096}):
+  LLKN 2-level (7 masters {1,4,16,64,256,1024,4096}):
     L1 (master): Q=325b  P=[55]×1=55b  QP=380/429  dnum=7
 
-  KG+ k=3 (2 masters {1,64}):
+  KG+ 3-level (2 masters {1,64}):
     Homing:  Q=325b  P=[55]×1=55b   QP=380/429  dnum=7
     L1 (R'): Q=380b  P=[55]×1=55b   QP=435/857  dnum=7
     L2 (R'): Q=435b  P=[55]×7=385b  QP=820/857  dnum=2
@@ -92,10 +92,10 @@ LogN=15 (Q_max(N)=857, Q_max(2N)=1714):
 
   Eval: Q=[55]+[40]×9=415b  P=[55]×3=165b  QP=580/857  depth=9  dnum=3
 
-  LLKN k=2 (7 masters {1,4,...,4096}):
+  LLKN 2-level (7 masters {1,4,...,4096}):
     L1 (master): Q=580b  P=[55]×5=275b  QP=855/857  dnum=3
 
-  KG+ k=3 (2 masters {1,64}):
+  KG+ 3-level (2 masters {1,64}):
     Homing:  Q=580b  P=[55]×5=275b   QP=855/857   dnum=3
     L1 (R'): Q=855b  P=[55]×5=275b   QP=1130/1714 dnum=3
     L2 (R'): Q=1130b P=[55]×10=550b  QP=1680/1714 dnum=2
@@ -104,10 +104,10 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
 
   Eval: Q=[55]+[40]×27=1135b  P=[55]×4=220b  QP=1355/1714  depth=27  dnum=6
 
-  LLKN k=2 (8 masters {1,4,...,16384}):
+  LLKN 2-level (8 masters {1,4,...,16384}):
     L1 (master): Q=1355b  P=[55]×6=330b  QP=1685/1714  dnum=6
 
-  KG+ k=3 (2 masters {1,256}):
+  KG+ 3-level (2 masters {1,256}):
     Homing:  Q=1355b  P=[55]×6=330b    QP=1685/1714  dnum=6
     L1 (R'): Q=1685b  P=[55]×6=330b    QP=2015/3428  dnum=6
     L2 (R'): Q=2015b  P=[55]×25=1375b  QP=3390/3428  dnum=2
@@ -115,7 +115,7 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
 
 **Transmission key sizes:**
 
-| LogN | Conventional | LLKN k=2 | KG+ k=3 |
+| LogN | Conventional | LLKN 2-level | KG+ 3-level |
 | ---- | ------------ | -------- | ------- |
 | 14   | TBD          | TBD      | TBD     |
 | 15   | TBD          | TBD      | TBD     |
@@ -123,7 +123,7 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
 
 **Client TX generation time:**
 
-| LogN | LLKN k=2 | KG+ k=3 |
+| LogN | LLKN 2-level | KG+ 3-level |
 | ---- | -------- | ------- |
 | 14   | TBD      | TBD     |
 | 15   | TBD      | TBD     |
@@ -131,7 +131,7 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
 
 **Server derivation time:**
 
-| LogN | LLKN k=2 | KG+ k=3 |
+| LogN | LLKN 2-level | KG+ 3-level |
 | ---- | -------- | ------- |
 | 14   | TBD      | TBD     |
 | 15   | TBD      | TBD     |
@@ -155,10 +155,10 @@ go test -v -count=1 -short ./llkn/...
 
 ```bash
 cd example
-go run ./llkn/simple/       # minimal k=2 derivation
+go run ./llkn/simple/       # minimal 2-level derivation
 go run ./llkn/leveled/      # per-level ExpandLevel (inactive/active pattern)
 go run ./llkn/multiparty/   # N-out-of-N multiparty
-go run ./kgplus/simple/     # k=3 derivation with ring switching
+go run ./kgplus/simple/     # 3-level derivation with ring switching
 go run ./kgplus/leveled/    # per-level ExpandLevel with ring switching
 go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 ```

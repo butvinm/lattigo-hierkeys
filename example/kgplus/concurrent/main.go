@@ -4,7 +4,7 @@
 // is thread-safe — pool-based scratch buffers for both RotToRot and
 // RingSwitchGaloisKey operations.
 //
-// Uses k=3 with per-level expansion:
+// Uses 3-level with per-level expansion:
 //   - Phase 1 (sequential): expand {1,4} → full base-4 set at R' level 1
 //   - Phase 2 (concurrent): derive target rotations at R' level 0
 //   - Phase 3: ring-switch + finalize
@@ -47,7 +47,7 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topLevel := params.NumLevels() - 1
 	topParams := params.RPrime[topLevel]
-	fmt.Printf("KG+ concurrent (k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("KG+ concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================

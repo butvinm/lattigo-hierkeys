@@ -6,7 +6,7 @@
 //   - The server pre-computes keys during an offline (inactive) phase
 //   - Target rotations are only known later, during the online (active) phase
 //
-// For a simpler k=2 example, see ../simple.
+// For a simpler 2-level example, see ../simple.
 package main
 
 import (
@@ -33,9 +33,9 @@ func main() {
 		panic(err)
 	}
 
-	// k=3: two extra P levels — enables a 3-tier hierarchy with an intermediate
-	// level between eval and master. With k=2 this example would be trivial
-	// (only one ExpandLevel call), so we use k=3 to show the cascade.
+	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate
+	// level between eval and master. With 2-level this example would be trivial
+	// (only one ExpandLevel call), so we use 3-level to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{55}, // P for level 1 (intermediate)
@@ -47,7 +47,7 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
 	topLevel := params.NumLevels() - 1
-	fmt.Printf("LLKN CKKS (k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
@@ -58,7 +58,7 @@ func main() {
 	sk := kgen.GenSecretKeyNew()
 	pk := kgen.GenPublicKeyNew(sk)
 
-	// With k=3, only {1, base} master rotations are needed at the top level.
+	// With 3-level, only {1, base} master rotations are needed at the top level.
 	// The full base-4 set is derived at the intermediate level by the server.
 	k3Masters := []int{1, 4}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
