@@ -41,6 +41,7 @@ func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *hierkeys
 		if err != nil {
 			return nil, err
 		}
+		intermediate.Keys[rot] = nil // release R' MasterKey so GC can reclaim it
 		galoisKeys = append(galoisKeys, gk)
 	}
 
