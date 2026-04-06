@@ -32,9 +32,9 @@ func main() {
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 		LogNthRoot:      16,
 	}); err != nil {
 		panic(err)
@@ -42,8 +42,8 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{30, 30, 30, 30},                         // P for RPrime[1] — dnum=2
-		[]int{30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30}, // P for RPrime[2] — dnum=1
+		[]int{55}, // LogPHK for RPrime[1]
+		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
 	); err != nil {
 		panic(err)
 	}

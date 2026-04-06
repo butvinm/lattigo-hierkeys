@@ -57,30 +57,48 @@ func buildLogQ(n, bitSize int) []int {
 	return q
 }
 
-// 128-bit secure parameter sets (HE Standard, ternary secret).
+// 128-bit secure parameter sets.
+// h=N/2 sparse ternary, σ=3.2, Δ=2^40, Q_max from lattice estimator [32].
+// Convention: q₀=55b, qᵢ=40b, Pᵢ=55b. Hierarchy primes also 55b.
+//
+// CRITICAL: hierarchy P primes (LogPHK, LogPExtra) must be ≥ max eval prime size.
+// Lattigo's gadget decomposition is count-based: dnum = ceil(QCount/PCount), with
+// each digit holding exactly PCount consecutive Q primes regardless of size. Noise
+// blows up by 2^(max_digit_bits − P_bits) when P bits < max digit bits. See CLAUDE.md.
+// Verified empirically via scripts/measure_noise.go.
 var benchScenarios = []benchScenario{
 	{
-		Name: "LogN14_Q5_P2",
-		LogN: 14, LogQ: buildLogQ(5, 50), LogP: []int{50, 50}, LogPHK: buildLogQ(3, 20),
+		// LogN=14: Q_max=429, Q_max(2N)=857. depth=4, dnum_eval=3.
+		// PHK = 1×55 (only fits 1 prime in margin=104b after eval QP=325).
+		// LLKN dnum_master=7, KG+ dnum_hk=7, dnum_int=7, dnum_top=2.
+		Name: "LogN14_D4_P2",
+		LogN: 14, LogQ: append([]int{55}, buildLogQ(4, 40)...), LogP: buildLogQ(2, 55),
+		LogPHK:    buildLogQ(1, 55),
 		Base:      4,
-		LogPHK3:   buildLogQ(4, 30),
-		LogPExtra: buildLogQ(12, 30),
+		LogPHK3:   buildLogQ(1, 55),
+		LogPExtra: buildLogQ(7, 55),
 	},
 	{
-		Name: "LogN15_Q10_P3",
-		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: []int{61, 61, 61},
-		LogPHK:    buildLogQ(7, 25),
+		// LogN=15: Q_max=857, Q_max(2N)=1714. depth=9, dnum_eval=3.
+		// PHK = 5×55 (fits in margin=277b after eval QP=580).
+		// LLKN dnum_master=3, KG+ dnum_hk=3, dnum_int=3, dnum_top=2.
+		Name: "LogN15_D9_P3",
+		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: buildLogQ(3, 55),
+		LogPHK:    buildLogQ(5, 55),
 		Base:      4,
-		LogPHK3:   buildLogQ(5, 30),
-		LogPExtra: buildLogQ(18, 30),
+		LogPHK3:   buildLogQ(5, 55),
+		LogPExtra: buildLogQ(10, 55),
 	},
 	{
-		Name: "LogN16_Q24_P4",
-		LogN: 16, LogQ: buildLogQ(24, 55), LogP: []int{55, 55, 55, 55},
-		LogPHK:    buildLogQ(6, 30),
+		// LogN=16: Q_max=1714, Q_max(2N)=3428. depth=27, dnum_eval=6.
+		// PHK = 6×55 (fits in margin=359b after eval QP=1355).
+		// LLKN dnum_master=6, KG+ dnum_hk=6, dnum_int=6, dnum_top=2.
+		Name: "LogN16_D27_P4",
+		LogN: 16, LogQ: append([]int{55}, buildLogQ(27, 40)...), LogP: buildLogQ(4, 55),
+		LogPHK:    buildLogQ(6, 55),
 		Base:      4,
-		LogPHK3:   buildLogQ(10, 30),
-		LogPExtra: buildLogQ(38, 30),
+		LogPHK3:   buildLogQ(6, 55),
+		LogPExtra: buildLogQ(25, 55),
 	},
 }
 
@@ -512,13 +530,13 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 
 func setupLLKN14(b *testing.B) (llkn.Parameters, *llkn.Evaluator, *rlwe.PublicKey, map[int]*hierkeys.MasterKey) {
 	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
-		LogN: 14, LogQ: []int{50, 50, 50, 50, 50}, LogP: []int{50, 50},
+		LogN: 14, LogQ: append([]int{55}, buildLogQ(4, 40)...), LogP: buildLogQ(2, 55),
 		NTTFlag: true,
 	})
 	if err != nil {
 		b.Fatal(err)
 	}
-	params, err := llkn.NewParameters(paramsEval, [][]int{{56}})
+	params, err := llkn.NewParameters(paramsEval, [][]int{buildLogQ(1, 55)})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -544,13 +562,13 @@ func setupLLKN14(b *testing.B) (llkn.Parameters, *llkn.Evaluator, *rlwe.PublicKe
 
 func setupKGPlus14(b *testing.B) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.TransmissionKeys) {
 	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
-		LogN: 14, LogQ: []int{50, 50, 50, 50, 50}, LogP: []int{50, 50},
+		LogN: 14, LogQ: append([]int{55}, buildLogQ(4, 40)...), LogP: buildLogQ(2, 55),
 		NTTFlag: true, LogNthRoot: 16,
 	})
 	if err != nil {
 		b.Fatal(err)
 	}
-	params, err := kgplus.NewParameters(paramsEval, []int{56}, []int{56})
+	params, err := kgplus.NewParameters(paramsEval, buildLogQ(1, 55), buildLogQ(7, 55))
 	if err != nil {
 		b.Fatal(err)
 	}

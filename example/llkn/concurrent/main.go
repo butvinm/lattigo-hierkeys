@@ -28,10 +28,10 @@ func main() {
 	// --- CKKS + LLKN parameters ---
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
-		LogN:            10,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50},
-		LogDefaultScale: 50,
+		LogN:            14,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 	}); err != nil {
 		panic(err)
 	}
@@ -39,8 +39,8 @@ func main() {
 	// k=3 to demonstrate two-phase expansion.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{56}, // P for level 1
-		{56}, // P for level 2 (top)
+		{55}, // P for level 1
+		{55}, // P for level 2 (top)
 	}); err != nil {
 		panic(err)
 	}

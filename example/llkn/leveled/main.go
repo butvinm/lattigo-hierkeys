@@ -26,9 +26,9 @@ func main() {
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 	}); err != nil {
 		panic(err)
 	}
@@ -38,8 +38,8 @@ func main() {
 	// (only one ExpandLevel call), so we use k=3 to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{20, 20, 20}, // P for level 1 (intermediate) — dnum=3
-		{20, 20, 20}, // P for level 2 (top master) — dnum=3
+		{55}, // P for level 1 (intermediate)
+		{55}, // P for level 2 (top master)
 	}); err != nil {
 		panic(err)
 	}

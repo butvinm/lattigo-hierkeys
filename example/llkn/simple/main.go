@@ -21,25 +21,24 @@ func main() {
 	var err error
 
 	// --- CKKS parameters ---
-	// 128-bit secure (HE Standard, LogN=14, Q_max=438).
-	// Eval QP = 5×50 + 2×50 = 350 ≤ 438.
+	// 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
+	// Eval QP = 55 + 4×40 + 2×55 = 325 ≤ 430.
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 	}); err != nil {
 		panic(err)
 	}
 
 	// --- LLKN parameters ---
 	// k=2: one extra level of P primes for master keys.
-	// Master level: Q = Q_eval ∪ P_eval (7 primes), P = {56-bit} (1 prime).
-	// Master level: Q=7 primes, P=3×20b primes → dnum=3, QP=416 ≤ 438.
+	// Master level: Q=7 primes, P=6×16b primes → dnum=2, QP=421 ≤ 430.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{20, 20, 20}, // P for master level — dnum=3
+		{55}, // P for master level — dnum=2
 	}); err != nil {
 		panic(err)
 	}

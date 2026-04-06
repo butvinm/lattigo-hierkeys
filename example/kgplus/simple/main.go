@@ -23,14 +23,14 @@ func main() {
 	var err error
 
 	// --- CKKS parameters ---
-	// 128-bit secure (HE Standard, LogN=14, Q_max=438).
+	// 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
 	// LogNthRoot=16 ensures primes are NTT-friendly for degree 2N (KG+ requirement).
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 		LogNthRoot:      16, // q ≡ 1 mod 4N for KG+
 	}); err != nil {
 		panic(err)
@@ -38,12 +38,10 @@ func main() {
 
 	// --- KG+ parameters ---
 	// k=3: two extra P levels in R' (degree 2N).
-	// RPrime[1] Q=7×50b P=4×50b → dnum=2, QP=550b
-	// RPrime[2] Q=11×50b P=8×50b → dnum=2, QP=950b ≤ Q_max(2N=2^15) = 881×2
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{30, 30, 30, 30},                         // P for RPrime[1] — dnum=2
-		[]int{30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30}, // P for RPrime[2] — dnum=1
+		[]int{55}, // LogPHK for RPrime[1]
+		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
 	); err != nil {
 		panic(err)
 	}
