@@ -113,29 +113,29 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
     L2 (R'): Q=2015b  P=[55]×25=1375b  QP=3390/3428  dnum=2
 ```
 
-**Transmission key sizes:**
+**Transmission key sizes** (256 target rotations, base-4):
 
-| LogN | Conventional | LLKN 2-level | KG+ 3-level |
-| ---- | ------------ | -------- | ------- |
-| 14   | TBD          | TBD      | TBD     |
-| 15   | TBD          | TBD      | TBD     |
-| 16   | TBD          | TBD      | TBD     |
+| LogN | Conventional | LLKN 2-level    | KG+ 3-level    |
+| ---- | ------------ | --------------- | -------------- |
+| 14   | 1,344 MB     | 100 MB (7.4%)   | 51.5 MB (3.8%) |
+| 15   | 6,656 MB     | 198 MB (3.0%)   | 167 MB (2.5%)  |
+| 16   | 57,345 MB    | 1,862 MB (3.2%) | 858 MB (1.5%)  |
 
 **Client TX generation time:**
 
 | LogN | LLKN 2-level | KG+ 3-level |
-| ---- | -------- | ------- |
-| 14   | TBD      | TBD     |
-| 15   | TBD      | TBD     |
-| 16   | TBD      | TBD     |
+| ---- | ------------ | ----------- |
+| 14   | TBD          | TBD         |
+| 15   | TBD          | TBD         |
+| 16   | TBD          | TBD         |
 
 **Server derivation time:**
 
 | LogN | LLKN 2-level | KG+ 3-level |
-| ---- | -------- | ------- |
-| 14   | TBD      | TBD     |
-| 15   | TBD      | TBD     |
-| 16   | TBD      | TBD     |
+| ---- | ------------ | ----------- |
+| 14   | TBD          | TBD         |
+| 15   | TBD          | TBD         |
+| 16   | TBD          | TBD         |
 
 ```bash
 go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ ./...
