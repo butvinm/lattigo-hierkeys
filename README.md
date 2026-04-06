@@ -63,73 +63,84 @@ See `example/kgplus/simple` for the complete flow.
 
 ## Benchmarks
 
-256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret).
+256 target rotation keys, base-4. All parameter sets are **128-bit secure** (h=N/2 sparse ternary, σ=3.2, Q_max from Mono et al., AFRICACRYPT 2023, matching LLKN/KG+ papers).
+
+Convention: q₀=55b, qᵢ=40b (Δ=2⁴⁰), Pᵢ=55b (eval), hierarchy P primes also 55b.
+
+**Critical**: hierarchy P prime size must be ≥ max eval prime size. Lattigo's gadget
+decomposition is count-based (`dnum = ceil(QCount/PCount)`) with each digit holding
+exactly PCount consecutive Q primes. Smaller hierarchy P primes cause noise to blow
+up by `2^(max_digit_bits − P_bits)` per RotToRot. See CLAUDE.md "Noise from
+GadgetProduct". Verified empirically via `scripts/measure_noise.go`.
 
 **Scheme configurations:**
 
 ```
-LogN=14 (Q_max(N)=438, Q_max(2N)=881):
+LogN=14 (Q_max(N)=429, Q_max(2N)=857):
 
-  LLKN k=2: 7 master keys {1,4,16,64,256,1024,4096}, dnum=3
-    Target level: Q=5×50b  P=2×50b  dnum=3  QP=350b
-    Master level: Q=7×50b  P=3×20b  dnum=3  QP=416b ≤ 438
+  Eval: Q=[55]+[40]×4=215b  P=[55]×2=110b  QP=325/429  depth=4  dnum=3
 
-  KG+ k=3: 2 master keys {1,64}, dnum=1 (in R', degree 2N)
-    Target level:       Q=5×50b   P=2×50b   dnum=3  QP=350b
-    Intermediate level: Q=7×50b   P=4×30b   dnum=2  QP=470b
-    Master level:       Q=11×~38b P=12×30b  dnum=1  QP=840b ≤ 881
+  LLKN k=2 (7 masters {1,4,16,64,256,1024,4096}):
+    L1 (master): Q=325b  P=[55]×1=55b  QP=380/429  dnum=7
 
-LogN=15 (Q_max(N)=881, Q_max(2N)=1761):
+  KG+ k=3 (2 masters {1,64}):
+    Homing:  Q=325b  P=[55]×1=55b   QP=380/429  dnum=7
+    L1 (R'): Q=380b  P=[55]×1=55b   QP=435/857  dnum=7
+    L2 (R'): Q=435b  P=[55]×7=385b  QP=820/857  dnum=2
 
-  LLKN k=2: 7 master keys {1,4,...,4096}, dnum=2
-    Target level: Q=10×~42b  P=3×61b  dnum=4   QP=602b
-    Master level: Q=13×~46b  P=7×25b  dnum=2   QP=782b ≤ 881
+LogN=15 (Q_max(N)=857, Q_max(2N)=1714):
 
-  KG+ k=3: 2 master keys {1,64}, dnum=1 (in R', degree 2N)
-    Target level:       Q=10×~42b  P=3×61b   dnum=4  QP=602b
-    Intermediate level: Q=13×~46b  P=5×30b   dnum=3  QP=752b
-    Master level:       Q=18×~40b  P=18×30b  dnum=1  QP=1305b ≤ 1761
+  Eval: Q=[55]+[40]×9=415b  P=[55]×3=165b  QP=580/857  depth=9  dnum=3
 
-LogN=16 (Q_max(N)=1761, Q_max(2N)=3500):
+  LLKN k=2 (7 masters {1,4,...,4096}):
+    L1 (master): Q=580b  P=[55]×5=275b  QP=855/857  dnum=3
 
-  LLKN k=2: 8 master keys {1,4,...,16384}, dnum=5
-    Target level: Q=24×55b  P=4×55b  dnum=6  QP=1540b
-    Master level: Q=28×55b  P=6×30b  dnum=5  QP=1737b ≤ 1761
+  KG+ k=3 (2 masters {1,64}):
+    Homing:  Q=580b  P=[55]×5=275b   QP=855/857   dnum=3
+    L1 (R'): Q=855b  P=[55]×5=275b   QP=1130/1714 dnum=3
+    L2 (R'): Q=1130b P=[55]×10=550b  QP=1680/1714 dnum=2
 
-  KG+ k=3: 2 master keys {1,256}, dnum=1 (in R', degree 2N)
-    Target level:       Q=24×55b  P=4×55b   dnum=6  QP=1540b
-    Intermediate level: Q=28×55b  P=10×30b  dnum=3   QP=1840b
-    Master level:       Q=38×~40b P=38×30b  dnum=1   QP=3023b ≤ 3500
+LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
+
+  Eval: Q=[55]+[40]×27=1135b  P=[55]×4=220b  QP=1355/1714  depth=27  dnum=6
+
+  LLKN k=2 (8 masters {1,4,...,16384}):
+    L1 (master): Q=1355b  P=[55]×6=330b  QP=1685/1714  dnum=6
+
+  KG+ k=3 (2 masters {1,256}):
+    Homing:  Q=1355b  P=[55]×6=330b    QP=1685/1714  dnum=6
+    L1 (R'): Q=1685b  P=[55]×6=330b    QP=2015/3428  dnum=6
+    L2 (R'): Q=2015b  P=[55]×25=1375b  QP=3390/3428  dnum=2
 ```
 
 **Transmission key sizes:**
 
-| LogN | Conventional | LLKN k=2        | KG+ k=3       |
-| ---- | ------------ | --------------- | ------------- |
-| 14   | 1,344 MB     | 100 MB (7.4%)   | 90 MB (6.7%)  |
-| 15   | 6,656 MB     | 374 MB (5.6%)   | 326 MB (4.9%) |
-| 16   | 43,009 MB    | 1,820 MB (4.2%) | 620 MB (1.4%) |
+| LogN | Conventional | LLKN k=2 | KG+ k=3 |
+| ---- | ------------ | -------- | ------- |
+| 14   | TBD          | TBD      | TBD     |
+| 15   | TBD          | TBD      | TBD     |
+| 16   | TBD          | TBD      | TBD     |
 
 **Client TX generation time:**
 
 | LogN | LLKN k=2 | KG+ k=3 |
 | ---- | -------- | ------- |
-| 14   | 0.4s     | 0.3s    |
-| 15   | 1.3s     | 1.3s    |
-| 16   | 7.0s     | 3.2s    |
+| 14   | TBD      | TBD     |
+| 15   | TBD      | TBD     |
+| 16   | TBD      | TBD     |
 
-**Server derivation time (sequential, single core):**
+**Server derivation time:**
 
 | LogN | LLKN k=2 | KG+ k=3 |
 | ---- | -------- | ------- |
-| 14   | 14s      | 48s     |
-| 15   | 76s      | 217s    |
-| 16   | 528s     | 2,179s  |
+| 14   | TBD      | TBD     |
+| 15   | TBD      | TBD     |
+| 16   | TBD      | TBD     |
 
 ```bash
-go test -bench BenchmarkKeySizes -benchtime 1x -run ^NONE ./...
-go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^NONE -timeout 60m ./...
-go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^NONE ./...
+go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ ./...
+go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^$ -timeout 60m ./...
+go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^$ ./...
 ```
 
 ## Build & Test
