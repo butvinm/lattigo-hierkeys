@@ -96,18 +96,16 @@ Each RLWE parameter set has Q primes (ciphertext modulus) and P primes (key-swit
 
 - **Q primes**: each prime = one multiplication level. Count = circuit depth. Size = precision per level.
 - **P primes**: used temporarily during key-switching, then divided out. More P = less noise, bigger keys.
-- **Q_max(N)**: maximum total log2(Q×P) for ring degree N at 128-bit security (uniform ternary secret, σ=3.19). From "Security Guidelines for Implementing Homomorphic Encryption" (Bossuat et al., ePrint 2024/463):
+- **Q_max(N)**: maximum total log2(Q×P) for ring degree N at 128-bit security. We use h=N/2 sparse ternary (σ=3.2) with values from the lattice estimator [32], matching the LLKN and KG+ papers:
 
   | Degree N | Q_max (bits) |
   | -------- | ------------ |
-  | 2^12     | 106          |
-  | 2^13     | 214          |
-  | 2^14     | 430          |
-  | 2^15     | 868          |
-  | 2^16     | 1747         |
-  | 2^17     | 3523         |
+  | 2^14     | 429          |
+  | 2^15     | 857          |
+  | 2^16     | 1714         |
+  | 2^17     | 3428         |
 
-  Note: lattigo's CKKS README and HE Standard v1.1 list slightly higher values (109, 218, 438, 881 for 2^12-2^15) based on older attack estimates. We use the stricter 2024 values. The paper "Towards Lightweight CKKS" uses sparse ternary h=N/2 (not uniform), giving higher Q_max: 1782 for N=2^16.
+  Note: other sources give slightly different values for similar settings: Bossuat et al. 2024 (uniform ternary) gives 430/868/1747; HE Standard v1.1 gives 438/881/1782 for h=N/2. We use the paper-consistent values for direct comparison.
 
 ### dnum (gadget decomposition number)
 
@@ -121,35 +119,59 @@ Each component = 2 polynomials of (QCount + PCount) × N coefficients. Affects:
 
 To reduce dnum: add more P primes. Each P prime costs ~20-55 bits of Q_max budget.
 
-### Noise from GadgetProduct
+### Noise from GadgetProduct (lattigo's actual behavior)
 
-Each RotToRot call does a GadgetProduct. The added noise is approximately:
+**CRITICAL**: lattigo uses a count-based, fixed-window decomposition. Empirically verified at LogN=14:
 
-    noise ∝ √(dnum) × (Q / P)
+```go
+// core/rlwe/params.go
+func (p Parameters) BaseRNSDecompositionVectorSize(levelQ, levelP int) int {
+    return (levelQ + levelP + 1) / (levelP + 1)  // = ceil(QCount / PCount)
+}
+```
 
-Where Q and P are the PRODUCTS of all Q and P primes at that level (2^total_bits).
+Digit `i` contains Q primes at indices `[i*PCount, (i+1)*PCount)` — exactly `PCount` consecutive primes per digit, **regardless of their bit sizes**. Digits are NOT bit-balanced.
 
-Two factors:
+The noise added by one GadgetProduct is bounded by the largest digit's bit-product divided by total P:
 
-1. **dnum** — fewer components = less noise accumulation. Lower is better.
-2. **Q/P ratio** — larger total P product = smaller Q/P = less rounding error. Higher total P bits is better.
+    noise_blowup ≈ 2^max(0, max_digit_bits − P_bits)
 
-**Key insight**: many small P primes (e.g., 7×30b = 210 total bits) beat fewer large primes (2×55b = 110 total bits) on BOTH factors: lower dnum AND larger total P. This is because dnum depends on prime COUNT while Q/P depends on total BITS.
+Where `max_digit_bits = sum of bit-sizes of the PCount Q primes in the largest digit`.
 
-### Small primes optimization
+**The CORRECT rule**: avg(P prime bit-size) ≥ max(Q prime bit-size). For uniform Q this simplifies to **P prime size ≥ Q prime size**.
 
-Use many small NTT-friendly P primes (20-30 bits) instead of fewer large ones (55-60 bits):
+**Why "many small P primes" is WRONG (for lattigo specifically)**: the optimization is mathematically valid for the _bit-balanced_ gadget decomposition described in the LLKN/KG+ papers, where digits are formed by greedily packing Q primes until their product approaches P. Under that algorithm, more small P primes really do give lower dnum and lower noise.
 
-    3 primes × 57b = 171 total bits, dnum = ceil(28/3) = 10
-    10 primes × 30b = 300 total bits, dnum = ceil(28/10) = 3
+Lattigo implements a _count-balanced_ simplification: each digit gets exactly `PCount` consecutive Q primes regardless of bit sizes. The two algorithms agree only when **all primes are the same size**. With mixed sizes, lattigo's static digit window can hold more bits than total P, breaking the noise bound. There is no API to override `dnum` or supply a custom decomposition — the only knob is the number of P primes, which controls dnum via `ceil(QCount/PCount)`.
 
-Same Q_max budget consumed, but 10×30b gives:
+So:
 
-- 3.3x lower dnum (3 vs 10) → faster RotToRot, smaller keys
-- 1.75x larger total P (300b vs 171b) → less noise
-- Strictly better on all axes
+- The math in the papers is correct.
+- The "many small primes" optimization is correct for that math.
+- Lattigo's implementation requires uniform-size primes to realize that math.
+- For hierarchy primes specifically (which mix with eval primes of a fixed size), this means hierarchy primes must match eval prime size.
 
-Constraint: primes must be NTT-friendly (q ≡ 1 mod NthRoot) and distinct from all other primes. With 30-bit primes and NthRoot=65536, there are ~millions of valid primes.
+**Empirical evidence (LogN=14, eval = 5×50b Q + 2×50b P, measured rotation error after Δ=2^40):**
+
+| PHK config   | avg PHK | max Q | max digit | predicted  | rotation error |
+| ------------ | ------- | ----- | --------- | ---------- | -------------- |
+| 4×30b = 120b | 30      | 50    | 4×50=200  | BROKEN     | 2^62 ✗         |
+| 3×40b = 120b | 40      | 50    | 3×50=150  | DEGRADED   | 2^12 ✗         |
+| 2×60b = 120b | 60      | 50    | 2×50=100  | WORKS      | 2^-20 ✓        |
+| 1×60b = 60b  | 60      | 50    | 1×50=50   | WORKS      | 2^-19 ✓        |
+| 1×50b = 50b  | 50      | 50    | 1×50=50   | borderline | 2^-16 ✓        |
+
+The 4×30b case gives FEWER digits (dnum=2 vs dnum=4) which looks "better" theoretically, but lattigo packs 4 large Q primes into each digit and the noise explodes.
+
+### Hierarchy prime sizing (correct rule)
+
+For hierarchical key derivation (LLKN, KG+):
+
+1. **PHK prime size ≥ max(eval Q prime, eval P prime)** — typically use 50-60b primes matching the eval primes
+2. **PExtra prime size ≥ max(level-1 Q prime)** — same rule applied at the master level
+3. **dnum is determined by PHK count**: dnum = ceil(QCount / PCount). Choose PCount based on the noise/size tradeoff.
+
+This is the OPPOSITE of what works for general dnum optimization theory — but it's what lattigo's implementation actually requires.
 
 ### What params affect what
 
@@ -185,7 +207,7 @@ See README.md "Scheme configurations" for concrete parameter values per LogN. Al
 
 LLKN hierarchy shares Q_max(N) with the eval circuit. Heavy eval params (deep circuits) leave little room for hierarchy P primes → high dnum → large master keys.
 
-KG+ moves the hierarchy to R' (degree 2N) with Q_max(2N) ≈ 2×Q_max(N). The eval budget is untouched. This matters for production params (LogN=16) where Q_eval + P_eval = 1540 of 1747 available — only 207 bits left for LLKN hierarchy (and 10b margin on the LLKN top QP=1737), but 1983 bits available in R'.
+KG+ moves the hierarchy to R' (degree 2N) with Q_max(2N) ≈ 2×Q_max(N). The eval budget is untouched. This matters for production params (LogN=16) where Q_eval + P_eval = 1355 of 1714 available — only 359 bits left for LLKN hierarchy, but 2073 bits available in R'.
 
 ### Why k=3 over k=2
 
