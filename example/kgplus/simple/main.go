@@ -59,7 +59,7 @@ func main() {
 
 	// Two independent secrets at the homing-key (HK) level.
 	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
-	kgenHK := rlwe.NewKeyGenerator(params.HK())
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 
@@ -69,7 +69,7 @@ func main() {
 
 	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N). This is the secret
 	// under which master keys and the public key are generated in R'.
-	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
 
 	// Public key and master rotation keys in R' at the top level.
 	kgenRP := rlwe.NewKeyGenerator(topParams)

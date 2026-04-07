@@ -54,12 +54,12 @@ func main() {
 	// CLIENT: same key generation as simple example
 	// =========================================================================
 
-	kgenHK := rlwe.NewKeyGenerator(params.HK())
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 

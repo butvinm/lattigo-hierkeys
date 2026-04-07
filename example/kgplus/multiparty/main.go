@@ -70,7 +70,7 @@ func main() {
 	// The homing key enables ring-switching from s̃₁ back to s.
 	// The public key and master keys are generated under s̃ in R'.
 
-	kgenHK := rlwe.NewKeyGenerator(params.HK())
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sks := make([]*rlwe.SecretKey, nParties)
 	skS1s := make([]*rlwe.SecretKey, nParties)
 	skExts := make([]*rlwe.SecretKey, nParties)
@@ -78,13 +78,13 @@ func main() {
 	for i := range sks {
 		sks[i] = kgenHK.GenSecretKeyNew()
 		skS1s[i] = kgenHK.GenSecretKeyNew()
-		skExts[i] = kgplus.ConstructExtendedSK(params.HK(), topParams, sks[i], skS1s[i])
+		skExts[i] = kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sks[i], skS1s[i])
 	}
 
 	// Ideal HK-level secret for verification only.
-	skIdealHK := rlwe.NewSecretKey(params.HK())
+	skIdealHK := rlwe.NewSecretKey(params.HomingKey())
 	for _, sk := range sks {
-		params.HK().RingQP().Add(skIdealHK.Value, sk.Value, skIdealHK.Value)
+		params.HomingKey().RingQP().Add(skIdealHK.Value, sk.Value, skIdealHK.Value)
 	}
 
 	// =========================================================================
@@ -95,7 +95,7 @@ func main() {
 	// EvaluationKeyGenProtocol directly, not GaloisKeyGenProtocol.
 	// Each party contributes GenShare(skIn=s̃₁_i, skOut=s_i).
 
-	hkProto := multiparty.NewEvaluationKeyGenProtocol(params.HK())
+	hkProto := multiparty.NewEvaluationKeyGenProtocol(params.HomingKey())
 	hkCRP := hkProto.SampleCRP(crs)
 	hkAcc := hkProto.AllocateShare()
 
@@ -109,7 +109,7 @@ func main() {
 		}
 	}
 
-	homingKey := rlwe.NewEvaluationKey(params.HK())
+	homingKey := rlwe.NewEvaluationKey(params.HomingKey())
 	if err = hkProto.GenEvaluationKey(hkAcc, hkCRP, homingKey); err != nil {
 		panic(err)
 	}

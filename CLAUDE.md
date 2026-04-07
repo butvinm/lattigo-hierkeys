@@ -49,7 +49,7 @@ Shared primitives:
 
 ### KG+ (`kgplus/`)
 
-Parameters: opaque struct exposing `Eval()`, `HK()`, `Levels()`, `Top()`, `NumLevels()` methods (private fields, lattigo-style). `Levels()[0]` is the eval-aligned R' level, `Levels()[k-1]` is the top master (all degree 2N). Only supports Standard ring type (not ConjugateInvariant).
+Parameters: opaque struct exposing `Eval()`, `HomingKey()`, `Levels()`, `Top()`, `NumLevels()` methods (private fields, lattigo-style). `Levels()[0]` is the eval-aligned R' level, `Levels()[k-1]` is the top master (all degree 2N). Only supports Standard ring type (not ConjugateInvariant).
 
 TransmissionKeys: `{HomingKey *rlwe.EvaluationKey, PublicKey *rlwe.PublicKey, MasterRotKeys map[int]*MasterKey}`.
 

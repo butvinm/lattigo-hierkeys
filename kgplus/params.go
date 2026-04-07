@@ -36,8 +36,8 @@ func (p Parameters) Eval() rlwe.Parameters {
 	return p.eval
 }
 
-// HK returns the homing-key-level parameters.
-func (p Parameters) HK() rlwe.Parameters {
+// HomingKey returns the homing-key-level parameters.
+func (p Parameters) HomingKey() rlwe.Parameters {
 	return p.hk
 }
 

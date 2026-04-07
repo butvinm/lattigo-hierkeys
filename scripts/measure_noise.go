@@ -225,14 +225,14 @@ func measureLLKN(params llkn.Parameters, ckksParams ckks.Parameters, targetRot i
 }
 
 func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetRot int) (float64, float64) {
-	kgenHK := rlwe.NewKeyGenerator(params.HK())
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topLevel := params.NumLevels() - 1
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
 
 	slots := topParams.N() / 2
 	fullSet := hierkeys.MasterRotationsForBase(4, slots)

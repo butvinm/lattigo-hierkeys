@@ -122,13 +122,13 @@ func genLLKNTransmissionKeys(b *testing.B, params llkn.Parameters, masterRots []
 
 // genKGPlusTransmissionKeys generates KG+ transmission keys using the new API.
 func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRots []int) *kgplus.TransmissionKeys {
-	kgenHK := rlwe.NewKeyGenerator(params.HK())
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
 
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
@@ -591,13 +591,13 @@ func setupKGPlus14(b *testing.B) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.
 		b.Fatal(err)
 	}
 
-	kgenHK := rlwe.NewKeyGenerator(params.HK())
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
@@ -775,10 +775,10 @@ func BenchmarkGaloisKeyToMasterKey(b *testing.B) {
 		})
 		params, _ := kgplus.NewParameters(paramsEval, []int{56}, [][]int{{56}})
 		topParams := params.Top()
-		kgenHK := rlwe.NewKeyGenerator(params.HK())
+		kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 		sk := kgenHK.GenSecretKeyNew()
 		sk1 := kgenHK.GenSecretKeyNew()
-		skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
+		skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
 		kgenRP := rlwe.NewKeyGenerator(topParams)
 		galEl := topParams.GaloisElement(1)
 
