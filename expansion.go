@@ -58,7 +58,7 @@ func NewLevelExpansion(
 		rotToRot:   rotToRot,
 		params:     params,
 		masterKeys: masterKeys,
-		masterRots: SortedIntKeys(masterKeys),
+		masterRots: sortedIntKeys(masterKeys),
 		nSlots:     nSlots,
 		entries:    entries,
 	}
@@ -149,7 +149,7 @@ func (e *LevelExpansion) IntermediateKeys(targetRotations []int) *IntermediateKe
 	return result
 }
 
-func SortedIntKeys(m map[int]*MasterKey) []int {
+func sortedIntKeys(m map[int]*MasterKey) []int {
 	keys := make([]int, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
