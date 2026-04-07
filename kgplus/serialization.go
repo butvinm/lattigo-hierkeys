@@ -12,24 +12,6 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// BinarySize returns the serialized size of the TransmissionKeys in bytes.
-func (tk *TransmissionKeys) BinarySize() int {
-	size := 0
-
-	if tk.HomingKey != nil {
-		size += tk.HomingKey.BinarySize()
-	}
-
-	size += tk.PublicKey.BinarySize()
-
-	size += 8 // number of master keys (uint64)
-	for _, mk := range tk.MasterRotKeys {
-		size += 8 + mk.BinarySize() // rotation index (int64) + data
-	}
-
-	return size
-}
-
 // WriteTo writes the TransmissionKeys to the writer.
 func (tk *TransmissionKeys) WriteTo(w io.Writer) (n int64, err error) {
 	bw := bufio.NewWriter(w)
@@ -126,14 +108,31 @@ func (tk *TransmissionKeys) ReadFrom(r io.Reader) (n int64, err error) {
 	return
 }
 
+// BinarySize returns the serialized size of the TransmissionKeys in bytes.
+func (tk *TransmissionKeys) BinarySize() int {
+	size := 0
+
+	if tk.HomingKey != nil {
+		size += tk.HomingKey.BinarySize()
+	}
+
+	size += tk.PublicKey.BinarySize()
+
+	size += 8 // number of master keys (uint64)
+	for _, mk := range tk.MasterRotKeys {
+		size += 8 + mk.BinarySize() // rotation index (int64) + data
+	}
+
+	return size
+}
+
 // MarshalBinary encodes the TransmissionKeys into a byte slice.
 func (tk *TransmissionKeys) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, 0, tk.BinarySize())
-	w := bytes.NewBuffer(buf)
-	if _, err := tk.WriteTo(w); err != nil {
+	buf := bytes.NewBuffer(make([]byte, 0, tk.BinarySize()))
+	if _, err := tk.WriteTo(buf); err != nil {
 		return nil, err
 	}
-	return w.Bytes(), nil
+	return buf.Bytes(), nil
 }
 
 // UnmarshalBinary decodes TransmissionKeys from a byte slice.
