@@ -59,7 +59,7 @@ func main() {
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 

@@ -78,7 +78,7 @@ func main() {
 	for i := range sks {
 		sks[i] = kgenHK.GenSecretKeyNew()
 		skS1s[i] = kgenHK.GenSecretKeyNew()
-		skExts[i] = kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sks[i], skS1s[i])
+		skExts[i] = kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sks[i], skS1s[i])
 	}
 
 	// Ideal HK-level secret for verification only.

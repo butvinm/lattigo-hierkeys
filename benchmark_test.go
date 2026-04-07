@@ -128,7 +128,7 @@ func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRot
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
@@ -597,7 +597,7 @@ func setupKGPlus14(b *testing.B) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
@@ -778,7 +778,7 @@ func BenchmarkGaloisKeyToMasterKey(b *testing.B) {
 		kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 		sk := kgenHK.GenSecretKeyNew()
 		sk1 := kgenHK.GenSecretKeyNew()
-		skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+		skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 		kgenRP := rlwe.NewKeyGenerator(topParams)
 		galEl := topParams.GaloisElement(1)
 

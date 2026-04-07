@@ -1,6 +1,6 @@
 // Package kgplus implements KG+ hierarchical rotation key derivation with ring switching (R', degree 2N).
 //
-//	Client: rlwe.GenSecretKeyNew (×2) → ConstructExtendedSK → rlwe.GenGaloisKeyNew → hierkeys.GaloisKeyToMasterKey → TransmissionKeys
+//	Client: rlwe.GenSecretKeyNew (×2) → ConstructExtendedSecretKey → rlwe.GenGaloisKeyNew → hierkeys.GaloisKeyToMasterKey → TransmissionKeys
 //	Server: PubToRot → NewLevelExpansion (per level) → FinalizeKey (per key, ring-switch + convention convert) → rlwe.MemEvaluationKeySet
 //
 // See example/kgplus/simple for complete single-party flow,

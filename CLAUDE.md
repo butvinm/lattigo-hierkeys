@@ -55,7 +55,7 @@ TransmissionKeys: `{HomingKey *rlwe.EvaluationKey, PublicKey *rlwe.PublicKey, Ma
 
 No KeyGenerator — users generate keys with standard `rlwe.KeyGenerator` and convert via `GaloisKeyToMasterKey`. Works with both single-party and multiparty (lattigo `GaloisKeyGenProtocol`).
 
-`ConstructExtendedSK` builds s̃ = s + Y·s̃₁ in R' from two HK-level secrets. `ProjectToEvalKey` on Parameters projects top-level SK to eval level (with validation).
+`ConstructExtendedSecretKey` builds s̃ = s + Y·s̃₁ in R' from two HK-level secrets. `ProjectToEvalKey` on Parameters projects top-level SK to eval level (with validation).
 
 Server-side derivation: `PubToRot` → `NewLevelExpansion` (per level, call `Derive` per target) → `FinalizeKey` (per level-0 key, ring-switch + convention convert). Callers control concurrency by spawning goroutines around `Derive`/`FinalizeKey` and control peak heap by nilling `level0.Keys[r]` after handing the key off to `FinalizeKey`.
 
@@ -83,7 +83,7 @@ Each scheme has four examples in `example/<scheme>/`:
 - **NTT prime constraint (KG+ only)**: All primes must satisfy q ≡ 1 mod 4N (NTT-friendly for degree 2N). LogQ-generated primes for degree N may fail.
 - **Prime collision in multi-level**: When building parameter chains (Q\_{i+1} = Q_i ∪ P_i), P primes at each level MUST be distinct from all Q primes at that level. Lattigo's `GenModuli` does not enforce this. Both packages use `GenerateUniquePrimes` with an exclusion set.
 - **Noise in multi-level (k>2)**: Each RotToRot adds noise proportional to √(dnum) × Q/P. Use many small P primes (e.g., 30b) to maximize total P within the budget — this lowers both dnum and Q/P. The paper uses large primes with high dnum (10-30); our optimized params use small primes with low dnum (2-3) and comparable or better noise.
-- **ConstructExtendedSK for k>2 (KG+)**: When Levels Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
+- **ConstructExtendedSecretKey for k>2 (KG+)**: When Levels Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
 - **GaloisKeyGenProtocol accumulator**: When aggregating shares, the accumulator's `GaloisElement` must be set before the first `AggregateShares` call (it defaults to 0, causing a mismatch error).
 - **LLKN shares Q_max with eval**: LLKN hierarchy P primes consume the same Q_max(N) budget as eval Q and P primes. Heavy eval parameters leave little room for hierarchy. KG+ avoids this via R' with Q_max(2N) ≈ 2×Q_max(N).
 

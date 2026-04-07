@@ -69,7 +69,7 @@ func main() {
 
 	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N). This is the secret
 	// under which master keys and the public key are generated in R'.
-	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	// Public key and master rotation keys in R' at the top level.
 	kgenRP := rlwe.NewKeyGenerator(topParams)

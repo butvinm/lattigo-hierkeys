@@ -4,12 +4,12 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// ConstructExtendedSK builds s̃ = s + Y·s̃₁ in R' (degree 2N) from two
+// ConstructExtendedSecretKey builds s̃ = s + Y·s̃₁ in R' (degree 2N) from two
 // independent HK-level secret keys. skS and skS1 must be different keys.
 //
 // For k>2, paramsRP.Q may include primes beyond paramsHK.Q (the HK P primes).
 // These extra coefficient slots are filled from skS.P and skS1.P.
-func ConstructExtendedSK(paramsHK, paramsRP rlwe.Parameters, skS, skS1 *rlwe.SecretKey) *rlwe.SecretKey {
+func ConstructExtendedSecretKey(paramsHK, paramsRP rlwe.Parameters, skS, skS1 *rlwe.SecretKey) *rlwe.SecretKey {
 	N := paramsHK.N()
 	ringQHK := paramsHK.RingQ()
 	ringPHK := paramsHK.RingP()

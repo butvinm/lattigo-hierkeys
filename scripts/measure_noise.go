@@ -232,7 +232,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 
 	topLevel := params.NumLevels() - 1
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	slots := topParams.N() / 2
 	fullSet := hierkeys.MasterRotationsForBase(4, slots)

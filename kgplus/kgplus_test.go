@@ -48,7 +48,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topParams := params.Top()
-	skExt := ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+	skExt := ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
 
@@ -197,13 +197,13 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 // constructExtendedSKForParams builds s_tilde = s + Y*s1 in R' for a specific
 // R' parameter set. This is a test helper that generalizes the KeyGenerator's
 // constructExtendedSK to work with arbitrary R' params.
-// constructExtendedSKForParams delegates to the exported ConstructExtendedSK.
+// constructExtendedSKForParams delegates to the exported ConstructExtendedSecretKey.
 func constructExtendedSKForParams(
 	paramsHK rlwe.Parameters,
 	paramsRP rlwe.Parameters,
 	skS, skS1 *rlwe.SecretKey,
 ) *rlwe.SecretKey {
-	return ConstructExtendedSK(paramsHK, paramsRP, skS, skS1)
+	return ConstructExtendedSecretKey(paramsHK, paramsRP, skS, skS1)
 }
 
 // verifyRotationKey verifies a derived GaloisKey against a reference key
@@ -934,7 +934,7 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 		topParams := params.Top()
-		skExt := ConstructExtendedSK(params.HomingKey(), topParams, sk, sk1)
+		skExt := ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 		pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
 
