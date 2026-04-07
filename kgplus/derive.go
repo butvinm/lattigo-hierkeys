@@ -22,32 +22,6 @@ func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *r
 	return rsGK, nil
 }
 
-// FinalizeKeys ring-switches level-0 R' IntermediateKeys to R and converts
-// to standard [rlwe.MemEvaluationKeySet] usable with lattigo evaluators.
-func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *hierkeys.IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
-
-	if tk == nil || tk.HomingKey == nil {
-		return nil, fmt.Errorf("transmission keys and homing key must not be nil")
-	}
-
-	if intermediate == nil || len(intermediate.Keys) == 0 {
-		return nil, fmt.Errorf("intermediate keys must not be nil or empty")
-	}
-
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
-
-	for rot, mk := range intermediate.Keys {
-		gk, err := eval.FinalizeKey(rot, mk, tk.HomingKey)
-		if err != nil {
-			return nil, err
-		}
-		intermediate.Keys[rot] = nil // release R' MasterKey so GC can reclaim it
-		galoisKeys = append(galoisKeys, gk)
-	}
-
-	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
-}
-
 // RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a
 // standard GaloisKey in R (degree N) using a homing key. Thread-safe.
 func (eval *Evaluator) RingSwitchGaloisKey(

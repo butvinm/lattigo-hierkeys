@@ -66,21 +66,3 @@ func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKe
 		masterKeys,
 	)
 }
-
-// ExpandLevel derives keys at the given R' hierarchy level sequentially.
-// For concurrent derivation, use [Evaluator.NewLevelExpansion].
-func (eval *Evaluator) ExpandLevel(
-	level int,
-	shift0Key *hierkeys.MasterKey,
-	masterKeys map[int]*hierkeys.MasterKey,
-	targetRotations []int,
-) (*hierkeys.IntermediateKeys, error) {
-	return hierkeys.ExpandLevel(
-		eval.rotEvals[level].RotToRot,
-		eval.params.RPrime[level],
-		eval.params.Eval.N()/2,
-		shift0Key,
-		masterKeys,
-		targetRotations,
-	)
-}

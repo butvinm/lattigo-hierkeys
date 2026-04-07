@@ -12,9 +12,9 @@ import (
 // over scheme-specific evaluator configuration.
 type RotToRotFunc func(inputKey, masterKey *MasterKey, targetGalEl uint64) (*MasterKey, error)
 
-// IntermediateKeys holds MasterKeys produced by [LevelExpansion.Derive] or
-// [ExpandLevel]. Can be serialized, used as input to the next level's
-// expansion, or finalized into standard lattigo GaloisKeys.
+// IntermediateKeys holds MasterKeys produced by [LevelExpansion.Derive].
+// Can be serialized, used as input to the next level's expansion, or
+// finalized into standard lattigo GaloisKeys.
 type IntermediateKeys struct {
 	Keys map[int]*MasterKey // indexed by rotation index
 }
@@ -154,34 +154,6 @@ func (e *LevelExpansion) IntermediateKeys(targetRotations []int) *IntermediateKe
 		}
 	}
 	return result
-}
-
-// ExpandLevel derives keys sequentially using a [LevelExpansion].
-// For concurrent derivation, use [NewLevelExpansion] and call Derive
-// from goroutines directly.
-func ExpandLevel(
-	rotToRot RotToRotFunc,
-	params rlwe.Parameters,
-	nSlots int,
-	shift0Key *MasterKey,
-	masterKeys map[int]*MasterKey,
-	targetRotations []int,
-) (*IntermediateKeys, error) {
-
-	if shift0Key == nil {
-		return nil, fmt.Errorf("shift-0 key must not be nil")
-	}
-	if len(masterKeys) == 0 {
-		return nil, fmt.Errorf("master keys must not be empty")
-	}
-
-	exp := NewLevelExpansion(rotToRot, params, nSlots, shift0Key, masterKeys)
-	for _, rot := range targetRotations {
-		if _, err := exp.Derive(rot); err != nil {
-			return nil, err
-		}
-	}
-	return exp.IntermediateKeys(targetRotations), nil
 }
 
 func SortedIntKeys(m map[int]*MasterKey) []int {

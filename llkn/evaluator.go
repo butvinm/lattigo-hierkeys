@@ -36,22 +36,3 @@ func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKe
 		masterKeys,
 	)
 }
-
-// ExpandLevel derives keys at the given hierarchy level sequentially.
-// For concurrent derivation, use [Evaluator.NewLevelExpansion] and call
-// Derive from goroutines.
-func (eval *Evaluator) ExpandLevel(
-	level int,
-	shift0Key *hierkeys.MasterKey,
-	masterKeys map[int]*hierkeys.MasterKey,
-	targetRotations []int,
-) (*hierkeys.IntermediateKeys, error) {
-	return hierkeys.ExpandLevel(
-		eval.rotEvals[level].RotToRot,
-		eval.params.Levels[level],
-		eval.params.Eval().N()/2,
-		shift0Key,
-		masterKeys,
-		targetRotations,
-	)
-}
