@@ -6,7 +6,6 @@ package hierkeys
 import (
 	"fmt"
 
-	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
@@ -59,75 +58,6 @@ func DecomposeRotation(target int, masterRots []int) []int {
 		return nil // cannot fully decompose
 	}
 	return result
-}
-
-// GaloisKeyToMasterKey converts a standard lattigo [rlwe.GaloisKey] to a
-// [MasterKey] by applying σ_r to all GadgetCiphertext components.
-// Consumes the input in-place.
-func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
-	if err := automorphGadgetCiphertext(params, gk, gk.GaloisElement); err != nil {
-		return nil, err
-	}
-	return &MasterKey{gk: gk}, nil
-}
-
-// MasterKeyToGaloisKey converts a [MasterKey] back to a standard lattigo
-// [rlwe.GaloisKey] by applying σ^{-1}_r to all GadgetCiphertext components.
-// Consumes the MasterKey in-place.
-func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
-	gk := mk.gk
-	mk.gk = nil // consume
-	galElInv := params.ModInvGaloisElement(gk.GaloisElement)
-	if err := automorphGadgetCiphertext(params, gk, galElInv); err != nil {
-		return nil, err
-	}
-	return gk, nil
-}
-
-// automorphGadgetCiphertext applies an automorphism (identified by galEl) to every
-// component of a GaloisKey's GadgetCiphertext in-place.
-func automorphGadgetCiphertext(params rlwe.Parameters, gk *rlwe.GaloisKey, galEl uint64) error {
-	ringQ := params.RingQ()
-	ringP := params.RingP()
-
-	indexQ, err := ring.AutomorphismNTTIndex(ringQ.N(), ringQ.NthRoot(), galEl)
-	if err != nil {
-		return fmt.Errorf("Q automorphism index: %w", err)
-	}
-
-	var indexP []uint64
-	if ringP != nil {
-		indexP, err = ring.AutomorphismNTTIndex(ringP.N(), ringP.NthRoot(), galEl)
-		if err != nil {
-			return fmt.Errorf("P automorphism index: %w", err)
-		}
-	}
-
-	for i := range gk.Value {
-		for j := range gk.Value[i] {
-			component := gk.Value[i][j]
-
-			automorphInPlace(ringQ, indexQ, component[0].Q)
-			if ringP != nil {
-				automorphInPlace(ringP, indexP, component[0].P)
-			}
-
-			automorphInPlace(ringQ, indexQ, component[1].Q)
-			if ringP != nil {
-				automorphInPlace(ringP, indexP, component[1].P)
-			}
-		}
-	}
-
-	return nil
-}
-
-// automorphInPlace applies an automorphism to a polynomial using a pre-computed
-// index. Allocates a temporary buffer internally.
-func automorphInPlace(r *ring.Ring, index []uint64, p ring.Poly) {
-	tmp := r.NewPoly()
-	r.AutomorphismNTTWithIndex(p, index, tmp)
-	p.CopyLvl(p.Level(), tmp)
 }
 
 // GenerateUniquePrimes generates NTT-friendly primes of the given bit sizes
