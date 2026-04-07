@@ -69,8 +69,8 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 // NewParameters constructs LLKN hierarchical key parameters from standard
 // evaluation parameters and auxiliary prime bit-sizes for each level above eval.
 //
-// logPPerLevel[i] gives the P-prime bit-sizes for Levels[i+1].
-// The number of hierarchy levels is k = len(logPPerLevel) + 1.
+// logPLevels[i] gives the P-prime bit-sizes for Levels[i+1].
+// The number of hierarchy levels is k = len(logPLevels) + 1.
 //
 // P primes at each level are generated to be distinct from all Q primes at
 // that level and from all primes used at lower levels. This prevents the
@@ -78,19 +78,19 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 //
 // For 2-level (standard two-tier): NewParameters(eval, [][]int{{61}})
 // For 3-level (three-tier):        NewParameters(eval, [][]int{{61}, {61}})
-func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, error) {
+func NewParameters(eval rlwe.Parameters, logPLevels [][]int) (Parameters, error) {
 
-	if len(logPPerLevel) == 0 {
-		return Parameters{}, fmt.Errorf("logPPerLevel must have at least one element (for k>=2)")
+	if len(logPLevels) == 0 {
+		return Parameters{}, fmt.Errorf("logPLevels must have at least one element (for k>=2)")
 	}
 
 	if eval.PCount() == 0 {
 		return Parameters{}, fmt.Errorf("eval parameters must have P primes")
 	}
 
-	for i, logP := range logPPerLevel {
+	for i, logP := range logPLevels {
 		if len(logP) == 0 {
-			return Parameters{}, fmt.Errorf("logPPerLevel[%d] must have at least one element", i)
+			return Parameters{}, fmt.Errorf("logPLevels[%d] must have at least one element", i)
 		}
 	}
 
@@ -105,12 +105,12 @@ func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, erro
 
 	nthRoot := uint64(eval.RingQ().NthRoot())
 
-	k := len(logPPerLevel) + 1
+	k := len(logPLevels) + 1
 	levels := make([]rlwe.Parameters, k)
 	levels[0] = eval
 
-	// Build each level: Q_{i+1} = Q_i ∪ P_i, P_{i+1} = fresh primes from logPPerLevel[i]
-	for i := 0; i < len(logPPerLevel); i++ {
+	// Build each level: Q_{i+1} = Q_i ∪ P_i, P_{i+1} = fresh primes from logPLevels[i]
+	for i := 0; i < len(logPLevels); i++ {
 		prev := levels[i]
 
 		// Q_{i+1} = Q_i ∪ P_i
@@ -119,7 +119,7 @@ func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, erro
 		qNext = append(qNext, prev.P()...)
 
 		// Generate fresh P primes that don't collide with any existing primes
-		pNext, err := hierkeys.GenerateUniquePrimes(logPPerLevel[i], nthRoot, usedPrimes)
+		pNext, err := hierkeys.GenerateUniquePrimes(logPLevels[i], nthRoot, usedPrimes)
 		if err != nil {
 			return Parameters{}, fmt.Errorf("cannot generate P primes for level %d: %w", i+1, err)
 		}

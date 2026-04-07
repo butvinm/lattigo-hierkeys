@@ -115,7 +115,7 @@ func main() {
 
 		// ── KG+ 3-level ──
 		if c.LogPExtra != nil {
-			kgpParams, err := kgplus.NewParameters(paramsEval, c.LogPHK, c.LogPExtra)
+			kgpParams, err := kgplus.NewParameters(paramsEval, c.LogPHK, [][]int{c.LogPExtra})
 			if err != nil {
 				fmt.Printf("  KG+ params error: %v\n", err)
 			} else {

@@ -198,7 +198,7 @@ func BenchmarkKeySizes(b *testing.B) {
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -301,7 +301,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -434,7 +434,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -525,7 +525,7 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -586,7 +586,7 @@ func setupKGPlus14(b *testing.B) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.
 	if err != nil {
 		b.Fatal(err)
 	}
-	params, err := kgplus.NewParameters(paramsEval, buildLogQ(1, 55), buildLogQ(7, 55))
+	params, err := kgplus.NewParameters(paramsEval, buildLogQ(1, 55), [][]int{buildLogQ(7, 55)})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -773,7 +773,7 @@ func BenchmarkGaloisKeyToMasterKey(b *testing.B) {
 			LogN: 14, LogQ: []int{50, 50, 50, 50, 50}, LogP: []int{50, 50},
 			NTTFlag: true, LogNthRoot: 16,
 		})
-		params, _ := kgplus.NewParameters(paramsEval, []int{56}, []int{56})
+		params, _ := kgplus.NewParameters(paramsEval, []int{56}, [][]int{{56}})
 		topParams := params.Top()
 		kgenHK := rlwe.NewKeyGenerator(params.HK)
 		sk := kgenHK.GenSecretKeyNew()

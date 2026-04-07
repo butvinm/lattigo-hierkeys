@@ -7,7 +7,7 @@ import "github.com/tuneinsight/lattigo/v6/core/rlwe"
 type TestParametersLiteral struct {
 	rlwe.ParametersLiteral
 	LogPHK    []int   // bit-sizes of auxiliary P primes for the homing key (and Levels[1])
-	LogPExtra [][]int // bit-sizes of P primes for additional Levels levels (k>2)
+	LogPExtra [][]int // bit-sizes of P primes for additional levels (k>2)
 }
 
 var (

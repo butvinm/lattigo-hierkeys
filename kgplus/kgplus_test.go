@@ -128,7 +128,7 @@ func TestKGPlus(t *testing.T) {
 		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
 		require.NoError(t, err)
 
-		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra...)
+		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra)
 		require.NoError(t, err)
 
 		// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}
@@ -915,7 +915,7 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		params, err := NewParameters(paramsEval, []int{61})
+		params, err := NewParameters(paramsEval, []int{61}, nil)
 		require.NoError(t, err)
 
 		t.Logf("Eval: LogN=%d, Q=%d primes, P=%d primes, N=%d",

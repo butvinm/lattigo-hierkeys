@@ -9,7 +9,7 @@ import (
 // prime sizes needed for LLKN hierarchical key generation.
 type TestParametersLiteral struct {
 	rlwe.ParametersLiteral
-	LogPPerLevel [][]int // P prime bit-sizes for each level above eval
+	LogPLevels [][]int // P prime bit-sizes for each level above eval
 }
 
 var (
@@ -34,7 +34,7 @@ var (
 				NTTFlag:  true,
 				RingType: ring.Standard,
 			},
-			LogPPerLevel: [][]int{{61}},
+			LogPLevels: [][]int{{61}},
 		},
 		// 2-level, Standard ring, fewer levels
 		{
@@ -45,7 +45,7 @@ var (
 				NTTFlag:  true,
 				RingType: ring.Standard,
 			},
-			LogPPerLevel: [][]int{{61}},
+			LogPLevels: [][]int{{61}},
 		},
 		// 2-level, ConjugateInvariant ring
 		{
@@ -56,7 +56,7 @@ var (
 				NTTFlag:  true,
 				RingType: ring.ConjugateInvariant,
 			},
-			LogPPerLevel: [][]int{{61}},
+			LogPLevels: [][]int{{61}},
 		},
 		// 3-level, Standard ring (3-level hierarchy)
 		// Intermediate levels need P ≈ Q primes to keep Q/P ratio ~1,
@@ -70,7 +70,7 @@ var (
 				NTTFlag:  true,
 				RingType: ring.Standard,
 			},
-			LogPPerLevel: [][]int{
+			LogPLevels: [][]int{
 				{61, 61, 61, 61, 61, 61}, // P_1: 6 primes → dnum_1 = ceil(6/6) = 1
 				{61, 61, 61, 61, 61, 61}, // P_2: 6 primes → dnum_2 = ceil(12/6) = 2
 			},

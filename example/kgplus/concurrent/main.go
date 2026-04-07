@@ -38,8 +38,10 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{55},                         // LogPHK for Levels[1]
-		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for Levels[2]
+		[]int{55}, // LogPHK for Levels[1]
+		[][]int{
+			{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for Levels[2]
+		},
 	); err != nil {
 		panic(err)
 	}

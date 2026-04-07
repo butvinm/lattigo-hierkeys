@@ -113,7 +113,7 @@ func TestLLKN(t *testing.T) {
 		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
 		require.NoError(t, err)
 
-		params, err := NewParameters(paramsEval, paramsLit.LogPPerLevel)
+		params, err := NewParameters(paramsEval, paramsLit.LogPLevels)
 		require.NoError(t, err)
 
 		masterRots := []int{1, 4}

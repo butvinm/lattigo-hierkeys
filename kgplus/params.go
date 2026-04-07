@@ -69,14 +69,15 @@ func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, err
 // parameters and auxiliary prime bit-sizes.
 //
 // logPHK specifies auxiliary primes for the homing key and Levels[1].
-// logPExtra (optional) specifies P-prime bit-sizes for additional levels (k>2).
+// logPExtra specifies P-prime bit-sizes for additional levels (k>2); pass nil
+// for the standard 2-level scheme.
 //
-// For 2-level (standard): NewParameters(eval, logPHK)
-// For 3-level: NewParameters(eval, logPHK, logP2)
+// For 2-level (standard): NewParameters(eval, logPHK, nil)
+// For 3-level:            NewParameters(eval, logPHK, [][]int{logP2})
 //
 // All primes must be NTT-friendly for degree 2N. Returns an error if the evaluation
 // parameters use the ConjugateInvariant ring type.
-func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Parameters, error) {
+func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Parameters, error) {
 
 	if eval.RingType() == ring.ConjugateInvariant {
 		return Parameters{}, fmt.Errorf("KG+ does not support ConjugateInvariant ring type; use the llkn package instead")
