@@ -68,8 +68,8 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
-// expandAll cascades ExpandLevel through all levels. Used by tests that
-// need level-0 IntermediateKeys.
+// expandAll cascades NewLevelExpansion through all levels. Test-internal
+// helper used by tests that need level-0 IntermediateKeys.
 func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
@@ -85,17 +85,25 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 		if err != nil {
 			return nil, err
 		}
-		derived, err := eval.ExpandLevel(level, shift0Key, currentMasters, masterRots)
-		if err != nil {
-			return nil, err
+		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters)
+		for _, r := range masterRots {
+			if _, err := exp.Derive(r); err != nil {
+				return nil, err
+			}
 		}
-		currentMasters = derived.Keys
+		currentMasters = exp.IntermediateKeys(masterRots).Keys
 	}
 	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Levels[topLevel], tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
-	return eval.ExpandLevel(0, shift0Key0, currentMasters, targetRots)
+	exp := eval.NewLevelExpansion(0, shift0Key0, currentMasters)
+	for _, r := range targetRots {
+		if _, err := exp.Derive(r); err != nil {
+			return nil, err
+		}
+	}
+	return exp.IntermediateKeys(targetRots), nil
 }
 
 func TestLLKN(t *testing.T) {
@@ -172,8 +180,13 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 		eval := NewEvaluator(params)
 		intermediate, err := expandAll(eval, tc.tk, targetRots)
 		require.NoError(t, err)
-		evk, err := eval.FinalizeKeys(intermediate)
-		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for _, mk := range intermediate.Keys {
+			gk, err := eval.FinalizeKey(mk)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		require.NotNil(t, evk)
 
 		ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)
@@ -200,8 +213,13 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 		targetRots := []int{1, 2, 3, 4, 5}
 		intermediate, err := expandAll(tc.eval, tc.tk, targetRots)
 		require.NoError(t, err)
-		evk, err := tc.eval.FinalizeKeys(intermediate)
-		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for _, mk := range intermediate.Keys {
+			gk, err := tc.eval.FinalizeKey(mk)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 
 		ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)
 		stdEval := rlwe.NewEvaluator(params.Eval(), evk)
@@ -242,8 +260,13 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		require.Len(t, intermediate2.Keys, len(targetRots))
 
 		// Finalize
-		evk, err := tc.eval.FinalizeKeys(intermediate2)
-		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate2.Keys))
+		for _, mk := range intermediate2.Keys {
+			gk, err := tc.eval.FinalizeKey(mk)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 
 		ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)
 		stdEval := rlwe.NewEvaluator(params.Eval(), evk)
@@ -302,20 +325,32 @@ func testPubToRot(tc *testContext, t *testing.T) {
 					for lvl := k - 2; lvl > level; lvl-- {
 						shift0, err := hierkeys.PubToRot(params.Levels[lvl], params.Top(), tc.tk.PublicKey)
 						require.NoError(t, err)
-						derived, err := eval.ExpandLevel(lvl, shift0, currentMasters, masterRots)
-						require.NoError(t, err)
-						currentMasters = derived.Keys
+						expDown := eval.NewLevelExpansion(lvl, shift0, currentMasters)
+						for _, r := range masterRots {
+							_, err := expDown.Derive(r)
+							require.NoError(t, err)
+						}
+						currentMasters = expDown.IntermediateKeys(masterRots).Keys
 					}
 				}
 
 				// Now expand at this level using the PubToRot-derived shift-0 key
-				intermediate, err := eval.ExpandLevel(level, derivedShift0, currentMasters, targetRots)
-				require.NoError(t, err)
+				expHere := eval.NewLevelExpansion(level, derivedShift0, currentMasters)
+				for _, r := range targetRots {
+					_, err := expHere.Derive(r)
+					require.NoError(t, err)
+				}
+				intermediate := expHere.IntermediateKeys(targetRots)
 
 				if level == 0 {
 					// At level 0, finalize and verify with actual rotation
-					evk, err := eval.FinalizeKeys(intermediate)
-					require.NoError(t, err)
+					galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+					for _, mk := range intermediate.Keys {
+						gk, err := eval.FinalizeKey(mk)
+						require.NoError(t, err)
+						galoisKeys = append(galoisKeys, gk)
+					}
+					evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 
 					ct := prepareTestCiphertext(t, params.Eval(), tc.skEval)
 					stdEval := rlwe.NewEvaluator(params.Eval(), evk)
