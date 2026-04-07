@@ -42,9 +42,8 @@ Shared primitives:
 - `GaloisKeyToMasterKey` / `MasterKeyToGaloisKey` — convention conversion (mutate in-place, consume input).
 - `RotToRotEvaluator` — thread-safe RotToRot with pool-based scratch buffers. Core key combination: shift-r + shift-r' → shift-(r+r').
 - `PubToRot` — derives shift-0 MasterKey from `*rlwe.PublicKey`.
-- `LevelExpansion` — thread-safe derivation session at one hierarchy level. Uses `sync.Once` per rotation for dedup. Created via `NewLevelExpansion`.
-- `ExpandLevel` — convenience wrapper: sequential derivation using `LevelExpansion`.
-- `IntermediateKeys` — output of `ExpandLevel` / `LevelExpansion`, input to next level or `FinalizeKeys`.
+- `LevelExpansion` — thread-safe derivation session at one hierarchy level. Uses `sync.Once` per rotation for dedup. Created via `NewLevelExpansion`. Call `Derive` per target rotation, then `IntermediateKeys` to collect.
+- `IntermediateKeys` — output of `LevelExpansion.IntermediateKeys`, input to next level or per-key `FinalizeKey`.
 - `MasterRotationsForBase`, `DecomposeRotation` — rotation set utilities.
 - `GenerateUniquePrimes` — collision-free NTT-friendly prime generation.
 
@@ -58,7 +57,7 @@ No KeyGenerator — users generate keys with standard `rlwe.KeyGenerator` and co
 
 `ConstructExtendedSK` builds s̃ = s + Y·s̃₁ in R' from two HK-level secrets. `ProjectToEvalKey` on Parameters projects top-level SK to eval level (with validation).
 
-Server-side derivation: `PubToRot` → `ExpandLevel` → `FinalizeKeys` (ring-switch + convention convert). Use `NewLevelExpansion` for concurrent derivation.
+Server-side derivation: `PubToRot` → `NewLevelExpansion` (per level, call `Derive` per target) → `FinalizeKey` (per level-0 key, ring-switch + convention convert). Callers control concurrency by spawning goroutines around `Derive`/`FinalizeKey` and control peak heap by nilling `level0.Keys[r]` after handing the key off to `FinalizeKey`.
 
 ### LLKN (`llkn/`)
 
@@ -72,8 +71,8 @@ Same key generation and server-side paths as KG+ (without ring switching).
 
 Each scheme has four examples in `example/<scheme>/`:
 
-- `simple/` — minimal leveled derivation (PubToRot + ExpandLevel + FinalizeKeys)
-- `leveled/` — per-level `ExpandLevel` with inactive/active pattern
+- `simple/` — minimal leveled derivation (PubToRot + NewLevelExpansion + FinalizeKey)
+- `leveled/` — per-level `NewLevelExpansion` with inactive/active pattern
 - `concurrent/` — `NewLevelExpansion` + goroutines for concurrent derivation
 - `multiparty/` — N-out-of-N collective key generation via lattigo `GaloisKeyGenProtocol`
 

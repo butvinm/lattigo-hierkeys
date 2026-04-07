@@ -1,7 +1,7 @@
 // Package llkn implements LLKN hierarchical rotation key derivation (same ring, no ring switching).
 //
 //	Client: rlwe.GenSecretKeyNew → rlwe.GenGaloisKeyNew → hierkeys.GaloisKeyToMasterKey → TransmissionKeys
-//	Server: PubToRot → ExpandLevel → FinalizeKeys → rlwe.MemEvaluationKeySet
+//	Server: PubToRot → NewLevelExpansion (per level) → FinalizeKey (per key) → rlwe.MemEvaluationKeySet
 //
 // See example/llkn/simple for complete single-party flow,
 // and example/llkn/multiparty for N-out-of-N multiparty.
