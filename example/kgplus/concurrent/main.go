@@ -38,8 +38,8 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{55},                         // LogPHK for RPrime[1]
-		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
+		[]int{55},                         // LogPHK for Levels[1]
+		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for Levels[2]
 	); err != nil {
 		panic(err)
 	}
@@ -87,7 +87,7 @@ func main() {
 
 	// Phase 1 (sequential): expand at intermediate R' level.
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.Top(), tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
@@ -103,7 +103,7 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 

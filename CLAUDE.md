@@ -49,7 +49,7 @@ Shared primitives:
 
 ### KG+ (`kgplus/`)
 
-Parameters: `{Eval, HK, RPrime []rlwe.Parameters}` — RPrime[0] is level-0, RPrime[k-1] is top master (all degree 2N). Only supports Standard ring type (not ConjugateInvariant).
+Parameters: `{Eval, HK, Levels []rlwe.Parameters}` — Levels[0] is level-0, Levels[k-1] is top master (all degree 2N). Only supports Standard ring type (not ConjugateInvariant).
 
 TransmissionKeys: `{HomingKey *rlwe.EvaluationKey, PublicKey *rlwe.PublicKey, MasterRotKeys map[int]*MasterKey}`.
 
@@ -83,7 +83,7 @@ Each scheme has four examples in `example/<scheme>/`:
 - **NTT prime constraint (KG+ only)**: All primes must satisfy q ≡ 1 mod 4N (NTT-friendly for degree 2N). LogQ-generated primes for degree N may fail.
 - **Prime collision in multi-level**: When building parameter chains (Q\_{i+1} = Q_i ∪ P_i), P primes at each level MUST be distinct from all Q primes at that level. Lattigo's `GenModuli` does not enforce this. Both packages use `GenerateUniquePrimes` with an exclusion set.
 - **Noise in multi-level (k>2)**: Each RotToRot adds noise proportional to √(dnum) × Q/P. Use many small P primes (e.g., 30b) to maximize total P within the budget — this lowers both dnum and Q/P. The paper uses large primes with high dnum (10-30); our optimized params use small primes with low dnum (2-3) and comparable or better noise.
-- **ConstructExtendedSK for k>2 (KG+)**: When RPrime Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
+- **ConstructExtendedSK for k>2 (KG+)**: When Levels Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
 - **GaloisKeyGenProtocol accumulator**: When aggregating shares, the accumulator's `GaloisElement` must be set before the first `AggregateShares` call (it defaults to 0, causing a mismatch error).
 - **LLKN shares Q_max with eval**: LLKN hierarchy P primes consume the same Q_max(N) budget as eval Q and P primes. Heavy eval parameters leave little room for hierarchy. KG+ avoids this via R' with Q_max(2N) ≈ 2×Q_max(N).
 
@@ -192,10 +192,10 @@ This is the OPPOSITE of what works for general dnum optimization theory — but 
 
 **For KG+ 3-level, `NewParameters(eval, logPHK, logPExtra)`**:
 
-- `logPHK` serves DOUBLE DUTY: P primes for both HK level (degree N) and RPrime[1] (degree 2N)
+- `logPHK` serves DOUBLE DUTY: P primes for both HK level (degree N) and Levels[1] (degree 2N)
   - Affects homing key size: dnum_hk = ceil(QCount_HK / len(logPHK))
-  - Affects intermediate RotToRot cost: dnum_mid = ceil(QCount_RPrime1 / len(logPHK))
-- `logPExtra`: P primes for top master level RPrime[k-1]
+  - Affects intermediate RotToRot cost: dnum_mid = ceil(QCount_Levels1 / len(logPHK))
+- `logPExtra`: P primes for top master level Levels[k-1]
   - Affects master key size: dnum_top = ceil(QCount_top / len(logPExtra))
 
 ### Current optimized params

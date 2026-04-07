@@ -25,20 +25,20 @@ func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *r
 // RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a
 // standard GaloisKey in R (degree N) using a homing key. Thread-safe.
 func (eval *Evaluator) RingSwitchGaloisKey(
-	masterKeyRPrime *hierkeys.MasterKey,
+	masterKeyRP *hierkeys.MasterKey,
 	homingKey *rlwe.EvaluationKey,
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
 
 	paramsEval := eval.params.eval
 	paramsHK := eval.params.HK
-	paramsRPrime := eval.params.RPrime[0]
+	paramsRP := eval.params.Levels[0]
 
-	if masterKeyRPrime == nil || homingKey == nil {
-		return nil, fmt.Errorf("masterKeyRPrime and homingKey must not be nil")
+	if masterKeyRP == nil || homingKey == nil {
+		return nil, fmt.Errorf("masterKeyRP and homingKey must not be nil")
 	}
 
-	rpGK := masterKeyRPrime.GaloisKey()
+	rpGK := masterKeyRP.GaloisKey()
 
 	N := paramsEval.N()
 	ringQHK := paramsHK.RingQ()
@@ -64,27 +64,27 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 		NthRoot:       paramsEval.RingQ().NthRoot(),
 	}
 
-	ringQRPrimeQ := paramsRPrime.RingQ()
-	ringPRPrime := paramsRPrime.RingP()
+	ringQRP := paramsRP.RingQ()
+	ringPRP := paramsRP.RingP()
 	ringQEval := paramsEval.RingQ()
 	ringPEval := paramsEval.RingP()
 
 	// Pool-based scratch buffers
-	poolRPQ := eval.poolRPQ.AtLevel(paramsRPrime.MaxLevel())
-	bQRPrime := poolRPQ.GetBuffPoly()
-	defer poolRPQ.RecycleBuffPoly(bQRPrime)
-	aQRPrime := poolRPQ.GetBuffPoly()
-	defer poolRPQ.RecycleBuffPoly(aQRPrime)
+	poolRPQ := eval.poolRPQ.AtLevel(paramsRP.MaxLevel())
+	bQRP := poolRPQ.GetBuffPoly()
+	defer poolRPQ.RecycleBuffPoly(bQRP)
+	aQRP := poolRPQ.GetBuffPoly()
+	defer poolRPQ.RecycleBuffPoly(aQRP)
 	bQCoeff := poolRPQ.GetBuffPoly()
 	defer poolRPQ.RecycleBuffPoly(bQCoeff)
 	aQCoeff := poolRPQ.GetBuffPoly()
 	defer poolRPQ.RecycleBuffPoly(aQCoeff)
 
-	poolRPP := eval.poolRPP.AtLevel(paramsRPrime.MaxLevelP())
-	bPRPrime := poolRPP.GetBuffPoly()
-	defer poolRPP.RecycleBuffPoly(bPRPrime)
-	aPRPrime := poolRPP.GetBuffPoly()
-	defer poolRPP.RecycleBuffPoly(aPRPrime)
+	poolRPP := eval.poolRPP.AtLevel(paramsRP.MaxLevelP())
+	bPRP := poolRPP.GetBuffPoly()
+	defer poolRPP.RecycleBuffPoly(bPRP)
+	aPRP := poolRPP.GetBuffPoly()
+	defer poolRPP.RecycleBuffPoly(aPRP)
 	bPCoeff := poolRPP.GetBuffPoly()
 	defer poolRPP.RecycleBuffPoly(bPCoeff)
 	aPCoeff := poolRPP.GetBuffPoly()
@@ -112,28 +112,28 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 	for i := 0; i < nEvalRNS; i++ {
 		component := gc.Value[i][0]
 
-		bQRPrime.CopyLvl(paramsRPrime.MaxLevel(), component[0].Q)
-		aQRPrime.CopyLvl(paramsRPrime.MaxLevel(), component[1].Q)
-		ringQRPrimeQ.IMForm(*bQRPrime, *bQRPrime)
-		ringQRPrimeQ.IMForm(*aQRPrime, *aQRPrime)
-		ringQRPrimeQ.INTT(*bQRPrime, *bQCoeff)
-		ringQRPrimeQ.INTT(*aQRPrime, *aQCoeff)
+		bQRP.CopyLvl(paramsRP.MaxLevel(), component[0].Q)
+		aQRP.CopyLvl(paramsRP.MaxLevel(), component[1].Q)
+		ringQRP.IMForm(*bQRP, *bQRP)
+		ringQRP.IMForm(*aQRP, *aQRP)
+		ringQRP.INTT(*bQRP, *bQCoeff)
+		ringQRP.INTT(*aQRP, *aQCoeff)
 
-		bPRPrime.CopyLvl(paramsRPrime.MaxLevelP(), component[0].P)
-		aPRPrime.CopyLvl(paramsRPrime.MaxLevelP(), component[1].P)
-		ringPRPrime.IMForm(*bPRPrime, *bPRPrime)
-		ringPRPrime.IMForm(*aPRPrime, *aPRPrime)
-		ringPRPrime.INTT(*bPRPrime, *bPCoeff)
-		ringPRPrime.INTT(*aPRPrime, *aPCoeff)
+		bPRP.CopyLvl(paramsRP.MaxLevelP(), component[0].P)
+		aPRP.CopyLvl(paramsRP.MaxLevelP(), component[1].P)
+		ringPRP.IMForm(*bPRP, *bPRP)
+		ringPRP.IMForm(*aPRP, *aPRP)
+		ringPRP.INTT(*bPRP, *bPCoeff)
+		ringPRP.INTT(*aPRP, *aPCoeff)
 
-		for m := 0; m <= paramsRPrime.MaxLevel(); m++ {
+		for m := 0; m <= paramsRP.MaxLevel(); m++ {
 			for j := 0; j < N; j++ {
 				b0.Coeffs[m][j] = bQCoeff.Coeffs[m][2*j]
 				a0.Coeffs[m][j] = aQCoeff.Coeffs[m][2*j]
 				a1.Coeffs[m][j] = aQCoeff.Coeffs[m][2*j+1]
 			}
 		}
-		for m := 0; m <= paramsRPrime.MaxLevelP(); m++ {
+		for m := 0; m <= paramsRP.MaxLevelP(); m++ {
 			for j := 0; j < N; j++ {
 				b0.Coeffs[pIdx+m][j] = bPCoeff.Coeffs[m][2*j]
 				a0.Coeffs[pIdx+m][j] = aPCoeff.Coeffs[m][2*j]

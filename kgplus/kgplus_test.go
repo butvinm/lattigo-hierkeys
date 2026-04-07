@@ -94,7 +94,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.Top(), tk.PublicKey)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Top(), tk.PublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +106,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 		}
 		currentMasters = exp.IntermediateKeys(masterRots).Keys
 	}
-	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.Top(), tk.PublicKey)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Top(), tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -305,8 +305,8 @@ func testRotToRot(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "RotToRot/SingleStep"), func(t *testing.T) {
 
 		paramsEval := params.Eval()
-		paramsRPLow := params.RPrime[0]
-		paramsRPHigh := params.RPrime[1]
+		paramsRPLow := params.Levels[0]
+		paramsRPHigh := params.Levels[1]
 		paramsHK := params.HK
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
@@ -376,8 +376,8 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "RotToRot/MultiStep"), func(t *testing.T) {
 
 		paramsEval := params.Eval()
-		paramsRPLow := params.RPrime[0]
-		paramsRPHigh := params.RPrime[1]
+		paramsRPLow := params.Levels[0]
+		paramsRPHigh := params.Levels[1]
 		paramsHK := params.HK
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)

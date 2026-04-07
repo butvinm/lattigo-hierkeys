@@ -15,8 +15,8 @@ import (
 // TransmissionKeys holds the client-to-server data for hierarchical key derivation.
 type TransmissionKeys struct {
 	HomingKey     *rlwe.EvaluationKey         // EvalKey(s̃₁ → s) at HK level
-	PublicKey     *rlwe.PublicKey             // in R' at top RPrime level, used by PubToRot
-	MasterRotKeys map[int]*hierkeys.MasterKey // in R' at top RPrime level, indexed by rotation
+	PublicKey     *rlwe.PublicKey             // in R' at top Levels level, used by PubToRot
+	MasterRotKeys map[int]*hierkeys.MasterKey // in R' at top Levels level, indexed by rotation
 }
 
 // ConstructExtendedSK builds s̃ = s + Y·s̃₁ in R' (degree 2N) from two
@@ -55,7 +55,7 @@ func ConstructExtendedSK(paramsHK, paramsRP rlwe.Parameters, skS, skS1 *rlwe.Sec
 		}
 	}
 
-	// Fill additional Q primes from HK P primes (for k>2 where RPrime.Q > HK.Q)
+	// Fill additional Q primes from HK P primes (for k>2 where Levels.Q > HK.Q)
 	if paramsRP.QCount() > paramsHK.QCount() && ringPHK != nil {
 		sCoeffsP := ringPHK.NewPoly()
 		s1CoeffsP := ringPHK.NewPoly()

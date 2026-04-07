@@ -40,8 +40,8 @@ func main() {
 	// 3-level: two extra P levels in R' (degree 2N).
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{55},                         // LogPHK for RPrime[1]
-		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
+		[]int{55},                         // LogPHK for Levels[1]
+		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for Levels[2]
 	); err != nil {
 		panic(err)
 	}
@@ -102,7 +102,7 @@ func main() {
 
 	// Level 1: expand {1,64} masters into the full base-4 set at intermediate level.
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.Top(), tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
@@ -115,7 +115,7 @@ func main() {
 
 	// Level 0: derive target rotations from the expanded set.
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)

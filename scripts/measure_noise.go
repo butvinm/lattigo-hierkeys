@@ -253,7 +253,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 	currentMasters := tk.MasterRotKeys
 
 	for level := topLevel - 1; level >= 1; level-- {
-		shift0, err := hierkeys.PubToRot(params.RPrime[level], topParams, tk.PublicKey)
+		shift0, err := hierkeys.PubToRot(params.Levels[level], topParams, tk.PublicKey)
 		if err != nil {
 			return math.NaN(), math.NaN()
 		}
@@ -266,7 +266,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 		currentMasters = exp.IntermediateKeys(fullSet).Keys
 	}
 
-	shift0, err := hierkeys.PubToRot(params.RPrime[0], topParams, tk.PublicKey)
+	shift0, err := hierkeys.PubToRot(params.Levels[0], topParams, tk.PublicKey)
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}
