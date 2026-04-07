@@ -82,7 +82,7 @@ func main() {
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.Levels[1], params.Levels[topLevel], tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Levels()[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 
@@ -106,7 +106,7 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Levels()[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 

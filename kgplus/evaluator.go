@@ -31,16 +31,16 @@ func NewEvaluator(params Parameters) *Evaluator {
 	k := params.NumLevels()
 	rotEvals := make([]*hierkeys.RotToRotEvaluator, k-1)
 	for i := 0; i < k-1; i++ {
-		rotEvals[i] = hierkeys.NewRotToRotEvaluator(params.Levels[i], params.Levels[i+1])
+		rotEvals[i] = hierkeys.NewRotToRotEvaluator(params.levels[i], params.levels[i+1])
 	}
 
 	eval := &Evaluator{
 		params:   params,
 		rotEvals: rotEvals,
-		evalHK:   rlwe.NewEvaluator(params.HK, nil),
-		poolRPQ:  ring.NewPool(params.Levels[0].RingQ(), structs.NewSyncPoolUint64(params.Levels[0].N())),
-		poolRPP:  ring.NewPool(params.Levels[0].RingP(), structs.NewSyncPoolUint64(params.Levels[0].N())),
-		poolHK:   ring.NewPool(params.HK.RingQ(), structs.NewSyncPoolUint64(params.HK.N())),
+		evalHK:   rlwe.NewEvaluator(params.hk, nil),
+		poolRPQ:  ring.NewPool(params.levels[0].RingQ(), structs.NewSyncPoolUint64(params.levels[0].N())),
+		poolRPP:  ring.NewPool(params.levels[0].RingP(), structs.NewSyncPoolUint64(params.levels[0].N())),
+		poolHK:   ring.NewPool(params.hk.RingQ(), structs.NewSyncPoolUint64(params.hk.N())),
 		poolEvQ:  ring.NewPool(params.eval.RingQ(), structs.NewSyncPoolUint64(params.eval.N())),
 	}
 
@@ -60,7 +60,7 @@ func (eval *Evaluator) RotToRot(level int, inputKey, masterKey *hierkeys.MasterK
 func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKey, masterKeys map[int]*hierkeys.MasterKey) *hierkeys.LevelExpansion {
 	return hierkeys.NewLevelExpansion(
 		eval.rotEvals[level].RotToRot,
-		eval.params.Levels[level],
+		eval.params.levels[level],
 		eval.params.eval.N()/2,
 		shift0Key,
 		masterKeys,

@@ -35,7 +35,7 @@ type testContext struct {
 }
 
 func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HK())
 
 	sk := kgenHK.GenSecretKeyNew()
 	skEval, err := params.ProjectToEvalKey(sk)
@@ -48,7 +48,7 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topParams := params.Top()
-	skExt := ConstructExtendedSK(params.HK, topParams, sk, sk1)
+	skExt := ConstructExtendedSK(params.HK(), topParams, sk, sk1)
 
 	pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
 
@@ -94,7 +94,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Top(), tk.PublicKey)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels()[level], eval.params.Top(), tk.PublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +106,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 		}
 		currentMasters = exp.IntermediateKeys(masterRots).Keys
 	}
-	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Top(), tk.PublicKey)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Top(), tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -165,12 +165,12 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "KeyGenerator"), func(t *testing.T) {
 
 		t.Run("GenSecretKeyNew", func(t *testing.T) {
-			kgenHK := rlwe.NewKeyGenerator(params.HK)
+			kgenHK := rlwe.NewKeyGenerator(params.HK())
 			sk := kgenHK.GenSecretKeyNew()
 			require.NotNil(t, sk)
 			// Key should have HK-level Q primes (Q_eval + P_eval)
-			require.Equal(t, params.HK.QCount()-1, sk.LevelQ())
-			require.Equal(t, params.HK.PCount()-1, sk.LevelP())
+			require.Equal(t, params.HK().QCount()-1, sk.LevelQ())
+			require.Equal(t, params.HK().PCount()-1, sk.LevelP())
 		})
 
 		t.Run("ProjectToEvalKey", func(t *testing.T) {
@@ -305,9 +305,9 @@ func testRotToRot(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "RotToRot/SingleStep"), func(t *testing.T) {
 
 		paramsEval := params.Eval()
-		paramsRPLow := params.Levels[0]
-		paramsRPHigh := params.Levels[1]
-		paramsHK := params.HK
+		paramsRPLow := params.Levels()[0]
+		paramsRPHigh := params.Levels()[1]
+		paramsHK := params.HK()
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
 		kgenRPLow := rlwe.NewKeyGenerator(paramsRPLow)
@@ -376,9 +376,9 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "RotToRot/MultiStep"), func(t *testing.T) {
 
 		paramsEval := params.Eval()
-		paramsRPLow := params.Levels[0]
-		paramsRPHigh := params.Levels[1]
-		paramsHK := params.HK
+		paramsRPLow := params.Levels()[0]
+		paramsRPHigh := params.Levels()[1]
+		paramsHK := params.HK()
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
 		kgenRPLow := rlwe.NewKeyGenerator(paramsRPLow)
@@ -922,7 +922,7 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 			paramsEval.LogN(), paramsEval.QCount(), paramsEval.PCount(), paramsEval.N())
 
 		// Client
-		kgenHK := rlwe.NewKeyGenerator(params.HK)
+		kgenHK := rlwe.NewKeyGenerator(params.HK())
 		sk := kgenHK.GenSecretKeyNew()
 		skEval, err := params.ProjectToEvalKey(sk)
 		require.NoError(t, err)
@@ -934,7 +934,7 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 		topParams := params.Top()
-		skExt := ConstructExtendedSK(params.HK, topParams, sk, sk1)
+		skExt := ConstructExtendedSK(params.HK(), topParams, sk, sk1)
 
 		pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
 

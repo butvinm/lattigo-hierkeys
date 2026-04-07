@@ -50,7 +50,7 @@ tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 
 // SERVER: derive standard lattigo evaluation keys
 eval := llkn.NewEvaluator(params)
-shift0, _ := hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey)
+shift0, _ := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys)
 for _, r := range targetRotations {
     exp.Derive(r)

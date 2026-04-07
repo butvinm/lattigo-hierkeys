@@ -156,7 +156,7 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0 *hierkeys.MasterKey
-	if shift0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
+	if shift0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys)

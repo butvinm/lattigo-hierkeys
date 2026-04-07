@@ -81,7 +81,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	topLevel := k - 1
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.Levels[level], eval.params.Levels[topLevel], tk.PublicKey)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels()[level], eval.params.Levels()[topLevel], tk.PublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +93,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 		}
 		currentMasters = exp.IntermediateKeys(masterRots).Keys
 	}
-	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels[0], eval.params.Levels[topLevel], tk.PublicKey)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Levels()[topLevel], tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +296,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 		for level := 0; level < k-1; level++ {
 			t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
 
-				paramsLevel := params.Levels[level]
+				paramsLevel := params.Levels()[level]
 
 				// Derive shift-0 key via PubToRot
 				derivedShift0, err := hierkeys.PubToRot(paramsLevel, params.Top(), tc.tk.PublicKey)
@@ -323,7 +323,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 					// Need to expand down from top to this level+1 first
 					currentMasters = tc.tk.MasterRotKeys
 					for lvl := k - 2; lvl > level; lvl-- {
-						shift0, err := hierkeys.PubToRot(params.Levels[lvl], params.Top(), tc.tk.PublicKey)
+						shift0, err := hierkeys.PubToRot(params.Levels()[lvl], params.Top(), tc.tk.PublicKey)
 						require.NoError(t, err)
 						expDown := eval.NewLevelExpansion(lvl, shift0, currentMasters)
 						for _, r := range masterRots {

@@ -81,7 +81,7 @@ func main() {
 	// Phase 1 (sequential): expand {1,4} → full base-4 set at level 1.
 	// This is typically done once during an offline phase.
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.Levels[1], params.Levels[topLevel], tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Levels()[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
@@ -100,7 +100,7 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Levels()[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
 

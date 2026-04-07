@@ -31,8 +31,8 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 ) (*rlwe.GaloisKey, error) {
 
 	paramsEval := eval.params.eval
-	paramsHK := eval.params.HK
-	paramsRP := eval.params.Levels[0]
+	paramsHK := eval.params.hk
+	paramsRP := eval.params.levels[0]
 
 	if masterKeyRP == nil || homingKey == nil {
 		return nil, fmt.Errorf("masterKeyRP and homingKey must not be nil")

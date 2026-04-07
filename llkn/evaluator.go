@@ -16,7 +16,7 @@ func NewEvaluator(params Parameters) *Evaluator {
 	k := params.NumLevels()
 	rotEvals := make([]*hierkeys.RotToRotEvaluator, k-1)
 	for i := 0; i < k-1; i++ {
-		rotEvals[i] = hierkeys.NewRotToRotEvaluator(params.Levels[i], params.Levels[i+1])
+		rotEvals[i] = hierkeys.NewRotToRotEvaluator(params.levels[i], params.levels[i+1])
 	}
 	return &Evaluator{params: params, rotEvals: rotEvals}
 }
@@ -30,7 +30,7 @@ func (eval *Evaluator) RotToRot(level int, inputKey, masterKey *hierkeys.MasterK
 func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKey, masterKeys map[int]*hierkeys.MasterKey) *hierkeys.LevelExpansion {
 	return hierkeys.NewLevelExpansion(
 		eval.rotEvals[level].RotToRot,
-		eval.params.Levels[level],
+		eval.params.levels[level],
 		eval.params.Eval().N()/2,
 		shift0Key,
 		masterKeys,

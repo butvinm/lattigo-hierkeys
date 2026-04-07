@@ -27,8 +27,8 @@ import (
 // because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
 	eval   rlwe.Parameters
-	HK     rlwe.Parameters
-	Levels []rlwe.Parameters // Levels[0]=level0, Levels[k-1]=top master
+	hk     rlwe.Parameters
+	levels []rlwe.Parameters // levels[0]=level0, levels[k-1]=top master
 }
 
 // Eval returns the evaluation-level parameters.
@@ -36,14 +36,25 @@ func (p Parameters) Eval() rlwe.Parameters {
 	return p.eval
 }
 
+// HK returns the homing-key-level parameters.
+func (p Parameters) HK() rlwe.Parameters {
+	return p.hk
+}
+
+// Levels returns the R' hierarchy chain. Levels[0] is the eval-aligned R'
+// level, Levels[k-1] is the top master level.
+func (p Parameters) Levels() []rlwe.Parameters {
+	return p.levels
+}
+
 // Top returns the top (master) level parameters (Levels[k-1]).
 func (p Parameters) Top() rlwe.Parameters {
-	return p.Levels[len(p.Levels)-1]
+	return p.levels[len(p.levels)-1]
 }
 
 // NumLevels returns the number of hierarchy levels (k = len(Levels)).
 func (p Parameters) NumLevels() int {
-	return len(p.Levels)
+	return len(p.levels)
 }
 
 // ProjectToEvalKey projects a homing-key-level secret key to evaluation level.
@@ -51,7 +62,7 @@ func (p Parameters) NumLevels() int {
 //
 // Returns an error if the secret key is not at the expected HK level.
 func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, error) {
-	expectedQ := p.HK.QCount()
+	expectedQ := p.hk.QCount()
 	if skHK.LevelQ()+1 != expectedQ {
 		return nil, fmt.Errorf("sk has %d Q primes, want %d (HK level)", skHK.LevelQ()+1, expectedQ)
 	}
@@ -195,7 +206,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 
 	return Parameters{
 		eval:   eval,
-		HK:     paramsHK,
-		Levels: levels,
+		hk:     paramsHK,
+		levels: levels,
 	}, nil
 }

@@ -59,7 +59,7 @@ func main() {
 
 	// Two independent secrets at the homing-key (HK) level.
 	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HK())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 
@@ -69,7 +69,7 @@ func main() {
 
 	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N). This is the secret
 	// under which master keys and the public key are generated in R'.
-	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
 
 	// Public key and master rotation keys in R' at the top level.
 	kgenRP := rlwe.NewKeyGenerator(topParams)
@@ -104,7 +104,7 @@ func main() {
 
 	// Level 1: expand {1,64} masters into the full base-4 set at intermediate level.
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.Levels[1], params.Top(), tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
@@ -117,7 +117,7 @@ func main() {
 
 	// Level 0: derive target rotations from the expanded set.
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)

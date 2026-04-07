@@ -201,7 +201,7 @@ func measureLLKN(params llkn.Parameters, ckksParams ckks.Parameters, targetRot i
 	}
 
 	eval := llkn.NewEvaluator(params)
-	shift0, err := hierkeys.PubToRot(params.Levels[0], topParams, pk)
+	shift0, err := hierkeys.PubToRot(params.Levels()[0], topParams, pk)
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}
@@ -225,14 +225,14 @@ func measureLLKN(params llkn.Parameters, ckksParams ckks.Parameters, targetRot i
 }
 
 func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetRot int) (float64, float64) {
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HK())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topLevel := params.NumLevels() - 1
 	topParams := params.Top()
-	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSK(params.HK(), topParams, sk, sk1)
 
 	slots := topParams.N() / 2
 	fullSet := hierkeys.MasterRotationsForBase(4, slots)
@@ -253,7 +253,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 	currentMasters := tk.MasterRotKeys
 
 	for level := topLevel - 1; level >= 1; level-- {
-		shift0, err := hierkeys.PubToRot(params.Levels[level], topParams, tk.PublicKey)
+		shift0, err := hierkeys.PubToRot(params.Levels()[level], topParams, tk.PublicKey)
 		if err != nil {
 			return math.NaN(), math.NaN()
 		}
@@ -266,7 +266,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 		currentMasters = exp.IntermediateKeys(fullSet).Keys
 	}
 
-	shift0, err := hierkeys.PubToRot(params.Levels[0], topParams, tk.PublicKey)
+	shift0, err := hierkeys.PubToRot(params.Levels()[0], topParams, tk.PublicKey)
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}

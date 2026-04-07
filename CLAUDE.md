@@ -49,7 +49,7 @@ Shared primitives:
 
 ### KG+ (`kgplus/`)
 
-Parameters: `{Eval, HK, Levels []rlwe.Parameters}` — Levels[0] is level-0, Levels[k-1] is top master (all degree 2N). Only supports Standard ring type (not ConjugateInvariant).
+Parameters: opaque struct exposing `Eval()`, `HK()`, `Levels()`, `Top()`, `NumLevels()` methods (private fields, lattigo-style). `Levels()[0]` is the eval-aligned R' level, `Levels()[k-1]` is the top master (all degree 2N). Only supports Standard ring type (not ConjugateInvariant).
 
 TransmissionKeys: `{HomingKey *rlwe.EvaluationKey, PublicKey *rlwe.PublicKey, MasterRotKeys map[int]*MasterKey}`.
 
@@ -61,7 +61,7 @@ Server-side derivation: `PubToRot` → `NewLevelExpansion` (per level, call `Der
 
 ### LLKN (`llkn/`)
 
-Parameters: `{Levels []rlwe.Parameters}` — Levels[0] is eval, Levels[k-1] is top master. Supports both Standard and ConjugateInvariant ring types.
+Parameters: opaque struct exposing `Eval()`, `Levels()`, `Top()`, `NumLevels()` methods (private fields, lattigo-style). `Levels()[0]` is eval, `Levels()[k-1]` is top master. Supports both Standard and ConjugateInvariant ring types.
 
 TransmissionKeys: `{PublicKey *rlwe.PublicKey, MasterRotKeys map[int]*MasterKey}`.
 

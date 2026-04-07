@@ -27,22 +27,28 @@ import (
 // Unlike KG+, LLKN does not use an extension ring and supports both
 // Standard and ConjugateInvariant ring types.
 type Parameters struct {
-	Levels []rlwe.Parameters
+	levels []rlwe.Parameters
 }
 
 // Eval returns the evaluation-level parameters (Levels[0]).
 func (p Parameters) Eval() rlwe.Parameters {
-	return p.Levels[0]
+	return p.levels[0]
+}
+
+// Levels returns the hierarchy chain. Levels[0] is the eval level,
+// Levels[k-1] is the top master level.
+func (p Parameters) Levels() []rlwe.Parameters {
+	return p.levels
 }
 
 // Top returns the top (master) level parameters (Levels[k-1]).
 func (p Parameters) Top() rlwe.Parameters {
-	return p.Levels[len(p.Levels)-1]
+	return p.levels[len(p.levels)-1]
 }
 
 // NumLevels returns the number of hierarchy levels (k).
 func (p Parameters) NumLevels() int {
-	return len(p.Levels)
+	return len(p.levels)
 }
 
 // ProjectToEvalKey projects a top-level secret key to evaluation level.
@@ -55,7 +61,7 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 		return nil, fmt.Errorf("sk has %d Q primes, want %d (top level)", skTop.LevelQ()+1, expectedQ)
 	}
 	// projectToLevel logic for level 0
-	paramsLevel := p.Levels[0]
+	paramsLevel := p.levels[0]
 	skLevel := rlwe.NewSecretKey(paramsLevel)
 	for m := 0; m <= paramsLevel.MaxLevel(); m++ {
 		copy(skLevel.Value.Q.Coeffs[m], skTop.Value.Q.Coeffs[m])
@@ -143,5 +149,5 @@ func NewParameters(eval rlwe.Parameters, logPLevels [][]int) (Parameters, error)
 		levels[i+1] = next
 	}
 
-	return Parameters{Levels: levels}, nil
+	return Parameters{levels: levels}, nil
 }
