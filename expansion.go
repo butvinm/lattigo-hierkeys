@@ -12,13 +12,6 @@ import (
 // over scheme-specific evaluator configuration.
 type RotToRotFunc func(inputKey, masterKey *MasterKey, targetGalEl uint64) (*MasterKey, error)
 
-// IntermediateKeys holds MasterKeys produced by [LevelExpansion.Derive].
-// Can be serialized, used as input to the next level's expansion, or
-// finalized into standard lattigo GaloisKeys.
-type IntermediateKeys struct {
-	Keys map[int]*MasterKey // indexed by rotation index
-}
-
 // LevelExpansion is a thread-safe session for deriving rotation keys at a
 // single hierarchy level. Each rotation is computed at most once; concurrent
 // calls to [LevelExpansion.Derive] coordinate via internal synchronization.
