@@ -1,4 +1,4 @@
-// KG+ hierarchical rotation keys — per-level ExpandLevel API.
+// KG+ hierarchical rotation keys — per-level NewLevelExpansion API.
 //
 // Shows the inactive/active pattern with ring switching:
 //   - Phase 1 (inactive): expand {1, base} masters into the full base-4 set
@@ -37,7 +37,7 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{55}, // LogPHK for RPrime[1]
+		[]int{55},                         // LogPHK for RPrime[1]
 		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
 	); err != nil {
 		panic(err)
@@ -92,13 +92,17 @@ func main() {
 		panic(err)
 	}
 
-	// ExpandLevel combines shift-0 with the 2 master keys to produce the full
-	// set of 7+ rotation keys at this level. The intermediate keys can be
-	// serialized and stored between phases.
-	var level1Keys *hierkeys.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
-		panic(err)
+	// NewLevelExpansion creates a derivation session at this level. Calling
+	// Derive once per master rotation produces the full base-4 set of rotation
+	// keys; the resulting IntermediateKeys can be serialized and stored
+	// between phases.
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
+	for _, r := range masterRots {
+		if _, err = exp1.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level1Keys := exp1.IntermediateKeys(masterRots)
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys.Keys))
 
 	// =========================================================================
@@ -113,22 +117,34 @@ func main() {
 		panic(err)
 	}
 
-	var level0Keys *hierkeys.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
-		panic(err)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)
+	for _, r := range targetRots {
+		if _, err = exp0.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level0Keys := exp0.IntermediateKeys(targetRots)
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
 	// =========================================================================
 	// SERVER PHASE 3: ring-switch R' → R and convert to lattigo convention
 	// =========================================================================
-	// FinalizeKeys uses the homing key to ring-switch each level-0 key from
+	// FinalizeKey uses the homing key to ring-switch each level-0 key from
 	// R' (degree 2N) back to R (degree N), then converts to standard lattigo
-	// GaloisKeys usable with ckks.Evaluator.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
-		panic(err)
+	// GaloisKey usable with ckks.Evaluator. We release the R' MasterKey
+	// reference per iteration so the GC can reclaim it before the next
+	// FinalizeKey allocates its scratch buffers.
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
+	for _, r := range targetRots {
+		mk := level0Keys.Keys[r]
+		level0Keys.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
 	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

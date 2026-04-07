@@ -1,4 +1,4 @@
-// LLKN hierarchical rotation keys — per-level ExpandLevel API.
+// LLKN hierarchical rotation keys — per-level NewLevelExpansion API.
 //
 // Shows the inactive/active pattern: the server derives keys level by level,
 // allowing intermediate results to be serialized and stored between phases.
@@ -86,13 +86,16 @@ func main() {
 		panic(err)
 	}
 
-	// ExpandLevel uses RotToRot to combine shift-0 with master keys, producing
-	// the full base-4 rotation set at level 1. These intermediate keys can be
-	// serialized and stored for later use.
-	var level1Keys *hierkeys.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
-		panic(err)
+	// NewLevelExpansion creates a derivation session at level 1. Calling
+	// Derive once per master rotation produces the full base-4 rotation set;
+	// the resulting IntermediateKeys can be serialized and stored for later use.
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
+	for _, r := range masterRots {
+		if _, err = exp1.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level1Keys := exp1.IntermediateKeys(masterRots)
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys.Keys))
 
 	// =========================================================================
@@ -107,19 +110,30 @@ func main() {
 		panic(err)
 	}
 
-	var level0Keys *hierkeys.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
-		panic(err)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)
+	for _, r := range targetRots {
+		if _, err = exp0.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level0Keys := exp0.IntermediateKeys(targetRots)
 	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
 
 	// =========================================================================
 	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys
 	// =========================================================================
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(level0Keys); err != nil {
-		panic(err)
+	// Per-key finalize, releasing each level-0 MasterKey reference for GC.
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
+	for _, r := range targetRots {
+		mk := level0Keys.Keys[r]
+		level0Keys.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(mk); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
 	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

@@ -159,14 +159,25 @@ func main() {
 	if shift0, err = hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	var level0 *hierkeys.IntermediateKeys
-	if level0, err = eval.ExpandLevel(0, shift0, tk.MasterRotKeys, targetRots); err != nil {
-		panic(err)
+	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys)
+	for _, r := range targetRots {
+		if _, err = exp.Derive(r); err != nil {
+			panic(err)
+		}
 	}
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(level0); err != nil {
-		panic(err)
+	level0 := exp.IntermediateKeys(targetRots)
+
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))
+	for _, r := range targetRots {
+		mk := level0.Keys[r]
+		level0.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(mk); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
 	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

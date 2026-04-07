@@ -270,26 +270,35 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
-						if err != nil {
-							b.Fatal(err)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						for _, r := range masterRots {
+							if _, err := exp.Derive(r); err != nil {
+								b.Fatal(err)
+							}
 						}
-						currentMasters = intermediate.Keys
-						b.Logf("after ExpandLevel(%d): heap=%d MB", level, heapMB())
+						currentMasters = exp.IntermediateKeys(masterRots).Keys
+						b.Logf("after expand(%d): heap=%d MB", level, heapMB())
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
-					level0, err := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
-					if err != nil {
-						b.Fatal(err)
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters)
+					for _, r := range targetRots {
+						if _, err := exp0.Derive(r); err != nil {
+							b.Fatal(err)
+						}
 					}
-					b.Logf("after ExpandLevel(0): heap=%d MB", heapMB())
-					if _, err := eval.FinalizeKeys(level0); err != nil {
-						b.Fatal(err)
+					level0 := exp0.IntermediateKeys(targetRots)
+					b.Logf("after expand(0): heap=%d MB", heapMB())
+					for _, r := range targetRots {
+						mk := level0.Keys[r]
+						level0.Keys[r] = nil
+						if _, err := eval.FinalizeKey(mk); err != nil {
+							b.Fatal(err)
+						}
 					}
-					b.Logf("after FinalizeKeys: heap=%d MB", heapMB())
+					b.Logf("after finalize: heap=%d MB", heapMB())
 				}
 			})
 
@@ -316,26 +325,35 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
-						if err != nil {
-							b.Fatal(err)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						for _, r := range masterRots {
+							if _, err := exp.Derive(r); err != nil {
+								b.Fatal(err)
+							}
 						}
-						currentMasters = intermediate.Keys
-						b.Logf("after ExpandLevel(%d): heap=%d MB", level, heapMB())
+						currentMasters = exp.IntermediateKeys(masterRots).Keys
+						b.Logf("after expand(%d): heap=%d MB", level, heapMB())
 					}
 					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
-					level0, err := eval.ExpandLevel(0, shift0, currentMasters, targetRots)
-					if err != nil {
-						b.Fatal(err)
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters)
+					for _, r := range targetRots {
+						if _, err := exp0.Derive(r); err != nil {
+							b.Fatal(err)
+						}
 					}
-					b.Logf("after ExpandLevel(0): heap=%d MB", heapMB())
-					if _, err := eval.FinalizeKeys(tk, level0); err != nil {
-						b.Fatal(err)
+					level0 := exp0.IntermediateKeys(targetRots)
+					b.Logf("after expand(0): heap=%d MB", heapMB())
+					for _, r := range targetRots {
+						mk := level0.Keys[r]
+						level0.Keys[r] = nil
+						if _, err := eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+							b.Fatal(err)
+						}
 					}
-					b.Logf("after FinalizeKeys: heap=%d MB", heapMB())
+					b.Logf("after finalize: heap=%d MB", heapMB())
 				}
 			})
 		})
@@ -343,8 +361,9 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 }
 
 // BenchmarkDeriveGaloisKeysConcurrent measures concurrent server-side derivation.
-// Uses the same pattern as the concurrent examples: ExpandLevel for intermediate
-// levels, NewLevelExpansion + goroutines for level 0, concurrent FinalizeKey.
+// Uses the same pattern as the concurrent examples: NewLevelExpansion sequentially
+// for intermediate levels, NewLevelExpansion + goroutines for level 0,
+// concurrent FinalizeKey.
 func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -375,21 +394,23 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Intermediate levels (sequential) — uses ExpandLevel directly
+					// Intermediate levels (sequential)
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
-						if err != nil {
-							b.Fatal(err)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						for _, r := range masterRots {
+							if _, err := exp.Derive(r); err != nil {
+								b.Fatal(err)
+							}
 						}
-						currentMasters = intermediate.Keys
+						currentMasters = exp.IntermediateKeys(masterRots).Keys
 					}
 
-					// Level 0 (concurrent) — uses NewLevelExpansion
+					// Level 0 (concurrent)
 					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
@@ -433,21 +454,23 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Intermediate levels (sequential) — uses ExpandLevel directly
+					// Intermediate levels (sequential)
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
-						intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, masterRots)
-						if err != nil {
-							b.Fatal(err)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						for _, r := range masterRots {
+							if _, err := exp.Derive(r); err != nil {
+								b.Fatal(err)
+							}
 						}
-						currentMasters = intermediate.Keys
+						currentMasters = exp.IntermediateKeys(masterRots).Keys
 					}
 
-					// Level 0 (concurrent) — uses NewLevelExpansion
+					// Level 0 (concurrent)
 					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)

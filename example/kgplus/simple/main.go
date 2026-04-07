@@ -6,7 +6,7 @@
 //
 // The client generates two independent secrets (sk, sk1), constructs an
 // extended secret in R', and sends a homing key for ring switching.
-// The server derives evaluation keys using PubToRot + ExpandLevel + FinalizeKeys.
+// The server derives evaluation keys using PubToRot + NewLevelExpansion + FinalizeKey.
 package main
 
 import (
@@ -40,7 +40,7 @@ func main() {
 	// 3-level: two extra P levels in R' (degree 2N).
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{55}, // LogPHK for RPrime[1]
+		[]int{55},                         // LogPHK for RPrime[1]
 		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
 	); err != nil {
 		panic(err)
@@ -94,38 +94,53 @@ func main() {
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
 	// =========================================================================
-	// SERVER: per-level derivation via PubToRot + ExpandLevel + FinalizeKeys
+	// SERVER: per-level derivation via PubToRot + NewLevelExpansion + FinalizeKey
 	// =========================================================================
 
 	eval := kgplus.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	// Level 1: expand {1,4} masters into the full base-4 set at intermediate level.
+	// Level 1: expand {1,64} masters into the full base-4 set at intermediate level.
 	var shift0L1 *hierkeys.MasterKey
 	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
-	var level1Keys *hierkeys.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
-		panic(err)
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
+	for _, r := range masterRots {
+		if _, err = exp1.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level1Keys := exp1.IntermediateKeys(masterRots)
 
 	// Level 0: derive target rotations from the expanded set.
 	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
-	var level0Keys *hierkeys.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
-		panic(err)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)
+	for _, r := range targetRots {
+		if _, err = exp0.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level0Keys := exp0.IntermediateKeys(targetRots)
 
-	// FinalizeKeys ring-switches R' keys to R and converts to lattigo convention.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
-		panic(err)
+	// Finalize each key: ring-switch R' → R, convert to lattigo convention.
+	// Release the R' MasterKey reference per iteration so the GC can reclaim
+	// it before the next FinalizeKey allocates its scratch buffers.
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
+	for _, r := range targetRots {
+		mk := level0Keys.Keys[r]
+		level0Keys.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
 	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

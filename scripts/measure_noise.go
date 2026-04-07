@@ -205,10 +205,11 @@ func measureLLKN(params llkn.Parameters, ckksParams ckks.Parameters, targetRot i
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}
-	level0, err := eval.ExpandLevel(0, shift0, masterKeys, []int{targetRot})
-	if err != nil {
+	exp := eval.NewLevelExpansion(0, shift0, masterKeys)
+	if _, err := exp.Derive(targetRot); err != nil {
 		return math.NaN(), math.NaN()
 	}
+	level0 := exp.IntermediateKeys([]int{targetRot})
 	derivedGk, err := eval.FinalizeKey(level0.Keys[targetRot])
 	if err != nil {
 		return math.NaN(), math.NaN()
@@ -256,29 +257,26 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 		if err != nil {
 			return math.NaN(), math.NaN()
 		}
-		intermediate, err := eval.ExpandLevel(level, shift0, currentMasters, fullSet)
-		if err != nil {
-			return math.NaN(), math.NaN()
+		exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+		for _, r := range fullSet {
+			if _, err := exp.Derive(r); err != nil {
+				return math.NaN(), math.NaN()
+			}
 		}
-		currentMasters = intermediate.Keys
+		currentMasters = exp.IntermediateKeys(fullSet).Keys
 	}
 
 	shift0, err := hierkeys.PubToRot(params.RPrime[0], topParams, tk.PublicKey)
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}
-	level0, err := eval.ExpandLevel(0, shift0, currentMasters, []int{targetRot})
-	if err != nil {
+	exp0 := eval.NewLevelExpansion(0, shift0, currentMasters)
+	if _, err := exp0.Derive(targetRot); err != nil {
 		return math.NaN(), math.NaN()
 	}
+	level0 := exp0.IntermediateKeys([]int{targetRot})
 
-	galoisKeys, err := eval.FinalizeKeys(tk, level0)
-	if err != nil {
-		return math.NaN(), math.NaN()
-	}
-
-	galEl := params.Eval.GaloisElement(targetRot)
-	derivedGk, err := galoisKeys.GetGaloisKey(galEl)
+	derivedGk, err := eval.FinalizeKey(targetRot, level0.Keys[targetRot], tk.HomingKey)
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}

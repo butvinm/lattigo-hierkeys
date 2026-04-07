@@ -38,7 +38,7 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{55}, // LogPHK for RPrime[1]
+		[]int{55},                         // LogPHK for RPrime[1]
 		[]int{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for RPrime[2]
 	); err != nil {
 		panic(err)
@@ -91,10 +91,13 @@ func main() {
 	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
-	var level1Keys *hierkeys.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
-		panic(err)
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
+	for _, r := range masterRots {
+		if _, err = exp1.Derive(r); err != nil {
+			panic(err)
+		}
 	}
+	level1Keys := exp1.IntermediateKeys(masterRots)
 	fmt.Printf("Phase 1 (sequential): %d intermediate keys in R'\n", len(level1Keys.Keys))
 
 	// Phase 2 (concurrent): derive target rotations at R' level 0.
