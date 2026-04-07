@@ -127,8 +127,7 @@ func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRot
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
+	topParams := params.Top()
 	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
 
 	kgenRP := rlwe.NewKeyGenerator(topParams)
@@ -204,7 +203,7 @@ func BenchmarkKeySizes(b *testing.B) {
 					b.Fatal(err)
 				}
 
-				topRP := params.RPrime[params.NumLevels()-1]
+				topRP := params.Top()
 				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
 					topRP.MaxLevel(), topRP.MaxLevelP())
 
@@ -259,14 +258,13 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				}
 				tk := genLLKNTransmissionKeys(b, params, masterRots)
 				eval := llkn.NewEvaluator(params)
-				topLevel := params.NumLevels() - 1
 				runtime.GC()
 				b.Logf("after setup: heap=%d MB", heapMB())
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Top(), tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -279,7 +277,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						currentMasters = exp.IntermediateKeys(masterRots).Keys
 						b.Logf("after expand(%d): heap=%d MB", level, heapMB())
 					}
-					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -314,14 +312,13 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
-				topLevel := params.NumLevels() - 1
 				runtime.GC()
 				b.Logf("after setup: heap=%d MB", heapMB())
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.Top(), tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -334,7 +331,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						currentMasters = exp.IntermediateKeys(masterRots).Keys
 						b.Logf("after expand(%d): heap=%d MB", level, heapMB())
 					}
-					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -389,7 +386,6 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				}
 				tk := genLLKNTransmissionKeys(b, params, masterRots)
 				eval := llkn.NewEvaluator(params)
-				topLevel := params.NumLevels() - 1
 
 				runtime.GC()
 				b.ResetTimer()
@@ -397,7 +393,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					// Intermediate levels (sequential)
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Levels[topLevel], tk.PublicKey)
+						shift0, err := hierkeys.PubToRot(params.Levels[level], params.Top(), tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -411,7 +407,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					}
 
 					// Level 0 (concurrent)
-					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Levels[topLevel], tk.PublicKey)
+					shift0, err := hierkeys.PubToRot(params.Levels[0], params.Top(), tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -449,7 +445,6 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
-				topLevel := params.NumLevels() - 1
 
 				runtime.GC()
 				b.ResetTimer()
@@ -457,7 +452,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					// Intermediate levels (sequential)
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.RPrime[topLevel], tk.PublicKey)
+						shift0, err := hierkeys.PubToRot(params.RPrime[level], params.Top(), tk.PublicKey)
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -471,7 +466,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					}
 
 					// Level 0 (concurrent)
-					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+					shift0, err := hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -601,8 +596,7 @@ func setupKGPlus14(b *testing.B) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
+	topParams := params.Top()
 	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
@@ -642,8 +636,7 @@ func BenchmarkRotToRot(b *testing.B) {
 
 	b.Run("KGPlus/level0", func(b *testing.B) {
 		params, eval, tk := setupKGPlus14(b)
-		topLevel := params.NumLevels() - 1
-		shift0, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+		shift0, err := hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -659,8 +652,7 @@ func BenchmarkRotToRot(b *testing.B) {
 
 	b.Run("KGPlus/level1", func(b *testing.B) {
 		params, eval, tk := setupKGPlus14(b)
-		topLevel := params.NumLevels() - 1
-		shift0, err := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey)
+		shift0, err := hierkeys.PubToRot(params.RPrime[1], params.Top(), tk.PublicKey)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -689,10 +681,9 @@ func BenchmarkPubToRot(b *testing.B) {
 
 	b.Run("KGPlus/level0", func(b *testing.B) {
 		params, _, tk := setupKGPlus14(b)
-		topLevel := params.NumLevels() - 1
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if _, err := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+			if _, err := hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -700,10 +691,9 @@ func BenchmarkPubToRot(b *testing.B) {
 
 	b.Run("KGPlus/level1", func(b *testing.B) {
 		params, _, tk := setupKGPlus14(b)
-		topLevel := params.NumLevels() - 1
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			if _, err := hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
+			if _, err := hierkeys.PubToRot(params.RPrime[1], params.Top(), tk.PublicKey); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -735,8 +725,7 @@ func BenchmarkFinalizeKey(b *testing.B) {
 
 	b.Run("KGPlus", func(b *testing.B) {
 		params, eval, tk := setupKGPlus14(b)
-		topLevel := params.NumLevels() - 1
-		shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey)
+		shift0, _ := hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey)
 		galEl := params.RPrime[0].GaloisElement(1)
 
 		// Pre-generate keys
@@ -785,7 +774,7 @@ func BenchmarkGaloisKeyToMasterKey(b *testing.B) {
 			NTTFlag: true, LogNthRoot: 16,
 		})
 		params, _ := kgplus.NewParameters(paramsEval, []int{56}, []int{56})
-		topParams := params.RPrime[params.NumLevels()-1]
+		topParams := params.Top()
 		kgenHK := rlwe.NewKeyGenerator(params.HK)
 		sk := kgenHK.GenSecretKeyNew()
 		sk1 := kgenHK.GenSecretKeyNew()

@@ -231,7 +231,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
 	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
+	topParams := params.Top()
 	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
 
 	slots := topParams.N() / 2
@@ -285,7 +285,7 @@ func measureKGPlus(params kgplus.Parameters, ckksParams ckks.Parameters, targetR
 	if err != nil {
 		return math.NaN(), math.NaN()
 	}
-	keyNoise := rlwe.NoiseGaloisKey(derivedGk, skEval, params.Eval)
+	keyNoise := rlwe.NoiseGaloisKey(derivedGk, skEval, params.Eval())
 	rotErr := rotateAndMeasure(ckksParams, skEval, derivedGk, targetRot)
 	return keyNoise, rotErr
 }

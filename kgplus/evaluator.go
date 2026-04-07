@@ -41,11 +41,11 @@ func NewEvaluator(params Parameters) *Evaluator {
 		poolRPQ:  ring.NewPool(params.RPrime[0].RingQ(), structs.NewSyncPoolUint64(params.RPrime[0].N())),
 		poolRPP:  ring.NewPool(params.RPrime[0].RingP(), structs.NewSyncPoolUint64(params.RPrime[0].N())),
 		poolHK:   ring.NewPool(params.HK.RingQ(), structs.NewSyncPoolUint64(params.HK.N())),
-		poolEvQ:  ring.NewPool(params.Eval.RingQ(), structs.NewSyncPoolUint64(params.Eval.N())),
+		poolEvQ:  ring.NewPool(params.eval.RingQ(), structs.NewSyncPoolUint64(params.eval.N())),
 	}
 
-	if params.Eval.RingP() != nil {
-		eval.poolEvP = ring.NewPool(params.Eval.RingP(), structs.NewSyncPoolUint64(params.Eval.N()))
+	if params.eval.RingP() != nil {
+		eval.poolEvP = ring.NewPool(params.eval.RingP(), structs.NewSyncPoolUint64(params.eval.N()))
 	}
 
 	return eval
@@ -61,7 +61,7 @@ func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKe
 	return hierkeys.NewLevelExpansion(
 		eval.rotEvals[level].RotToRot,
 		eval.params.RPrime[level],
-		eval.params.Eval.N()/2,
+		eval.params.eval.N()/2,
 		shift0Key,
 		masterKeys,
 	)

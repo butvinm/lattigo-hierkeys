@@ -45,8 +45,7 @@ func main() {
 	}
 
 	slots := ckksParams.MaxSlots()
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
+	topParams := params.Top()
 	fmt.Printf("KG+ concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
@@ -88,7 +87,7 @@ func main() {
 
 	// Phase 1 (sequential): expand at intermediate R' level.
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
@@ -104,7 +103,7 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 

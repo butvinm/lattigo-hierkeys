@@ -49,8 +49,7 @@ func main() {
 	}
 
 	slots := ckksParams.MaxSlots()
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
+	topParams := params.Top()
 	fmt.Printf("KG+ CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
@@ -186,7 +185,7 @@ func main() {
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
@@ -200,7 +199,7 @@ func main() {
 
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)

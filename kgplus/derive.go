@@ -11,7 +11,7 @@ import (
 // FinalizeKey ring-switches one R' MasterKey to R and converts to a standard
 // lattigo GaloisKey. Thread-safe.
 func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *rlwe.EvaluationKey) (*rlwe.GaloisKey, error) {
-	galElR := eval.params.Eval.GaloisElement(rot)
+	galElR := eval.params.eval.GaloisElement(rot)
 	rsGK, err := eval.RingSwitchGaloisKey(mk, homingKey, galElR)
 	if err != nil {
 		return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
@@ -30,7 +30,7 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
 
-	paramsEval := eval.params.Eval
+	paramsEval := eval.params.eval
 	paramsHK := eval.params.HK
 	paramsRPrime := eval.params.RPrime[0]
 
@@ -179,7 +179,7 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 // Thread-safe: uses pool-based scratch buffers.
 func (eval *Evaluator) convertToLattigoConvention(gk *rlwe.GaloisKey) error {
 
-	paramsEval := eval.params.Eval
+	paramsEval := eval.params.eval
 
 	galEl := gk.GaloisElement
 	galElInv := paramsEval.ModInvGaloisElement(galEl)

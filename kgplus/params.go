@@ -26,9 +26,19 @@ import (
 // KG+ only supports the Standard ring type (not ConjugateInvariant),
 // because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
-	Eval   rlwe.Parameters
+	eval   rlwe.Parameters
 	HK     rlwe.Parameters
 	RPrime []rlwe.Parameters // RPrime[0]=level0, RPrime[k-1]=top master
+}
+
+// Eval returns the evaluation-level parameters.
+func (p Parameters) Eval() rlwe.Parameters {
+	return p.eval
+}
+
+// Top returns the top (master) level parameters (RPrime[k-1]).
+func (p Parameters) Top() rlwe.Parameters {
+	return p.RPrime[len(p.RPrime)-1]
 }
 
 // NumLevels returns the number of hierarchy levels (k = len(RPrime)).
@@ -45,12 +55,12 @@ func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, err
 	if skHK.LevelQ()+1 != expectedQ {
 		return nil, fmt.Errorf("sk has %d Q primes, want %d (HK level)", skHK.LevelQ()+1, expectedQ)
 	}
-	skEval := rlwe.NewSecretKey(p.Eval)
-	for m := 0; m <= p.Eval.MaxLevel(); m++ {
+	skEval := rlwe.NewSecretKey(p.eval)
+	for m := 0; m <= p.eval.MaxLevel(); m++ {
 		copy(skEval.Value.Q.Coeffs[m], skHK.Value.Q.Coeffs[m])
 	}
-	for m := 0; m <= p.Eval.MaxLevelP(); m++ {
-		copy(skEval.Value.P.Coeffs[m], skHK.Value.Q.Coeffs[p.Eval.QCount()+m])
+	for m := 0; m <= p.eval.MaxLevelP(); m++ {
+		copy(skEval.Value.P.Coeffs[m], skHK.Value.Q.Coeffs[p.eval.QCount()+m])
 	}
 	return skEval, nil
 }
@@ -183,7 +193,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 	}
 
 	return Parameters{
-		Eval:   eval,
+		eval:   eval,
 		HK:     paramsHK,
 		RPrime: rpLevels,
 	}, nil
