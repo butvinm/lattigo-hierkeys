@@ -227,18 +227,30 @@ func BenchmarkKeySizes(b *testing.B) {
 	}
 }
 
-// measurePhase reports peak and retained HeapInuse (in MB) at the current
+// measurePhase reports peak and held HeapInuse (in MB) at the current
 // point in the expansion, excluded from the benchmark's timer via Stop/Start.
 //
-// peak     = HeapInuse before forced GC (live + uncollected garbage)
-// retained = HeapInuse after forced GC (truly live working set)
+// peak = HeapInuse just before a forced GC. This includes everything
+// the program can still reach AND any garbage GC has not swept yet —
+// it is the right number for "how much memory did this phase need".
 //
-// retained << peak means the phase produced garbage GC could reclaim.
-// retained ≈ peak means the reported memory is actually held.
+// held = HeapInuse just after the forced GC. This is what survives:
+//  1. GC sweep of unreachable garbage produced by the phase, and
+//  2. Go's runtime liveness analysis dropping local variables that
+//     have no use after this call (notably the LevelExpansion `exp`
+//     whose entries cache holds stepping-stone keys we no longer need).
 //
-// For memory metrics to be meaningful, run with -benchtime=1x; with higher
-// iteration counts, ReportMetric will overwrite the values per iteration
-// but they should be equivalent across iterations.
+// As a consequence, `held` is NOT "the working set during this phase"
+// — it is "what's still reachable from variables used after this call".
+// For expansion phases, that means held ≈ the keys you copied into
+// IntermediateKeys plus the previous level's masters; the stepping
+// stones in exp.entries get dropped automatically by Go's liveness.
+// Use peak when sizing memory; use the peak/held delta to see how
+// much of the phase's footprint is transient.
+//
+// For memory metrics to be meaningful, run with -benchtime=1x; with
+// higher iteration counts, ReportMetric overwrites per iteration but
+// values should be similar across runs.
 func measurePhase(b *testing.B, phase string) {
 	b.StopTimer()
 	defer b.StartTimer()
