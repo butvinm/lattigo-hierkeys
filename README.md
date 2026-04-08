@@ -83,7 +83,7 @@ Convention: q₀=55b, qᵢ=40b (Δ=2⁴⁰), Pᵢ=55b (eval), hierarchy P primes
 decomposition is count-based (`dnum = ceil(QCount/PCount)`) with each digit holding
 exactly PCount consecutive Q primes. Smaller hierarchy P primes cause noise to blow
 up by `2^(max_digit_bits − P_bits)` per RotToRot. See CLAUDE.md "Noise from
-GadgetProduct". Verified empirically via `scripts/measure_noise.go`.
+GadgetProduct".
 
 **Scheme configurations:**
 

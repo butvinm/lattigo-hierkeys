@@ -67,7 +67,6 @@ func buildLogQ(n, bitSize int) []int {
 // Lattigo's gadget decomposition is count-based: dnum = ceil(QCount/PCount), with
 // each digit holding exactly PCount consecutive Q primes regardless of size. Noise
 // blows up by 2^(max_digit_bits − P_bits) when P bits < max digit bits. See CLAUDE.md.
-// Verified empirically via scripts/measure_noise.go.
 var benchScenarios = []benchScenario{
 	{
 		// LogN=14: Q_max=429, Q_max(2N)=857. depth=4, dnum_eval=3.
