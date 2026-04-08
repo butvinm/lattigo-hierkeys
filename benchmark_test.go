@@ -1,6 +1,7 @@
 package hierkeys_test
 
 import (
+	"fmt"
 	"runtime"
 	"strconv"
 	"sync"
@@ -226,13 +227,35 @@ func BenchmarkKeySizes(b *testing.B) {
 	}
 }
 
-func heapMB() uint64 {
+// measurePhase reports peak and retained HeapInuse (in MB) at the current
+// point in the expansion, excluded from the benchmark's timer via Stop/Start.
+//
+// peak     = HeapInuse before forced GC (live + uncollected garbage)
+// retained = HeapInuse after forced GC (truly live working set)
+//
+// retained << peak means the phase produced garbage GC could reclaim.
+// retained ≈ peak means the reported memory is actually held.
+//
+// For memory metrics to be meaningful, run with -benchtime=1x; with higher
+// iteration counts, ReportMetric will overwrite the values per iteration
+// but they should be equivalent across iterations.
+func measurePhase(b *testing.B, phase string) {
+	b.StopTimer()
+	defer b.StartTimer()
+
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	return m.HeapInuse / (1024 * 1024)
+	peak := float64(m.HeapInuse) / (1024 * 1024)
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	retained := float64(m.HeapInuse) / (1024 * 1024)
+
+	b.ReportMetric(peak, phase+"_peak_MB")
+	b.ReportMetric(retained, phase+"_held_MB")
 }
 
-// BenchmarkDeriveGaloisKeys measures server-side key derivation time.
+// BenchmarkDeriveGaloisKeys measures server-side key derivation time and
+// per-phase memory (peak and held) via measurePhase.
 func BenchmarkDeriveGaloisKeys(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -258,8 +281,6 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				}
 				tk := genLLKNTransmissionKeys(b, params, masterRots)
 				eval := llkn.NewEvaluator(params)
-				runtime.GC()
-				b.Logf("after setup: heap=%d MB", heapMB())
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					currentMasters := tk.MasterRotKeys
@@ -275,7 +296,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							}
 						}
 						currentMasters = exp.IntermediateKeys(masterRots).Keys
-						b.Logf("after expand(%d): heap=%d MB", level, heapMB())
+						measurePhase(b, fmt.Sprintf("expand_lvl%d", level))
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
@@ -288,7 +309,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						}
 					}
 					level0 := exp0.IntermediateKeys(targetRots)
-					b.Logf("after expand(0): heap=%d MB", heapMB())
+					measurePhase(b, "expand_lvl0")
 					for _, r := range targetRots {
 						mk := level0.Keys[r]
 						level0.Keys[r] = nil
@@ -296,7 +317,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
-					b.Logf("after finalize: heap=%d MB", heapMB())
+					measurePhase(b, "finalize")
 				}
 			})
 
@@ -312,8 +333,6 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
-				runtime.GC()
-				b.Logf("after setup: heap=%d MB", heapMB())
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					currentMasters := tk.MasterRotKeys
@@ -329,7 +348,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							}
 						}
 						currentMasters = exp.IntermediateKeys(masterRots).Keys
-						b.Logf("after expand(%d): heap=%d MB", level, heapMB())
+						measurePhase(b, fmt.Sprintf("expand_lvl%d", level))
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
@@ -342,7 +361,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						}
 					}
 					level0 := exp0.IntermediateKeys(targetRots)
-					b.Logf("after expand(0): heap=%d MB", heapMB())
+					measurePhase(b, "expand_lvl0")
 					for _, r := range targetRots {
 						mk := level0.Keys[r]
 						level0.Keys[r] = nil
@@ -350,7 +369,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
-					b.Logf("after finalize: heap=%d MB", heapMB())
+					measurePhase(b, "finalize")
 				}
 			})
 		})
