@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/butvinm/lattigo-hierkeys/kgplus"
@@ -251,9 +252,14 @@ func BenchmarkKeySizes(b *testing.B) {
 // For memory metrics to be meaningful, run with -benchtime=1x; with
 // higher iteration counts, ReportMetric overwrites per iteration but
 // values should be similar across runs.
-func measurePhase(b *testing.B, phase string) {
+func measurePhase(b *testing.B, phase string, phaseStart *time.Time) {
 	b.StopTimer()
 	defer b.StartTimer()
+
+	// Wall time elapsed in this phase (since the previous measurePhase
+	// call or since *phaseStart was last set). Reported in seconds.
+	elapsed := time.Since(*phaseStart)
+	b.ReportMetric(elapsed.Seconds(), phase+"_s")
 
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -264,6 +270,10 @@ func measurePhase(b *testing.B, phase string) {
 
 	b.ReportMetric(peak, phase+"_peak_MB")
 	b.ReportMetric(retained, phase+"_held_MB")
+
+	// Reset the timer for the next phase, AFTER the forced GC so the
+	// measurement overhead is not counted toward the next phase.
+	*phaseStart = time.Now()
 }
 
 // BenchmarkDeriveGaloisKeys measures server-side key derivation time and
@@ -295,6 +305,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				eval := llkn.NewEvaluator(params)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
+					phaseStart := time.Now()
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
@@ -308,7 +319,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							}
 						}
 						currentMasters = exp.IntermediateKeys(masterRots).Keys
-						measurePhase(b, fmt.Sprintf("expand_lvl%d", level))
+						measurePhase(b, fmt.Sprintf("expand_lvl%d", level), &phaseStart)
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
@@ -321,7 +332,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						}
 					}
 					level0 := exp0.IntermediateKeys(targetRots)
-					measurePhase(b, "expand_lvl0")
+					measurePhase(b, "expand_lvl0", &phaseStart)
 					for _, r := range targetRots {
 						mk := level0.Keys[r]
 						level0.Keys[r] = nil
@@ -329,7 +340,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
-					measurePhase(b, "finalize")
+					measurePhase(b, "finalize", &phaseStart)
 				}
 			})
 
@@ -347,6 +358,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				eval := kgplus.NewEvaluator(params)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
+					phaseStart := time.Now()
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
@@ -360,7 +372,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							}
 						}
 						currentMasters = exp.IntermediateKeys(masterRots).Keys
-						measurePhase(b, fmt.Sprintf("expand_lvl%d", level))
+						measurePhase(b, fmt.Sprintf("expand_lvl%d", level), &phaseStart)
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
@@ -373,7 +385,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						}
 					}
 					level0 := exp0.IntermediateKeys(targetRots)
-					measurePhase(b, "expand_lvl0")
+					measurePhase(b, "expand_lvl0", &phaseStart)
 					for _, r := range targetRots {
 						mk := level0.Keys[r]
 						level0.Keys[r] = nil
@@ -381,7 +393,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
-					measurePhase(b, "finalize")
+					measurePhase(b, "finalize", &phaseStart)
 				}
 			})
 		})
