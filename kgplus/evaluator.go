@@ -19,7 +19,7 @@ type Evaluator struct {
 	evalHK  *rlwe.Evaluator  // HK-level evaluator for GadgetProduct
 	poolRPQ *ring.BufferPool // R' Q-domain (degree 2N)
 	poolRPP *ring.BufferPool // R' P-domain (degree 2N)
-	poolHK  *ring.BufferPool // HK level (degree N)
+	poolHK  *rlwe.BufferPool // HK level (degree N), serves ciphertext buffers too
 
 	// Convention convert resources
 	poolEvQ *ring.BufferPool // eval Q (degree N)
@@ -40,7 +40,7 @@ func NewEvaluator(params Parameters) *Evaluator {
 		evalHK:   rlwe.NewEvaluator(params.hk, nil),
 		poolRPQ:  ring.NewPool(params.levels[0].RingQ(), structs.NewSyncPoolUint64(params.levels[0].N())),
 		poolRPP:  ring.NewPool(params.levels[0].RingP(), structs.NewSyncPoolUint64(params.levels[0].N())),
-		poolHK:   ring.NewPool(params.hk.RingQ(), structs.NewSyncPoolUint64(params.hk.N())),
+		poolHK:   rlwe.NewPool(params.hk.RingQP(), structs.NewSyncPoolUint64(params.hk.N())),
 		poolEvQ:  ring.NewPool(params.eval.RingQ(), structs.NewSyncPoolUint64(params.eval.N())),
 	}
 

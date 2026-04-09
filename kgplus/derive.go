@@ -104,7 +104,8 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 	rsA := poolHK.GetBuffPoly()
 	defer poolHK.RecycleBuffPoly(rsA)
 
-	ctKS := rlwe.NewCiphertext(paramsHK, 1, levelQHK)
+	ctKS := poolHK.GetBuffCt(1, levelQHK)
+	defer poolHK.RecycleBuffCt(ctKS)
 	ctKS.IsNTT = true
 
 	pIdx := levelQEval + 1
