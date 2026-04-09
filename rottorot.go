@@ -17,7 +17,7 @@ type RotToRotEvaluator struct {
 	paramsTarget rlwe.Parameters
 	paramsMaster rlwe.Parameters
 	eval         *rlwe.Evaluator  // thread-safe (pool-based in lattigo v6.2)
-	pool         *ring.BufferPool // thread-safe (backed by sync.Pool)
+	pool         *rlwe.BufferPool // thread-safe (backed by sync.Pool)
 }
 
 // NewRotToRotEvaluator creates a thread-safe evaluator for RotToRot between
@@ -29,7 +29,7 @@ func NewRotToRotEvaluator(paramsTarget, paramsMaster rlwe.Parameters) *RotToRotE
 		paramsTarget: paramsTarget,
 		paramsMaster: paramsMaster,
 		eval:         rlwe.NewEvaluator(paramsMaster, nil),
-		pool:         ring.NewPool(paramsMaster.RingQ(), structs.NewSyncPoolUint64(paramsMaster.N())),
+		pool:         rlwe.NewPool(paramsMaster.RingQP(), structs.NewSyncPoolUint64(paramsMaster.N())),
 	}
 }
 
@@ -77,8 +77,8 @@ func (rtr *RotToRotEvaluator) RotToRot(
 	defer poolMaster.RecycleBuffPoly(bAut)
 	aAut := poolMaster.GetBuffPoly()
 	defer poolMaster.RecycleBuffPoly(aAut)
-
-	ctKS := rlwe.NewCiphertext(paramsMaster, 1, levelQMaster)
+	ctKS := poolMaster.GetBuffCt(1, levelQMaster)
+	defer poolMaster.RecycleBuffCt(ctKS)
 	ctKS.IsNTT = true
 
 	// Output key at target level
