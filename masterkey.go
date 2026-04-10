@@ -119,29 +119,32 @@ func automorphGadgetCiphertext(params rlwe.Parameters, gk *rlwe.GaloisKey, galEl
 		}
 	}
 
+	// Scratch buffers reused across all components (1 per ring).
+	tmpQ := ringQ.NewPoly()
+	var tmpP ring.Poly
+	if ringP != nil {
+		tmpP = ringP.NewPoly()
+	}
+
 	for i := range gk.Value {
 		for j := range gk.Value[i] {
 			component := gk.Value[i][j]
 
-			automorphInPlace(ringQ, indexQ, component[0].Q)
+			ringQ.AutomorphismNTTWithIndex(component[0].Q, indexQ, tmpQ)
+			component[0].Q.CopyLvl(component[0].Q.Level(), tmpQ)
 			if ringP != nil {
-				automorphInPlace(ringP, indexP, component[0].P)
+				ringP.AutomorphismNTTWithIndex(component[0].P, indexP, tmpP)
+				component[0].P.CopyLvl(component[0].P.Level(), tmpP)
 			}
 
-			automorphInPlace(ringQ, indexQ, component[1].Q)
+			ringQ.AutomorphismNTTWithIndex(component[1].Q, indexQ, tmpQ)
+			component[1].Q.CopyLvl(component[1].Q.Level(), tmpQ)
 			if ringP != nil {
-				automorphInPlace(ringP, indexP, component[1].P)
+				ringP.AutomorphismNTTWithIndex(component[1].P, indexP, tmpP)
+				component[1].P.CopyLvl(component[1].P.Level(), tmpP)
 			}
 		}
 	}
 
 	return nil
-}
-
-// automorphInPlace applies an automorphism to a polynomial using a pre-computed
-// index. Allocates a temporary buffer internally.
-func automorphInPlace(r *ring.Ring, index []uint64, p ring.Poly) {
-	tmp := r.NewPoly()
-	r.AutomorphismNTTWithIndex(p, index, tmp)
-	p.CopyLvl(p.Level(), tmp)
 }
