@@ -133,28 +133,28 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
 | 15   | 6,656 MB     | 198 MB (3.0%)   | 167 MB (2.5%)  |
 | 16   | 57,345 MB    | 1,862 MB (3.2%) | 858 MB (1.5%)  |
 
-**Client TX generation time** (16 vCPU Intel Xeon Cascadelake):
+**Client TX generation time** (16 vCPU Intel Xeon Icelake):
 
 | LogN | LLKN 2-level | KG+ 3-level |
 | ---- | ------------ | ----------- |
-| 14   | 0.68 s       | 0.34 s      |
-| 15   | 1.25 s       | 1.14 s      |
+| 14   | 0.67 s       | 0.36 s      |
+| 15   | 1.24 s       | 1.12 s      |
+| 16   | 12.5 s       | 6.5 s       |
+
+**Server derivation time, sequential** (16 vCPU Intel Xeon Icelake):
+
+| LogN | LLKN 2-level | KG+ 3-level |
+| ---- | ------------ | ----------- |
+| 14   | 68.9 s       | 209.2 s     |
+| 15   | 307.7 s      | 836.2 s     |
 | 16   | TBD          | TBD         |
 
-**Server derivation time, sequential** (16 vCPU Intel Xeon Cascadelake):
+**Server derivation time, concurrent** (16 vCPU Intel Xeon Icelake, GOMAXPROCS=16, n=3 mean):
 
 | LogN | LLKN 2-level | KG+ 3-level |
 | ---- | ------------ | ----------- |
-| 14   | 72.6 s       | 218.2 s     |
-| 15   | 324.6 s      | 877.6 s     |
-| 16   | TBD          | TBD         |
-
-**Server derivation time, concurrent** (16 vCPU Intel Xeon Cascadelake, GOMAXPROCS=16):
-
-| LogN | LLKN 2-level | KG+ 3-level |
-| ---- | ------------ | ----------- |
-| 14   | 5.4 s        | 50.3 s      |
-| 15   | 32.4 s       | 251.9 s     |
+| 14   | 5.2 s        | 44.4 s      |
+| 15   | 22.9 s       | 112.1 s     |
 | 16   | TBD          | TBD         |
 
 ```bash
