@@ -407,6 +407,121 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 	}
 }
 
+// BenchmarkDeriveGaloisKeysStreaming measures streaming derivation: each target
+// is derived and finalized immediately, never accumulating all keys. Peak memory
+// should be ~22 entries × per-key-size + FinalizeKey scratch.
+func BenchmarkDeriveGaloisKeysStreaming(b *testing.B) {
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+				LogN:       sc.LogN,
+				LogQ:       sc.LogQ,
+				LogP:       sc.LogP,
+				NTTFlag:    true,
+				LogNthRoot: sc.LogN + 2,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			slots := paramsEval.N() / 2
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := benchTargetRots(sc.LogN)
+
+			b.Run("LLKN", func(b *testing.B) {
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+				tk := genLLKNTransmissionKeys(b, params, masterRots)
+				eval := llkn.NewEvaluator(params)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					phaseStart := time.Now()
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
+						for _, r := range masterRots {
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Fatal(err)
+							}
+							currentMasters[r] = mk
+						}
+					}
+					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					for _, r := range targetRots {
+						mk, err := exp0.Derive(r)
+						if err != nil {
+							b.Fatal(err)
+						}
+						if _, err := eval.FinalizeKey(mk); err != nil {
+							b.Fatal(err)
+						}
+					}
+					measurePhase(b, "stream", &phaseStart)
+				}
+			})
+
+			b.Run("KGPlus_k3", func(b *testing.B) {
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
+				if err != nil {
+					b.Fatal(err)
+				}
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2]
+				k3MasterRots := []int{1, bigMaster}
+				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
+				eval := kgplus.NewEvaluator(params)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					phaseStart := time.Now()
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
+						for _, r := range masterRots {
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Fatal(err)
+							}
+							currentMasters[r] = mk
+						}
+					}
+					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					for _, r := range targetRots {
+						mk, err := exp0.Derive(r)
+						if err != nil {
+							b.Fatal(err)
+						}
+						if _, err := eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+							b.Fatal(err)
+						}
+					}
+					measurePhase(b, "stream", &phaseStart)
+				}
+			})
+		})
+	}
+}
+
 // BenchmarkDeriveGaloisKeysConcurrent measures concurrent server-side derivation.
 // Uses the same pattern as the concurrent examples: NewLevelExpansion sequentially
 // for intermediate levels, NewLevelExpansion + goroutines for level 0,
