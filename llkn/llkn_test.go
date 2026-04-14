@@ -86,24 +86,30 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 			return nil, err
 		}
 		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
+		nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
 		for _, r := range masterRots {
-			if _, err := exp.Derive(r); err != nil {
+			mk, err := exp.Derive(r)
+			if err != nil {
 				return nil, err
 			}
+			nextMasters[r] = mk
 		}
-		currentMasters = exp.IntermediateKeys(masterRots).Keys
+		currentMasters = nextMasters
 	}
 	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Levels()[topLevel], tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
 	exp := eval.NewLevelExpansion(0, shift0Key0, currentMasters, targetRots)
+	result := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 	for _, r := range targetRots {
-		if _, err := exp.Derive(r); err != nil {
+		mk, err := exp.Derive(r)
+		if err != nil {
 			return nil, err
 		}
+		result.Keys[r] = mk
 	}
-	return exp.IntermediateKeys(targetRots), nil
+	return result, nil
 }
 
 func TestLLKN(t *testing.T) {
@@ -326,21 +332,24 @@ func testPubToRot(tc *testContext, t *testing.T) {
 						shift0, err := hierkeys.PubToRot(params.Levels()[lvl], params.Top(), tc.tk.PublicKey)
 						require.NoError(t, err)
 						expDown := eval.NewLevelExpansion(lvl, shift0, currentMasters, masterRots)
+						nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
 						for _, r := range masterRots {
-							_, err := expDown.Derive(r)
+							mk, err := expDown.Derive(r)
 							require.NoError(t, err)
+							nextMasters[r] = mk
 						}
-						currentMasters = expDown.IntermediateKeys(masterRots).Keys
+						currentMasters = nextMasters
 					}
 				}
 
 				// Now expand at this level using the PubToRot-derived shift-0 key
 				expHere := eval.NewLevelExpansion(level, derivedShift0, currentMasters, targetRots)
+				intermediate := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 				for _, r := range targetRots {
-					_, err := expHere.Derive(r)
+					mk, err := expHere.Derive(r)
 					require.NoError(t, err)
+					intermediate.Keys[r] = mk
 				}
-				intermediate := expHere.IntermediateKeys(targetRots)
 
 				if level == 0 {
 					// At level 0, finalize and verify with actual rotation

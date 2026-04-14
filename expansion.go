@@ -30,9 +30,8 @@ type LevelExpansion struct {
 	mu      sync.Mutex
 	entries map[int]*expansionEntry
 
-	// Eviction plan, populated by Plan. When non-nil, intermediates whose
-	// remaining-use counter drops to zero and that are not in targetSet are
-	// removed from entries (the seed rot=0 is never evicted).
+	// Unified refcount: chain-step uses + 1 per target for caller's Derive.
+	// When a refcount hits zero the entry is evicted — targets included.
 	refcount  map[int]int
 	targetSet map[int]bool
 }
@@ -76,6 +75,8 @@ func NewLevelExpansion(
 			continue
 		}
 		targetSet[normalized] = true
+		// +1 for the caller's future Derive(r) return.
+		refcount[normalized]++
 		steps := DecomposeRotation(normalized, masterRots)
 		if steps == nil {
 			continue
@@ -157,52 +158,35 @@ func (e *LevelExpansion) Derive(rot int) (*MasterKey, error) {
 	}
 
 	entry := e.getOrCreate(normalized)
-	return entry.key, entry.err
+	key, err := entry.key, entry.err
+	if e.targetSet[normalized] {
+		e.releaseRef(normalized)
+	}
+	return key, err
 }
 
-// releaseRef decrements the future-use counter for inputRot. When it reaches
-// zero and inputRot is neither the seed (0) nor a target, the map entry is
-// dropped so the GC can collect its MasterKey. Goroutines still holding a
-// local pointer keep the key alive until they finish.
-func (e *LevelExpansion) releaseRef(inputRot int) {
-	if inputRot == 0 {
+// releaseRef decrements the future-use counter for rot. When it reaches zero
+// the map entry is dropped so the GC can collect its MasterKey. Goroutines
+// still holding a local pointer keep the key alive until they finish.
+//
+// The refcount for each rotation includes both internal chain-step consumers
+// and (for targets) +1 for the caller's Derive return. This means targets are
+// protected until the caller has fetched the key AND all chain consumers are
+// done — no separate target-set protection is needed.
+func (e *LevelExpansion) releaseRef(rot int) {
+	if rot == 0 {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if _, ok := e.refcount[inputRot]; !ok {
+	if _, ok := e.refcount[rot]; !ok {
 		return
 	}
-	e.refcount[inputRot]--
-	if e.refcount[inputRot] <= 0 && !e.targetSet[inputRot] {
-		delete(e.entries, inputRot)
-		delete(e.refcount, inputRot)
+	e.refcount[rot]--
+	if e.refcount[rot] <= 0 {
+		delete(e.entries, rot)
+		delete(e.refcount, rot)
 	}
-}
-
-// IntermediateKeys collects results for the requested rotations.
-// Call after all Derive calls have completed.
-func (e *LevelExpansion) IntermediateKeys(targetRotations []int) *IntermediateKeys {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	result := &IntermediateKeys{Keys: make(map[int]*MasterKey, len(targetRotations))}
-	for _, target := range targetRotations {
-		normalized := ((target % e.nSlots) + e.nSlots) % e.nSlots
-		if normalized == 0 {
-			continue
-		}
-		if entry, ok := e.entries[normalized]; ok {
-			select {
-			case <-entry.done:
-				if entry.key != nil {
-					result.Keys[target] = entry.key
-				}
-			default:
-			}
-		}
-	}
-	return result
 }
 
 func sortedIntKeys(m map[int]*MasterKey) []int {

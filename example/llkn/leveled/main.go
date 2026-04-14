@@ -90,13 +90,15 @@ func main() {
 	// Derive once per master rotation produces the full base-4 rotation set;
 	// the resulting IntermediateKeys can be serialized and stored for later use.
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
+	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, r := range masterRots {
-		if _, err = exp1.Derive(r); err != nil {
+		mk, err := exp1.Derive(r)
+		if err != nil {
 			panic(err)
 		}
+		level1Keys[r] = mk
 	}
-	level1Keys := exp1.IntermediateKeys(masterRots)
-	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys.Keys))
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys))
 
 	// =========================================================================
 	// SERVER PHASE 2 (active): derive target rotations at eval level
@@ -110,13 +112,15 @@ func main() {
 		panic(err)
 	}
 
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys, targetRots)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
+	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 	for _, r := range targetRots {
-		if _, err = exp0.Derive(r); err != nil {
+		mk, err := exp0.Derive(r)
+		if err != nil {
 			panic(err)
 		}
+		level0Keys.Keys[r] = mk
 	}
-	level0Keys := exp0.IntermediateKeys(targetRots)
 	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
 
 	// =========================================================================

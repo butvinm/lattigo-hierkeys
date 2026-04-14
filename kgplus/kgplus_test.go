@@ -99,24 +99,30 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 			return nil, err
 		}
 		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
+		nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
 		for _, r := range masterRots {
-			if _, err := exp.Derive(r); err != nil {
+			mk, err := exp.Derive(r)
+			if err != nil {
 				return nil, err
 			}
+			nextMasters[r] = mk
 		}
-		currentMasters = exp.IntermediateKeys(masterRots).Keys
+		currentMasters = nextMasters
 	}
 	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Top(), tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
 	exp := eval.NewLevelExpansion(0, shift0Key0, currentMasters, targetRots)
+	result := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 	for _, r := range targetRots {
-		if _, err := exp.Derive(r); err != nil {
+		mk, err := exp.Derive(r)
+		if err != nil {
 			return nil, err
 		}
+		result.Keys[r] = mk
 	}
-	return exp.IntermediateKeys(targetRots), nil
+	return result, nil
 }
 
 // TestKGPlus is the main entry point, iterating over parameter sets

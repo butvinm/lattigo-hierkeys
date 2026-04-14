@@ -97,12 +97,14 @@ func main() {
 		panic(err)
 	}
 	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRots)
+	level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 	for _, r := range targetRots {
-		if _, err = exp.Derive(r); err != nil {
+		mk, err := exp.Derive(r)
+		if err != nil {
 			panic(err)
 		}
+		level0.Keys[r] = mk
 	}
-	level0 := exp.IntermediateKeys(targetRots)
 
 	// Finalize per key, releasing the level-0 MasterKey reference for GC.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))

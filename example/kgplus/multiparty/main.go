@@ -191,26 +191,30 @@ func main() {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
+	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, r := range masterRots {
-		if _, err = exp1.Derive(r); err != nil {
+		mk, err := exp1.Derive(r)
+		if err != nil {
 			panic(err)
 		}
+		level1Keys[r] = mk
 	}
-	level1Keys := exp1.IntermediateKeys(masterRots)
-	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys.Keys))
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys))
 
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys, targetRots)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
+	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 	for _, r := range targetRots {
-		if _, err = exp0.Derive(r); err != nil {
+		mk, err := exp0.Derive(r)
+		if err != nil {
 			panic(err)
 		}
+		level0Keys.Keys[r] = mk
 	}
-	level0Keys := exp0.IntermediateKeys(targetRots)
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
 	// Finalize per key, releasing R' MasterKey references for GC.

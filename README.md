@@ -52,10 +52,11 @@ tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 eval := llkn.NewEvaluator(params)
 shift0, _ := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRotations)
+level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRotations))}
 for _, r := range targetRotations {
-    exp.Derive(r)
+    mk, _ := exp.Derive(r)
+    level0.Keys[r] = mk
 }
-level0 := exp.IntermediateKeys(targetRotations)
 
 galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))
 for _, r := range targetRotations {

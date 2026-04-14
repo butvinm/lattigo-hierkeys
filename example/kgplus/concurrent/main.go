@@ -93,13 +93,15 @@ func main() {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
+	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, r := range masterRots {
-		if _, err = exp1.Derive(r); err != nil {
+		mk, err := exp1.Derive(r)
+		if err != nil {
 			panic(err)
 		}
+		level1Keys[r] = mk
 	}
-	level1Keys := exp1.IntermediateKeys(masterRots)
-	fmt.Printf("Phase 1 (sequential): %d intermediate keys in R'\n", len(level1Keys.Keys))
+	fmt.Printf("Phase 1 (sequential): %d intermediate keys in R'\n", len(level1Keys))
 
 	// Phase 2 (concurrent): derive target rotations at R' level 0.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
@@ -109,15 +111,24 @@ func main() {
 		panic(err)
 	}
 
-	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys, targetRots)
+	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
 
+	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 	errs := make([]error, len(targetRots))
 	for i, rot := range targetRots {
 		wg.Add(1)
 		go func(idx, r int) {
 			defer wg.Done()
-			_, errs[idx] = exp.Derive(r)
+			mk, err := exp.Derive(r)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			mu.Lock()
+			level0Keys.Keys[r] = mk
+			mu.Unlock()
 		}(i, rot)
 	}
 	wg.Wait()
@@ -128,7 +139,6 @@ func main() {
 		}
 	}
 
-	level0Keys := exp.IntermediateKeys(targetRots)
 	fmt.Printf("Phase 2 (concurrent): %d level-0 keys in R'\n", len(level0Keys.Keys))
 
 	// Phase 3 (concurrent): ring-switch R' → R and convert each key in parallel.

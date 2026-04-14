@@ -312,12 +312,14 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							b.Fatal(err)
 						}
 						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
 						for _, r := range masterRots {
-							if _, err := exp.Derive(r); err != nil {
+							mk, err := exp.Derive(r)
+							if err != nil {
 								b.Fatal(err)
 							}
+							currentMasters[r] = mk
 						}
-						currentMasters = exp.IntermediateKeys(masterRots).Keys
 						measurePhase(b, fmt.Sprintf("expand_lvl%d", level), &phaseStart)
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
@@ -325,12 +327,14 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						b.Fatal(err)
 					}
 					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 					for _, r := range targetRots {
-						if _, err := exp0.Derive(r); err != nil {
+						mk, err := exp0.Derive(r)
+						if err != nil {
 							b.Fatal(err)
 						}
+						level0.Keys[r] = mk
 					}
-					level0 := exp0.IntermediateKeys(targetRots)
 					measurePhase(b, "expand_lvl0", &phaseStart)
 					for _, r := range targetRots {
 						mk := level0.Keys[r]
@@ -365,12 +369,14 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							b.Fatal(err)
 						}
 						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
 						for _, r := range masterRots {
-							if _, err := exp.Derive(r); err != nil {
+							mk, err := exp.Derive(r)
+							if err != nil {
 								b.Fatal(err)
 							}
+							currentMasters[r] = mk
 						}
-						currentMasters = exp.IntermediateKeys(masterRots).Keys
 						measurePhase(b, fmt.Sprintf("expand_lvl%d", level), &phaseStart)
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
@@ -378,12 +384,14 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						b.Fatal(err)
 					}
 					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
 					for _, r := range targetRots {
-						if _, err := exp0.Derive(r); err != nil {
+						mk, err := exp0.Derive(r)
+						if err != nil {
 							b.Fatal(err)
 						}
+						level0.Keys[r] = mk
 					}
-					level0 := exp0.IntermediateKeys(targetRots)
 					measurePhase(b, "expand_lvl0", &phaseStart)
 					for _, r := range targetRots {
 						mk := level0.Keys[r]
@@ -440,12 +448,14 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 							b.Fatal(err)
 						}
 						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
 						for _, r := range masterRots {
-							if _, err := exp.Derive(r); err != nil {
+							mk, err := exp.Derive(r)
+							if err != nil {
 								b.Fatal(err)
 							}
+							currentMasters[r] = mk
 						}
-						currentMasters = exp.IntermediateKeys(masterRots).Keys
 					}
 
 					// Level 0 (concurrent)
@@ -454,15 +464,22 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						b.Fatal(err)
 					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+					var mu sync.Mutex
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
-						go func(r int) { defer wg.Done(); exp.Derive(r) }(rot)
+						go func(r int) {
+							defer wg.Done()
+							mk, _ := exp.Derive(r)
+							mu.Lock()
+							level0Keys.Keys[r] = mk
+							mu.Unlock()
+						}(rot)
 					}
 					wg.Wait()
 
 					// Finalize (concurrent)
-					level0Keys := exp.IntermediateKeys(targetRots)
 					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 					for j, rot := range targetRots {
 						wg.Add(1)
@@ -499,12 +516,14 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 							b.Fatal(err)
 						}
 						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
 						for _, r := range masterRots {
-							if _, err := exp.Derive(r); err != nil {
+							mk, err := exp.Derive(r)
+							if err != nil {
 								b.Fatal(err)
 							}
+							currentMasters[r] = mk
 						}
-						currentMasters = exp.IntermediateKeys(masterRots).Keys
 					}
 
 					// Level 0 (concurrent)
@@ -513,15 +532,22 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						b.Fatal(err)
 					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+					var mu sync.Mutex
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
-						go func(r int) { defer wg.Done(); exp.Derive(r) }(rot)
+						go func(r int) {
+							defer wg.Done()
+							mk, _ := exp.Derive(r)
+							mu.Lock()
+							level0Keys.Keys[r] = mk
+							mu.Unlock()
+						}(rot)
 					}
 					wg.Wait()
 
 					// Finalize (concurrent)
-					level0Keys := exp.IntermediateKeys(targetRots)
 					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 					for j, rot := range targetRots {
 						wg.Add(1)
