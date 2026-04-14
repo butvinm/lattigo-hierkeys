@@ -89,7 +89,7 @@ func main() {
 	// NewLevelExpansion creates a derivation session at level 1. Calling
 	// Derive once per master rotation produces the full base-4 rotation set;
 	// the resulting IntermediateKeys can be serialized and stored for later use.
-	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
 	for _, r := range masterRots {
 		if _, err = exp1.Derive(r); err != nil {
 			panic(err)
@@ -110,7 +110,7 @@ func main() {
 		panic(err)
 	}
 
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys, targetRots)
 	for _, r := range targetRots {
 		if _, err = exp0.Derive(r); err != nil {
 			panic(err)

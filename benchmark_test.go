@@ -311,7 +311,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
 						for _, r := range masterRots {
 							if _, err := exp.Derive(r); err != nil {
 								b.Fatal(err)
@@ -324,7 +324,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters)
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
 					for _, r := range targetRots {
 						if _, err := exp0.Derive(r); err != nil {
 							b.Fatal(err)
@@ -364,7 +364,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
 						for _, r := range masterRots {
 							if _, err := exp.Derive(r); err != nil {
 								b.Fatal(err)
@@ -377,7 +377,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters)
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
 					for _, r := range targetRots {
 						if _, err := exp0.Derive(r); err != nil {
 							b.Fatal(err)
@@ -439,7 +439,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
 						for _, r := range masterRots {
 							if _, err := exp.Derive(r); err != nil {
 								b.Fatal(err)
@@ -453,7 +453,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
+					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
@@ -498,7 +498,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						if err != nil {
 							b.Fatal(err)
 						}
-						exp := eval.NewLevelExpansion(level, shift0, currentMasters)
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
 						for _, r := range masterRots {
 							if _, err := exp.Derive(r); err != nil {
 								b.Fatal(err)
@@ -512,7 +512,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 					if err != nil {
 						b.Fatal(err)
 					}
-					exp := eval.NewLevelExpansion(0, shift0, currentMasters)
+					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)

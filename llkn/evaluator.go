@@ -27,12 +27,16 @@ func (eval *Evaluator) RotToRot(level int, inputKey, masterKey *hierkeys.MasterK
 }
 
 // NewLevelExpansion creates a thread-safe expansion session at the given level.
-func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKey, masterKeys map[int]*hierkeys.MasterKey) *hierkeys.LevelExpansion {
+// targetRotations is the complete set of rotations the caller will request via
+// [hierkeys.LevelExpansion.Derive]; it is used to evict intermediate keys
+// whose chains have all completed.
+func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKey, masterKeys map[int]*hierkeys.MasterKey, targetRotations []int) *hierkeys.LevelExpansion {
 	return hierkeys.NewLevelExpansion(
 		eval.rotEvals[level].RotToRot,
 		eval.params.levels[level],
 		eval.params.Eval().N()/2,
 		shift0Key,
 		masterKeys,
+		targetRotations,
 	)
 }

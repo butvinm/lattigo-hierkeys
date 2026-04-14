@@ -98,7 +98,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 		if err != nil {
 			return nil, err
 		}
-		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters)
+		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
 		for _, r := range masterRots {
 			if _, err := exp.Derive(r); err != nil {
 				return nil, err
@@ -110,7 +110,7 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	if err != nil {
 		return nil, err
 	}
-	exp := eval.NewLevelExpansion(0, shift0Key0, currentMasters)
+	exp := eval.NewLevelExpansion(0, shift0Key0, currentMasters, targetRots)
 	for _, r := range targetRots {
 		if _, err := exp.Derive(r); err != nil {
 			return nil, err

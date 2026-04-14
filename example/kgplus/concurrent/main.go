@@ -92,7 +92,7 @@ func main() {
 	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys)
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
 	for _, r := range masterRots {
 		if _, err = exp1.Derive(r); err != nil {
 			panic(err)
@@ -109,7 +109,7 @@ func main() {
 		panic(err)
 	}
 
-	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys)
+	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys.Keys, targetRots)
 
 	var wg sync.WaitGroup
 	errs := make([]error, len(targetRots))

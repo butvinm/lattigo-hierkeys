@@ -29,6 +29,12 @@ type LevelExpansion struct {
 
 	mu      sync.Mutex
 	entries map[int]*expansionEntry
+
+	// Eviction plan, populated by Plan. When non-nil, intermediates whose
+	// remaining-use counter drops to zero and that are not in targetSet are
+	// removed from entries (the seed rot=0 is never evicted).
+	refcount  map[int]int
+	targetSet map[int]bool
 }
 
 type expansionEntry struct {
@@ -41,12 +47,18 @@ type expansionEntry struct {
 // NewLevelExpansion creates a thread-safe expansion session at one hierarchy
 // level. shift0Key seeds rotation 0. masterKeys are from the level above.
 // rotToRot is called to compute each new rotation.
+//
+// targetRotations is the complete set of rotations that will be requested via
+// [LevelExpansion.Derive]. The session uses it to drop intermediate keys whose
+// chains have all completed, keeping peak live entries near len(targetRotations).
+// Calling Derive on a rotation outside targetRotations is undefined.
 func NewLevelExpansion(
 	rotToRot RotToRotFunc,
 	params rlwe.Parameters,
 	nSlots int,
 	shift0Key *MasterKey,
 	masterKeys map[int]*MasterKey,
+	targetRotations []int,
 ) *LevelExpansion {
 	seed := &expansionEntry{key: shift0Key, done: make(chan struct{})}
 	close(seed.done) // shift-0 is immediately available
@@ -54,13 +66,36 @@ func NewLevelExpansion(
 	entries := make(map[int]*expansionEntry)
 	entries[0] = seed
 
+	masterRots := sortedIntKeys(masterKeys)
+
+	refcount := make(map[int]int)
+	targetSet := make(map[int]bool, len(targetRotations))
+	for _, target := range targetRotations {
+		normalized := ((target % nSlots) + nSlots) % nSlots
+		if normalized == 0 {
+			continue
+		}
+		targetSet[normalized] = true
+		steps := DecomposeRotation(normalized, masterRots)
+		if steps == nil {
+			continue
+		}
+		cur := 0
+		for _, step := range steps {
+			refcount[cur]++
+			cur += step
+		}
+	}
+
 	return &LevelExpansion{
 		rotToRot:   rotToRot,
 		params:     params,
 		masterKeys: masterKeys,
-		masterRots: sortedIntKeys(masterKeys),
+		masterRots: masterRots,
 		nSlots:     nSlots,
 		entries:    entries,
+		refcount:   refcount,
+		targetSet:  targetSet,
 	}
 }
 
@@ -117,11 +152,32 @@ func (e *LevelExpansion) Derive(rot int) (*MasterKey, error) {
 			return nil, entry.err
 		}
 
+		e.releaseRef(inputRot)
 		currentRot = nextRot
 	}
 
 	entry := e.getOrCreate(normalized)
 	return entry.key, entry.err
+}
+
+// releaseRef decrements the future-use counter for inputRot. When it reaches
+// zero and inputRot is neither the seed (0) nor a target, the map entry is
+// dropped so the GC can collect its MasterKey. Goroutines still holding a
+// local pointer keep the key alive until they finish.
+func (e *LevelExpansion) releaseRef(inputRot int) {
+	if inputRot == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.refcount[inputRot]; !ok {
+		return
+	}
+	e.refcount[inputRot]--
+	if e.refcount[inputRot] <= 0 && !e.targetSet[inputRot] {
+		delete(e.entries, inputRot)
+		delete(e.refcount, inputRot)
+	}
 }
 
 // IntermediateKeys collects results for the requested rotations.

@@ -96,7 +96,7 @@ func main() {
 	if shift0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys)
+	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRots)
 	for _, r := range targetRots {
 		if _, err = exp.Derive(r); err != nil {
 			panic(err)
