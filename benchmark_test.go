@@ -522,10 +522,8 @@ func BenchmarkDeriveGaloisKeysStreaming(b *testing.B) {
 	}
 }
 
-// BenchmarkDeriveGaloisKeysConcurrent measures concurrent server-side derivation.
-// Uses the same pattern as the concurrent examples: NewLevelExpansion sequentially
-// for intermediate levels, NewLevelExpansion + goroutines for level 0,
-// concurrent FinalizeKey.
+// BenchmarkDeriveGaloisKeysConcurrent measures concurrent streaming derivation:
+// each goroutine derives one target and finalizes it immediately.
 func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -555,7 +553,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Intermediate levels (sequential)
+					phaseStart := time.Now()
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
@@ -573,37 +571,22 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						}
 					}
 
-					// Level 0 (concurrent)
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
-					level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-					var mu sync.Mutex
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
 						go func(r int) {
 							defer wg.Done()
 							mk, _ := exp.Derive(r)
-							mu.Lock()
-							level0Keys.Keys[r] = mk
-							mu.Unlock()
+							eval.FinalizeKey(mk)
 						}(rot)
 					}
 					wg.Wait()
-
-					// Finalize (concurrent)
-					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
-					for j, rot := range targetRots {
-						wg.Add(1)
-						go func(idx, r int) {
-							defer wg.Done()
-							galoisKeys[idx], _ = eval.FinalizeKey(level0Keys.Keys[r])
-						}(j, rot)
-					}
-					wg.Wait()
+					measurePhase(b, "concurrent_stream", &phaseStart)
 				}
 			})
 
@@ -612,10 +595,8 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
-				// making level-1 expansion to the full base-p set efficient.
 				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
-				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				bigMaster := fullSet[len(fullSet)/2]
 				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
@@ -623,7 +604,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 				runtime.GC()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					// Intermediate levels (sequential)
+					phaseStart := time.Now()
 					currentMasters := tk.MasterRotKeys
 					for level := params.NumLevels() - 2; level >= 1; level-- {
 						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
@@ -641,37 +622,22 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						}
 					}
 
-					// Level 0 (concurrent)
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
 						b.Fatal(err)
 					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
-					level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-					var mu sync.Mutex
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
 						go func(r int) {
 							defer wg.Done()
 							mk, _ := exp.Derive(r)
-							mu.Lock()
-							level0Keys.Keys[r] = mk
-							mu.Unlock()
+							eval.FinalizeKey(r, mk, tk.HomingKey)
 						}(rot)
 					}
 					wg.Wait()
-
-					// Finalize (concurrent)
-					galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
-					for j, rot := range targetRots {
-						wg.Add(1)
-						go func(idx, r int) {
-							defer wg.Done()
-							galoisKeys[idx], _ = eval.FinalizeKey(r, level0Keys.Keys[r], tk.HomingKey)
-						}(j, rot)
-					}
-					wg.Wait()
+					measurePhase(b, "concurrent_stream", &phaseStart)
 				}
 			})
 		})
