@@ -89,10 +89,9 @@ func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKe
 
 // MasterKeyToGaloisKey converts a [MasterKey] back to a standard lattigo
 // [rlwe.GaloisKey] by applying σ^{-1}_r to all GadgetCiphertext components.
-// Consumes the MasterKey in-place.
+// Returns a new GaloisKey; the MasterKey is not modified.
 func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
-	gk := mk.gk
-	mk.gk = nil // consume
+	gk := mk.gk.CopyNew()
 	galElInv := params.ModInvGaloisElement(gk.GaloisElement)
 	if err := automorphGadgetCiphertext(params, gk, galElInv); err != nil {
 		return nil, err
