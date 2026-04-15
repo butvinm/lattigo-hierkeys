@@ -522,9 +522,11 @@ func BenchmarkDeriveGaloisKeysStreaming(b *testing.B) {
 	}
 }
 
-// BenchmarkDeriveGaloisKeysConcurrent measures concurrent streaming derivation:
-// each goroutine derives one target and finalizes it immediately.
+// BenchmarkDeriveGaloisKeysConcurrent measures concurrent streaming derivation
+// with bounded workers (GOMAXPROCS). Each worker derives one target at a time
+// and finalizes it immediately.
 func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
+	workers := runtime.GOMAXPROCS(0)
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
@@ -576,11 +578,14 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						b.Fatal(err)
 					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					sem := make(chan struct{}, workers)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
+						sem <- struct{}{}
 						go func(r int) {
 							defer wg.Done()
+							defer func() { <-sem }()
 							mk, _ := exp.Derive(r)
 							eval.FinalizeKey(mk)
 						}(rot)
@@ -627,11 +632,14 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						b.Fatal(err)
 					}
 					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					sem := make(chan struct{}, workers)
 					var wg sync.WaitGroup
 					for _, rot := range targetRots {
 						wg.Add(1)
+						sem <- struct{}{}
 						go func(r int) {
 							defer wg.Done()
+							defer func() { <-sem }()
 							mk, _ := exp.Derive(r)
 							eval.FinalizeKey(r, mk, tk.HomingKey)
 						}(rot)
