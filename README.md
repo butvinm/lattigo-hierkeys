@@ -142,25 +142,26 @@ LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
 | 15   | 1.24 s       | 1.12 s      |
 | 16   | 12.5 s       | 6.5 s       |
 
-**Server derivation time, sequential** (16 vCPU Intel Xeon Icelake):
+**Server derivation time, sequential** (16 vCPU Intel Xeon Icelake; LogN≤15 n=3 mean, LogN=16 n=1):
 
 | LogN | LLKN 2-level | KG+ 3-level |
 | ---- | ------------ | ----------- |
-| 14   | 68.9 s       | 209.2 s     |
-| 15   | 307.7 s      | 836.2 s     |
-| 16   | TBD          | TBD         |
+| 14   | 80.5 s       | 241 s       |
+| 15   | 343 s        | 963 s       |
+| 16   | 4,784 s      | N/A         |
 
-**Server derivation time, concurrent** (16 vCPU Intel Xeon Icelake, GOMAXPROCS=16, n=3 mean):
+**Server derivation time, concurrent** (16 vCPU Intel Xeon Icelake, GOMAXPROCS=16; LogN≤15 n=3 mean, LogN=16 n=1):
 
 | LogN | LLKN 2-level | KG+ 3-level |
 | ---- | ------------ | ----------- |
-| 14   | 5.2 s        | 44.4 s      |
-| 15   | 22.9 s       | 112.1 s     |
-| 16   | TBD          | TBD         |
+| 14   | 10.2 s       | 57.8 s      |
+| 15   | 36.9 s       | 157 s       |
+| 16   | 536 s        | 2,549 s     |
 
 ```bash
 go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ ./...
 go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^$ -timeout 60m ./...
+go test -bench BenchmarkDeriveGaloisKeysConcurrent -benchtime 1x -run ^$ -timeout 60m ./...
 go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^$ ./...
 ```
 

@@ -275,8 +275,8 @@ func measurePhase(b *testing.B, phase string, phaseStart *time.Time) {
 	*phaseStart = time.Now()
 }
 
-// BenchmarkDeriveGaloisKeys measures server-side key derivation time and
-// per-phase memory (peak and held) via measurePhase.
+// BenchmarkDeriveGaloisKeys measures sequential server-side key derivation.
+// Each target is derived and finalized immediately — no key accumulation.
 func BenchmarkDeriveGaloisKeys(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -320,139 +320,6 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 							}
 							currentMasters[r] = mk
 						}
-						measurePhase(b, fmt.Sprintf("expand_lvl%d", level), &phaseStart)
-					}
-					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
-					if err != nil {
-						b.Fatal(err)
-					}
-					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
-					level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-					for _, r := range targetRots {
-						mk, err := exp0.Derive(r)
-						if err != nil {
-							b.Fatal(err)
-						}
-						level0.Keys[r] = mk
-					}
-					measurePhase(b, "expand_lvl0", &phaseStart)
-					for _, r := range targetRots {
-						mk := level0.Keys[r]
-						level0.Keys[r] = nil
-						if _, err := eval.FinalizeKey(mk); err != nil {
-							b.Fatal(err)
-						}
-					}
-					measurePhase(b, "finalize", &phaseStart)
-				}
-			})
-
-			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
-				if err != nil {
-					b.Fatal(err)
-				}
-				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
-				// making level-1 expansion to the full base-p set efficient.
-				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
-				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
-				k3MasterRots := []int{1, bigMaster}
-				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
-				eval := kgplus.NewEvaluator(params)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					phaseStart := time.Now()
-					currentMasters := tk.MasterRotKeys
-					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
-						if err != nil {
-							b.Fatal(err)
-						}
-						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
-						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
-						for _, r := range masterRots {
-							mk, err := exp.Derive(r)
-							if err != nil {
-								b.Fatal(err)
-							}
-							currentMasters[r] = mk
-						}
-						measurePhase(b, fmt.Sprintf("expand_lvl%d", level), &phaseStart)
-					}
-					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
-					if err != nil {
-						b.Fatal(err)
-					}
-					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
-					level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-					for _, r := range targetRots {
-						mk, err := exp0.Derive(r)
-						if err != nil {
-							b.Fatal(err)
-						}
-						level0.Keys[r] = mk
-					}
-					measurePhase(b, "expand_lvl0", &phaseStart)
-					for _, r := range targetRots {
-						mk := level0.Keys[r]
-						level0.Keys[r] = nil
-						if _, err := eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
-							b.Fatal(err)
-						}
-					}
-					measurePhase(b, "finalize", &phaseStart)
-				}
-			})
-		})
-	}
-}
-
-// BenchmarkDeriveGaloisKeysStreaming measures streaming derivation: each target
-// is derived and finalized immediately, never accumulating all keys. Peak memory
-// should be ~22 entries × per-key-size + FinalizeKey scratch.
-func BenchmarkDeriveGaloisKeysStreaming(b *testing.B) {
-	for _, sc := range benchScenarios {
-		b.Run(sc.Name, func(b *testing.B) {
-			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
-				LogN:       sc.LogN,
-				LogQ:       sc.LogQ,
-				LogP:       sc.LogP,
-				NTTFlag:    true,
-				LogNthRoot: sc.LogN + 2,
-			})
-			if err != nil {
-				b.Fatal(err)
-			}
-
-			slots := paramsEval.N() / 2
-			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
-			targetRots := benchTargetRots(sc.LogN)
-
-			b.Run("LLKN", func(b *testing.B) {
-				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
-				if err != nil {
-					b.Fatal(err)
-				}
-				tk := genLLKNTransmissionKeys(b, params, masterRots)
-				eval := llkn.NewEvaluator(params)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					phaseStart := time.Now()
-					currentMasters := tk.MasterRotKeys
-					for level := params.NumLevels() - 2; level >= 1; level-- {
-						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
-						if err != nil {
-							b.Fatal(err)
-						}
-						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
-						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
-						for _, r := range masterRots {
-							mk, err := exp.Derive(r)
-							if err != nil {
-								b.Fatal(err)
-							}
-							currentMasters[r] = mk
-						}
 					}
 					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
 					if err != nil {
@@ -468,7 +335,7 @@ func BenchmarkDeriveGaloisKeysStreaming(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
-					measurePhase(b, "stream", &phaseStart)
+					measurePhase(b, "derive", &phaseStart)
 				}
 			})
 
@@ -515,7 +382,7 @@ func BenchmarkDeriveGaloisKeysStreaming(b *testing.B) {
 							b.Fatal(err)
 						}
 					}
-					measurePhase(b, "stream", &phaseStart)
+					measurePhase(b, "derive", &phaseStart)
 				}
 			})
 		})
@@ -591,7 +458,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						}(rot)
 					}
 					wg.Wait()
-					measurePhase(b, "concurrent_stream", &phaseStart)
+					measurePhase(b, "derive", &phaseStart)
 				}
 			})
 
@@ -645,7 +512,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						}(rot)
 					}
 					wg.Wait()
-					measurePhase(b, "concurrent_stream", &phaseStart)
+					measurePhase(b, "derive", &phaseStart)
 				}
 			})
 		})
