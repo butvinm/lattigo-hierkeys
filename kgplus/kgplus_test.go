@@ -554,7 +554,7 @@ func prepareTestCiphertext(t *testing.T, paramsEval rlwe.Parameters, skEval *rlw
 }
 
 // testDeriveGaloisKeys tests the full production API end-to-end:
-// NewParameters -> KeyGenerator -> TransmissionKeys -> ExpandLevel -> FinalizeKeys -> standard Automorphism.
+// NewParameters -> KeyGenerator -> TransmissionKeys -> NewLevelExpansion -> Derive -> FinalizeKey -> standard Automorphism.
 func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 	params := tc.params

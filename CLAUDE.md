@@ -39,11 +39,11 @@ Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofm
 Shared primitives:
 
 - `MasterKey` — rotation key type for hierarchical derivation. Wraps `*rlwe.GaloisKey`.
-- `GaloisKeyToMasterKey` / `MasterKeyToGaloisKey` — convention conversion (mutate in-place, consume input).
+- `GaloisKeyToMasterKey` / `MasterKeyToGaloisKey` — convention conversion. `GaloisKeyToMasterKey` mutates in-place (consumes input). `MasterKeyToGaloisKey` returns a new key (non-destructive).
 - `RotToRotEvaluator` — thread-safe RotToRot with pool-based scratch buffers. Core key combination: shift-r + shift-r' → shift-(r+r').
 - `PubToRot` — derives shift-0 MasterKey from `*rlwe.PublicKey`.
-- `LevelExpansion` — thread-safe derivation session at one hierarchy level. Uses `sync.Once` per rotation for dedup. Created via `NewLevelExpansion`. Call `Derive` per target rotation, then `IntermediateKeys` to collect.
-- `IntermediateKeys` — output of `LevelExpansion.IntermediateKeys`, input to next level or per-key `FinalizeKey`.
+- `LevelExpansion` — thread-safe derivation session at one hierarchy level. Uses `sync.Once` per rotation for dedup. Created via `NewLevelExpansion`. Call `Derive` per target rotation.
+- `IntermediateKeys` — struct wrapping `Keys map[int]*MasterKey`, constructed manually from `Derive` results. Input to next level or per-key `FinalizeKey`.
 - `MasterRotationsForBase`, `DecomposeRotation` — rotation set utilities.
 - `GenerateUniquePrimes` — collision-free NTT-friendly prime generation.
 
@@ -82,7 +82,7 @@ Each scheme has four examples in `example/<scheme>/`:
 - **IMForm before INTT**: R' GadgetCiphertext is NTT+Montgomery. Must IMForm before INTT+extraction, or values mix with non-Montgomery GadgetProduct output.
 - **NTT prime constraint (KG+ only)**: All primes must satisfy q ≡ 1 mod 4N (NTT-friendly for degree 2N). LogQ-generated primes for degree N may fail.
 - **Prime collision in multi-level**: When building parameter chains (Q\_{i+1} = Q_i ∪ P_i), P primes at each level MUST be distinct from all Q primes at that level. Lattigo's `GenModuli` does not enforce this. Both packages use `GenerateUniquePrimes` with an exclusion set.
-- **Noise in multi-level (k>2)**: Each RotToRot adds noise proportional to √(dnum) × Q/P. Use many small P primes (e.g., 30b) to maximize total P within the budget — this lowers both dnum and Q/P. The paper uses large primes with high dnum (10-30); our optimized params use small primes with low dnum (2-3) and comparable or better noise.
+- **Noise in multi-level (k>2)**: Each RotToRot adds noise proportional to √(dnum) × Q/P. Hierarchy P prime size must be ≥ max(eval Q prime, eval P prime) due to lattigo's count-based gadget decomposition — see "Noise from GadgetProduct" section below. Typically use 50-60b primes matching eval prime size.
 - **ConstructExtendedSecretKey for k>2 (KG+)**: When Levels Q includes primes beyond HK Q (i.e., HK P primes), the interleaving must also cover the HK P-prime slots. Otherwise, those coefficient slots are zero and the extended SK is incorrect.
 - **GaloisKeyGenProtocol accumulator**: When aggregating shares, the accumulator's `GaloisElement` must be set before the first `AggregateShares` call (it defaults to 0, causing a mismatch error).
 - **LLKN shares Q_max with eval**: LLKN hierarchy P primes consume the same Q_max(N) budget as eval Q and P primes. Heavy eval parameters leave little room for hierarchy. KG+ avoids this via R' with Q_max(2N) ≈ 2×Q_max(N).
@@ -200,7 +200,7 @@ This is the OPPOSITE of what works for general dnum optimization theory — but 
 
 ### Current optimized params
 
-See README.md "Scheme configurations" for concrete parameter values per LogN. All use many small P primes (20-30b) for minimum dnum within Q_max.
+See README.md "Scheme configurations" for concrete parameter values per LogN. All use 55b hierarchy P primes matching eval prime size, per the noise constraints above.
 
 ### Why KG+ over LLKN
 

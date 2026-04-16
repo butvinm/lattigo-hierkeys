@@ -1,7 +1,6 @@
 package hierkeys_test
 
 import (
-	"fmt"
 	"runtime"
 	"strconv"
 	"sync"
@@ -453,8 +452,14 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						go func(r int) {
 							defer wg.Done()
 							defer func() { <-sem }()
-							mk, _ := exp.Derive(r)
-							eval.FinalizeKey(mk)
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Error(err)
+								return
+							}
+							if _, err := eval.FinalizeKey(mk); err != nil {
+								b.Error(err)
+							}
 						}(rot)
 					}
 					wg.Wait()
@@ -507,8 +512,14 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 						go func(r int) {
 							defer wg.Done()
 							defer func() { <-sem }()
-							mk, _ := exp.Derive(r)
-							eval.FinalizeKey(r, mk, tk.HomingKey)
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Error(err)
+								return
+							}
+							if _, err := eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+								b.Error(err)
+							}
 						}(rot)
 					}
 					wg.Wait()
@@ -751,7 +762,7 @@ func BenchmarkFinalizeKey(b *testing.B) {
 				shift0, _ := hierkeys.PubToRot(params.Levels()[0], params.Top(), pk)
 				galEl := params.Levels()[0].GaloisElement(1)
 
-				// Pre-generate keys to finalize (FinalizeKey consumes the MasterKey)
+				// Pre-generate keys to finalize
 				keys := make([]*hierkeys.MasterKey, b.N)
 				for i := range keys {
 					keys[i], _ = eval.RotToRot(0, shift0, masterKeys[1], galEl)

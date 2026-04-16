@@ -179,9 +179,11 @@ go test -v -count=1 -short ./llkn/...
 cd example
 go run ./llkn/simple/       # minimal 2-level derivation
 go run ./llkn/leveled/      # per-level NewLevelExpansion (inactive/active pattern)
+go run ./llkn/concurrent/   # concurrent derivation with goroutines
 go run ./llkn/multiparty/   # N-out-of-N multiparty
 go run ./kgplus/simple/     # 3-level derivation with ring switching
 go run ./kgplus/leveled/    # per-level NewLevelExpansion with ring switching
+go run ./kgplus/concurrent/ # concurrent derivation with ring switching
 go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 ```
 
