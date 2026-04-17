@@ -32,9 +32,9 @@ func main() {
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 		LogNthRoot:      16,
 	}); err != nil {
 		panic(err)
@@ -42,16 +42,17 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{56},
-		[]int{56},
+		[]int{55}, // LogPHK for Levels[1]
+		[][]int{
+			{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for Levels[2]
+		},
 	); err != nil {
 		panic(err)
 	}
 
 	slots := ckksParams.MaxSlots()
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
-	fmt.Printf("KG+ CKKS multiparty (N=%d, k=%d): LogN=%d, %d slots\n",
+	topParams := params.Top()
+	fmt.Printf("KG+ CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
 	crs, err := sampling.NewPRNG()
@@ -69,7 +70,7 @@ func main() {
 	// The homing key enables ring-switching from s̃₁ back to s.
 	// The public key and master keys are generated under s̃ in R'.
 
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sks := make([]*rlwe.SecretKey, nParties)
 	skS1s := make([]*rlwe.SecretKey, nParties)
 	skExts := make([]*rlwe.SecretKey, nParties)
@@ -77,13 +78,13 @@ func main() {
 	for i := range sks {
 		sks[i] = kgenHK.GenSecretKeyNew()
 		skS1s[i] = kgenHK.GenSecretKeyNew()
-		skExts[i] = kgplus.ConstructExtendedSK(params.HK, topParams, sks[i], skS1s[i])
+		skExts[i] = kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sks[i], skS1s[i])
 	}
 
 	// Ideal HK-level secret for verification only.
-	skIdealHK := rlwe.NewSecretKey(params.HK)
+	skIdealHK := rlwe.NewSecretKey(params.HomingKey())
 	for _, sk := range sks {
-		params.HK.RingQP().Add(skIdealHK.Value, sk.Value, skIdealHK.Value)
+		params.HomingKey().RingQP().Add(skIdealHK.Value, sk.Value, skIdealHK.Value)
 	}
 
 	// =========================================================================
@@ -94,7 +95,7 @@ func main() {
 	// EvaluationKeyGenProtocol directly, not GaloisKeyGenProtocol.
 	// Each party contributes GenShare(skIn=s̃₁_i, skOut=s_i).
 
-	hkProto := multiparty.NewEvaluationKeyGenProtocol(params.HK)
+	hkProto := multiparty.NewEvaluationKeyGenProtocol(params.HomingKey())
 	hkCRP := hkProto.SampleCRP(crs)
 	hkAcc := hkProto.AllocateShare()
 
@@ -108,7 +109,7 @@ func main() {
 		}
 	}
 
-	homingKey := rlwe.NewEvaluationKey(params.HK)
+	homingKey := rlwe.NewEvaluationKey(params.HomingKey())
 	if err = hkProto.GenEvaluationKey(hkAcc, hkCRP, homingKey); err != nil {
 		panic(err)
 	}
@@ -140,7 +141,7 @@ func main() {
 	// Standard GaloisKeyGenProtocol, using the extended secrets s̃_i.
 	// GaloisKeyToMasterKey converts to the format needed by RotToRot.
 
-	k3Masters := []int{1, 4}
+	k3Masters := []int{1, 64}
 	gkg := multiparty.NewGaloisKeyGenProtocol(topParams)
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 
@@ -186,30 +187,48 @@ func main() {
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	var level1Keys *kgplus.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
-		panic(err)
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
+	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
+	for _, r := range masterRots {
+		mk, err := exp1.Derive(r)
+		if err != nil {
+			panic(err)
+		}
+		level1Keys[r] = mk
 	}
-	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys.Keys))
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys))
 
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	var level0Keys *kgplus.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
-		panic(err)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
+	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	for _, r := range targetRots {
+		mk, err := exp0.Derive(r)
+		if err != nil {
+			panic(err)
+		}
+		level0Keys.Keys[r] = mk
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
-		panic(err)
+	// Finalize per key, releasing R' MasterKey references for GC.
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
+	for _, r := range targetRots {
+		mk := level0Keys.Keys[r]
+		level0Keys.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
 	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

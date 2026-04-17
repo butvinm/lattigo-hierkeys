@@ -17,11 +17,11 @@ import (
 )
 
 func testString(params Parameters, opname string) string {
-	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/k=%d",
+	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/%d-level",
 		opname,
-		params.Eval.LogN(),
-		params.Eval.QCount(),
-		params.Eval.PCount(),
+		params.Eval().LogN(),
+		params.Eval().QCount(),
+		params.Eval().PCount(),
 		params.NumLevels())
 }
 
@@ -35,7 +35,7 @@ type testContext struct {
 }
 
 func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 
 	sk := kgenHK.GenSecretKeyNew()
 	skEval, err := params.ProjectToEvalKey(sk)
@@ -47,9 +47,8 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
-	skExt := ConstructExtendedSK(params.HK, topParams, sk, sk1)
+	topParams := params.Top()
+	skExt := ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
 
@@ -83,11 +82,10 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
-// expandAll cascades ExpandLevel through all levels, replicating what the
-// removed Expand method did. Used by tests that need level-0 IntermediateKeys.
-func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*IntermediateKeys, error) {
+// expandAll cascades NewLevelExpansion through all levels. Test-internal
+// helper used by tests that need level-0 IntermediateKeys.
+func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
-	topLevel := k - 1
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
 	for rot := range tk.MasterRotKeys {
 		masterRots = append(masterRots, rot)
@@ -96,21 +94,35 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*Interm
 
 	currentMasters := tk.MasterRotKeys
 	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.PublicKey)
+		shift0Key, err := hierkeys.PubToRot(eval.params.Levels()[level], eval.params.Top(), tk.PublicKey)
 		if err != nil {
 			return nil, err
 		}
-		derived, err := eval.ExpandLevel(level, shift0Key, currentMasters, masterRots)
-		if err != nil {
-			return nil, err
+		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
+		nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+		for _, r := range masterRots {
+			mk, err := exp.Derive(r)
+			if err != nil {
+				return nil, err
+			}
+			nextMasters[r] = mk
 		}
-		currentMasters = derived.Keys
+		currentMasters = nextMasters
 	}
-	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.PublicKey)
+	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Top(), tk.PublicKey)
 	if err != nil {
 		return nil, err
 	}
-	return eval.ExpandLevel(0, shift0Key0, currentMasters, targetRots)
+	exp := eval.NewLevelExpansion(0, shift0Key0, currentMasters, targetRots)
+	result := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	for _, r := range targetRots {
+		mk, err := exp.Derive(r)
+		if err != nil {
+			return nil, err
+		}
+		result.Keys[r] = mk
+	}
+	return result, nil
 }
 
 // TestKGPlus is the main entry point, iterating over parameter sets
@@ -122,7 +134,7 @@ func TestKGPlus(t *testing.T) {
 		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
 		require.NoError(t, err)
 
-		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra...)
+		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra)
 		require.NoError(t, err)
 
 		// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}
@@ -159,20 +171,20 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "KeyGenerator"), func(t *testing.T) {
 
 		t.Run("GenSecretKeyNew", func(t *testing.T) {
-			kgenHK := rlwe.NewKeyGenerator(params.HK)
+			kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 			sk := kgenHK.GenSecretKeyNew()
 			require.NotNil(t, sk)
 			// Key should have HK-level Q primes (Q_eval + P_eval)
-			require.Equal(t, params.HK.QCount()-1, sk.LevelQ())
-			require.Equal(t, params.HK.PCount()-1, sk.LevelP())
+			require.Equal(t, params.HomingKey().QCount()-1, sk.LevelQ())
+			require.Equal(t, params.HomingKey().PCount()-1, sk.LevelP())
 		})
 
 		t.Run("ProjectToEvalKey", func(t *testing.T) {
 			skEval, err := params.ProjectToEvalKey(tc.sk)
 			require.NoError(t, err)
 			require.NotNil(t, skEval)
-			require.Equal(t, params.Eval.QCount()-1, skEval.LevelQ())
-			require.Equal(t, params.Eval.PCount()-1, skEval.LevelP())
+			require.Equal(t, params.Eval().QCount()-1, skEval.LevelQ())
+			require.Equal(t, params.Eval().PCount()-1, skEval.LevelP())
 		})
 
 		t.Run("TransmissionKeys", func(t *testing.T) {
@@ -191,13 +203,13 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 // constructExtendedSKForParams builds s_tilde = s + Y*s1 in R' for a specific
 // R' parameter set. This is a test helper that generalizes the KeyGenerator's
 // constructExtendedSK to work with arbitrary R' params.
-// constructExtendedSKForParams delegates to the exported ConstructExtendedSK.
+// constructExtendedSKForParams delegates to the exported ConstructExtendedSecretKey.
 func constructExtendedSKForParams(
 	paramsHK rlwe.Parameters,
 	paramsRP rlwe.Parameters,
 	skS, skS1 *rlwe.SecretKey,
 ) *rlwe.SecretKey {
-	return ConstructExtendedSK(paramsHK, paramsRP, skS, skS1)
+	return ConstructExtendedSecretKey(paramsHK, paramsRP, skS, skS1)
 }
 
 // verifyRotationKey verifies a derived GaloisKey against a reference key
@@ -298,10 +310,10 @@ func testRotToRot(tc *testContext, t *testing.T) {
 
 	t.Run(testString(params, "RotToRot/SingleStep"), func(t *testing.T) {
 
-		paramsEval := params.Eval
-		paramsRPLow := params.RPrime[0]
-		paramsRPHigh := params.RPrime[1]
-		paramsHK := params.HK
+		paramsEval := params.Eval()
+		paramsRPLow := params.Levels()[0]
+		paramsRPHigh := params.Levels()[1]
+		paramsHK := params.HomingKey()
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
 		kgenRPLow := rlwe.NewKeyGenerator(paramsRPLow)
@@ -369,10 +381,10 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 
 	t.Run(testString(params, "RotToRot/MultiStep"), func(t *testing.T) {
 
-		paramsEval := params.Eval
-		paramsRPLow := params.RPrime[0]
-		paramsRPHigh := params.RPrime[1]
-		paramsHK := params.HK
+		paramsEval := params.Eval()
+		paramsRPLow := params.Levels()[0]
+		paramsRPHigh := params.Levels()[1]
+		paramsHK := params.HomingKey()
 
 		kgenHK := rlwe.NewKeyGenerator(paramsHK)
 		kgenRPLow := rlwe.NewKeyGenerator(paramsRPLow)
@@ -542,7 +554,7 @@ func prepareTestCiphertext(t *testing.T, paramsEval rlwe.Parameters, skEval *rlw
 }
 
 // testDeriveGaloisKeys tests the full production API end-to-end:
-// NewParameters -> KeyGenerator -> TransmissionKeys -> DeriveGaloisKeys -> standard Automorphism.
+// NewParameters -> KeyGenerator -> TransmissionKeys -> NewLevelExpansion -> Derive -> FinalizeKey -> standard Automorphism.
 func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -551,11 +563,19 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 
-		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
 		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for r, mk := range intermediate.Keys {
+			intermediate.Keys[r] = nil
+			gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
 
-		paramsEval := params.Eval
+		paramsEval := params.Eval()
 		eval := rlwe.NewEvaluator(paramsEval, evk)
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
@@ -580,11 +600,19 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
 
-		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, targetRots)
+		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
 		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for r, mk := range intermediate.Keys {
+			intermediate.Keys[r] = nil
+			gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
 
-		paramsEval := params.Eval
+		paramsEval := params.Eval()
 		eval := rlwe.NewEvaluator(paramsEval, evk)
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
@@ -599,8 +627,8 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 	})
 }
 
-// testExpandAndFinalize verifies that the two-phase approach (Expand +
-// FinalizeKeys) produces the same results as the single-call DeriveGaloisKeys.
+// testExpandAndFinalize verifies the two-phase approach (Expand +
+// FinalizeKeys) produces correct rotation keys end-to-end.
 func testExpandAndFinalize(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -614,12 +642,18 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, len(targetRots), len(intermediate.Keys))
 
-		evk, err := tc.hkEval.FinalizeKeys(tc.tk, intermediate)
-		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for r, mk := range intermediate.Keys {
+			intermediate.Keys[r] = nil
+			gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
 
 		// Verify each rotation works correctly
-		paramsEval := params.Eval
+		paramsEval := params.Eval()
 		eval := rlwe.NewEvaluator(paramsEval, evk)
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
@@ -657,7 +691,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 
 		// Derive each individually and verify functional equivalence:
 		// both should produce keys that decrypt correctly.
-		paramsEval := params.Eval
+		paramsEval := params.Eval()
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
 		threshold := float64(1 << 25)
@@ -667,11 +701,9 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 
 		for _, rot := range targetRots {
 			// Finalize the single key from the batch
-			singleIntermediate := &IntermediateKeys{
-				Keys: map[int]*hierkeys.MasterKey{rot: intermediate.Keys[rot]},
-			}
-			evk, err := tc.hkEval.FinalizeKeys(tc.tk, singleIntermediate)
+			gk, err := tc.hkEval.FinalizeKey(rot, intermediate.Keys[rot], tc.tk.HomingKey)
 			require.NoError(t, err)
+			evk := rlwe.NewMemEvaluationKeySet(nil, gk)
 
 			eval := rlwe.NewEvaluator(paramsEval, evk)
 			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, threshold)
@@ -709,8 +741,16 @@ func testSerialization(tc *testContext, t *testing.T) {
 
 		// Functional test: derive keys from deserialized transmission keys
 		hkEval := NewEvaluator(params)
-		evk, err := hkEval.DeriveGaloisKeys(tk2, []int{1, 2, 3, 4, 5})
+		intermediate, err := expandAll(hkEval, tk2, []int{1, 2, 3, 4, 5})
 		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for r, mk := range intermediate.Keys {
+			intermediate.Keys[r] = nil
+			gk, err := hkEval.FinalizeKey(r, mk, tk2.HomingKey)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		require.Equal(t, 5, len(evk.GetGaloisKeysList()))
 	})
 
@@ -728,7 +768,7 @@ func testSerialization(tc *testContext, t *testing.T) {
 		t.Logf("intermediate keys: %d bytes (%.2f KB)", n, float64(n)/1024)
 
 		// Deserialize
-		intermediate2 := new(IntermediateKeys)
+		intermediate2 := new(hierkeys.IntermediateKeys)
 		_, err = intermediate2.ReadFrom(&buf)
 		require.NoError(t, err)
 
@@ -739,8 +779,14 @@ func testSerialization(tc *testContext, t *testing.T) {
 		}
 
 		// Functional test: finalize from deserialized intermediates
-		evk, err := hkEval.FinalizeKeys(tc.tk, intermediate2)
-		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate2.Keys))
+		for r, mk := range intermediate2.Keys {
+			intermediate2.Keys[r] = nil
+			gk, err := hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		require.Equal(t, 5, len(evk.GetGaloisKeysList()))
 	})
 }
@@ -782,9 +828,9 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 
 		// Build CKKS parameters from the same Q/P/LogN as the eval-level RLWE params
 		ckksParams, err := ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
-			LogN:            params.Eval.LogN(),
-			Q:               params.Eval.Q(),
-			P:               params.Eval.P(),
+			LogN:            params.Eval().LogN(),
+			Q:               params.Eval().Q(),
+			P:               params.Eval().P(),
 			LogDefaultScale: logDefaultScale,
 		})
 		require.NoError(t, err)
@@ -793,8 +839,12 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 
 		// Derive rotation keys for rotation by 1
 		rot := 1
-		evk, err := tc.hkEval.DeriveGaloisKeys(tc.tk, []int{rot})
+		intermediate, err := expandAll(tc.hkEval, tc.tk, []int{rot})
 		require.NoError(t, err)
+		gk, err := tc.hkEval.FinalizeKey(rot, intermediate.Keys[rot], tc.tk.HomingKey)
+		require.NoError(t, err)
+		intermediate.Keys[rot] = nil
+		evk := rlwe.NewMemEvaluationKeySet(nil, gk)
 
 		// CKKS primitives
 		encoder := ckks.NewEncoder(ckksParams)
@@ -871,14 +921,14 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		params, err := NewParameters(paramsEval, []int{61})
+		params, err := NewParameters(paramsEval, []int{61}, nil)
 		require.NoError(t, err)
 
 		t.Logf("Eval: LogN=%d, Q=%d primes, P=%d primes, N=%d",
 			paramsEval.LogN(), paramsEval.QCount(), paramsEval.PCount(), paramsEval.N())
 
 		// Client
-		kgenHK := rlwe.NewKeyGenerator(params.HK)
+		kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 		sk := kgenHK.GenSecretKeyNew()
 		skEval, err := params.ProjectToEvalKey(sk)
 		require.NoError(t, err)
@@ -889,9 +939,8 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		sk1 := kgenHK.GenSecretKeyNew()
 		homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-		topLevel := params.NumLevels() - 1
-		topParams := params.RPrime[topLevel]
-		skExt := ConstructExtendedSK(params.HK, topParams, sk, sk1)
+		topParams := params.Top()
+		skExt := ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 		pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
 
@@ -914,8 +963,16 @@ func testDeriveGaloisKeysLargeN(t *testing.T) {
 		// Server: derive
 		targetRots := []int{1, 2, 3, 5, 7, 10, 17, 31, 64, 100, 255, 512, 1000}
 		hkEval := NewEvaluator(params)
-		evk, err := hkEval.DeriveGaloisKeys(tk, targetRots)
+		intermediate, err := expandAll(hkEval, tk, targetRots)
 		require.NoError(t, err)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
+		for r, mk := range intermediate.Keys {
+			intermediate.Keys[r] = nil
+			gk, err := hkEval.FinalizeKey(r, mk, tk.HomingKey)
+			require.NoError(t, err)
+			galoisKeys = append(galoisKeys, gk)
+		}
+		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 		t.Logf("derived %d evaluation keys", len(evk.GetGaloisKeysList()))
 
 		// Verify a subset

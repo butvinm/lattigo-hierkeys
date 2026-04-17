@@ -16,7 +16,7 @@ import (
 //   - Levels[i]: Q = Levels[i-1].Q ∪ Levels[i-1].P, P = P_i
 //   - Levels[k-1]: top master level
 //
-// For k=2, this is the standard LLKN two-tier scheme from Lee-Lee-Kim-No.
+// For 2-level, this is the standard LLKN two-tier scheme from Lee-Lee-Kim-No.
 // For k>2, intermediate levels enable further TX bandwidth reduction
 // at the cost of additional server-side computation.
 //
@@ -27,22 +27,28 @@ import (
 // Unlike KG+, LLKN does not use an extension ring and supports both
 // Standard and ConjugateInvariant ring types.
 type Parameters struct {
-	Levels []rlwe.Parameters
+	levels []rlwe.Parameters
 }
 
 // Eval returns the evaluation-level parameters (Levels[0]).
 func (p Parameters) Eval() rlwe.Parameters {
-	return p.Levels[0]
+	return p.levels[0]
+}
+
+// Levels returns the hierarchy chain. Levels[0] is the eval level,
+// Levels[k-1] is the top master level.
+func (p Parameters) Levels() []rlwe.Parameters {
+	return p.levels
 }
 
 // Top returns the top (master) level parameters (Levels[k-1]).
 func (p Parameters) Top() rlwe.Parameters {
-	return p.Levels[len(p.Levels)-1]
+	return p.levels[len(p.levels)-1]
 }
 
 // NumLevels returns the number of hierarchy levels (k).
 func (p Parameters) NumLevels() int {
-	return len(p.Levels)
+	return len(p.levels)
 }
 
 // ProjectToEvalKey projects a top-level secret key to evaluation level.
@@ -55,7 +61,7 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 		return nil, fmt.Errorf("sk has %d Q primes, want %d (top level)", skTop.LevelQ()+1, expectedQ)
 	}
 	// projectToLevel logic for level 0
-	paramsLevel := p.Levels[0]
+	paramsLevel := p.levels[0]
 	skLevel := rlwe.NewSecretKey(paramsLevel)
 	for m := 0; m <= paramsLevel.MaxLevel(); m++ {
 		copy(skLevel.Value.Q.Coeffs[m], skTop.Value.Q.Coeffs[m])
@@ -69,28 +75,28 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 // NewParameters constructs LLKN hierarchical key parameters from standard
 // evaluation parameters and auxiliary prime bit-sizes for each level above eval.
 //
-// logPPerLevel[i] gives the P-prime bit-sizes for Levels[i+1].
-// The number of hierarchy levels is k = len(logPPerLevel) + 1.
+// logPLevels[i] gives the P-prime bit-sizes for Levels[i+1].
+// The number of hierarchy levels is k = len(logPLevels) + 1.
 //
 // P primes at each level are generated to be distinct from all Q primes at
 // that level and from all primes used at lower levels. This prevents the
 // prime collision that would cause GadgetProduct/ModDown to fail.
 //
-// For k=2 (standard two-tier): NewParameters(eval, [][]int{{61}})
-// For k=3 (three-tier):        NewParameters(eval, [][]int{{61}, {61}})
-func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, error) {
+// For 2-level (standard two-tier): NewParameters(eval, [][]int{{61}})
+// For 3-level (three-tier):        NewParameters(eval, [][]int{{61}, {61}})
+func NewParameters(eval rlwe.Parameters, logPLevels [][]int) (Parameters, error) {
 
-	if len(logPPerLevel) == 0 {
-		return Parameters{}, fmt.Errorf("logPPerLevel must have at least one element (for k>=2)")
+	if len(logPLevels) == 0 {
+		return Parameters{}, fmt.Errorf("logPLevels must have at least one element (for k>=2)")
 	}
 
 	if eval.PCount() == 0 {
 		return Parameters{}, fmt.Errorf("eval parameters must have P primes")
 	}
 
-	for i, logP := range logPPerLevel {
+	for i, logP := range logPLevels {
 		if len(logP) == 0 {
-			return Parameters{}, fmt.Errorf("logPPerLevel[%d] must have at least one element", i)
+			return Parameters{}, fmt.Errorf("logPLevels[%d] must have at least one element", i)
 		}
 	}
 
@@ -105,12 +111,12 @@ func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, erro
 
 	nthRoot := uint64(eval.RingQ().NthRoot())
 
-	k := len(logPPerLevel) + 1
+	k := len(logPLevels) + 1
 	levels := make([]rlwe.Parameters, k)
 	levels[0] = eval
 
-	// Build each level: Q_{i+1} = Q_i ∪ P_i, P_{i+1} = fresh primes from logPPerLevel[i]
-	for i := 0; i < len(logPPerLevel); i++ {
+	// Build each level: Q_{i+1} = Q_i ∪ P_i, P_{i+1} = fresh primes from logPLevels[i]
+	for i := 0; i < len(logPLevels); i++ {
 		prev := levels[i]
 
 		// Q_{i+1} = Q_i ∪ P_i
@@ -119,7 +125,7 @@ func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, erro
 		qNext = append(qNext, prev.P()...)
 
 		// Generate fresh P primes that don't collide with any existing primes
-		pNext, err := hierkeys.GenerateUniquePrimes(logPPerLevel[i], nthRoot, usedPrimes)
+		pNext, err := hierkeys.GenerateUniquePrimes(logPLevels[i], nthRoot, usedPrimes)
 		if err != nil {
 			return Parameters{}, fmt.Errorf("cannot generate P primes for level %d: %w", i+1, err)
 		}
@@ -143,5 +149,5 @@ func NewParameters(eval rlwe.Parameters, logPPerLevel [][]int) (Parameters, erro
 		levels[i+1] = next
 	}
 
-	return Parameters{Levels: levels}, nil
+	return Parameters{levels: levels}, nil
 }

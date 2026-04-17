@@ -34,23 +34,23 @@ func main() {
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 	}); err != nil {
 		panic(err)
 	}
 
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{56},
+		{55}, // P for master level
 	}); err != nil {
 		panic(err)
 	}
 
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
-	fmt.Printf("LLKN CKKS multiparty (N=%d, k=%d): LogN=%d, %d slots\n",
+	fmt.Printf("LLKN CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
@@ -155,10 +155,31 @@ func main() {
 	eval := llkn.NewEvaluator(params)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+	var shift0 *hierkeys.MasterKey
+	if shift0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
+	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRots)
+	level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	for _, r := range targetRots {
+		mk, err := exp.Derive(r)
+		if err != nil {
+			panic(err)
+		}
+		level0.Keys[r] = mk
+	}
+
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))
+	for _, r := range targetRots {
+		mk := level0.Keys[r]
+		level0.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(mk); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
+	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

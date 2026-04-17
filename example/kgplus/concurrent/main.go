@@ -1,17 +1,19 @@
-// KG+ hierarchical rotation keys — leveled server-side derivation example.
+// KG+ hierarchical rotation keys — concurrent derivation.
 //
-// KG+ uses ring switching (extension ring R' of degree 2N) to further reduce
-// transmission key sizes compared to LLKN. The trade-off: only supports
-// Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
+// Demonstrates concurrent key derivation with ring switching. The evaluator
+// is thread-safe — pool-based scratch buffers for both RotToRot and
+// RingSwitchGaloisKey operations.
 //
-// The client generates two independent secrets (sk, sk1), constructs an
-// extended secret in R', and sends a homing key for ring switching.
-// The server derives evaluation keys using PubToRot + NewLevelExpansion + FinalizeKey.
+// Uses 3-level with per-level expansion:
+//   - Phase 1 (sequential): expand {1,4} → full base-4 set at R' level 1
+//   - Phase 2 (concurrent): derive target rotations at R' level 0
+//   - Phase 3: ring-switch + finalize
 package main
 
 import (
 	"fmt"
 	"math/cmplx"
+	"sync"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/butvinm/lattigo-hierkeys/kgplus"
@@ -22,9 +24,7 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS parameters ---
-	// 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
-	// LogNthRoot=16 ensures primes are NTT-friendly for degree 2N (KG+ requirement).
+	// --- CKKS + KG+ parameters ---
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
@@ -36,8 +36,6 @@ func main() {
 		panic(err)
 	}
 
-	// --- KG+ parameters ---
-	// 3-level: two extra P levels in R' (degree 2N).
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
 		[]int{55}, // LogPHK for Levels[1]
@@ -50,34 +48,23 @@ func main() {
 
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
-	fmt.Printf("KG+ CKKS (%d-level): LogN=%d, %d slots\n",
+	fmt.Printf("KG+ concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
-	// CLIENT: generate keys
+	// CLIENT: generate keys (same as simple example)
 	// =========================================================================
 
-	// Two independent secrets at the homing-key (HK) level.
-	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
 	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
-
-	// Homing key: EvalKey(sk1 → sk) at HK level. Enables the server to
-	// ring-switch derived keys from R' (degree 2N) back to R (degree N).
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N). This is the secret
-	// under which master keys and the public key are generated in R'.
 	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
-
-	// Public key and master rotation keys in R' at the top level.
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	// With 3-level, only {1, middle} masters are needed — the server derives the
-	// full base-4 set at the intermediate level.
-	k3Masters := []int{1, 64}
+	k3Masters := []int{1, 4}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
 		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
@@ -91,18 +78,16 @@ func main() {
 		PublicKey:     pk,
 		MasterRotKeys: masterKeys,
 	}
-	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
-		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
+	fmt.Printf("Client: %d master keys\n", len(k3Masters))
 
 	// =========================================================================
-	// SERVER: per-level derivation via PubToRot + NewLevelExpansion + FinalizeKey
+	// SERVER: single evaluator, thread-safe
 	// =========================================================================
 
 	eval := kgplus.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
-	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	// Level 1: expand {1,64} masters into the full base-4 set at intermediate level.
+	// Phase 1 (sequential): expand at intermediate R' level.
 	var shift0L1 *hierkeys.MasterKey
 	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
@@ -116,37 +101,68 @@ func main() {
 		}
 		level1Keys[r] = mk
 	}
+	fmt.Printf("Phase 1 (sequential): %d intermediate keys in R'\n", len(level1Keys))
 
-	// Level 0: derive target rotations from the expanded set.
+	// Phase 2 (concurrent): derive target rotations at R' level 0.
+	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
+
 	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
+
+	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
+
 	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-	for _, r := range targetRots {
-		mk, err := exp0.Derive(r)
-		if err != nil {
-			panic(err)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	errs := make([]error, len(targetRots))
+	for i, rot := range targetRots {
+		wg.Add(1)
+		go func(idx, r int) {
+			defer wg.Done()
+			mk, err := exp.Derive(r)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			mu.Lock()
+			level0Keys.Keys[r] = mk
+			mu.Unlock()
+		}(i, rot)
+	}
+	wg.Wait()
+
+	for i, e := range errs {
+		if e != nil {
+			panic(fmt.Sprintf("derive rotation %d: %v", targetRots[i], e))
 		}
-		level0Keys.Keys[r] = mk
 	}
 
-	// Finalize each key: ring-switch R' → R, convert to lattigo convention.
-	// Release the R' MasterKey reference per iteration so the GC can reclaim
-	// it before the next FinalizeKey allocates its scratch buffers.
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
-	for _, r := range targetRots {
-		mk := level0Keys.Keys[r]
-		level0Keys.Keys[r] = nil
-		var gk *rlwe.GaloisKey
-		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
-			panic(err)
-		}
-		galoisKeys = append(galoisKeys, gk)
+	fmt.Printf("Phase 2 (concurrent): %d level-0 keys in R'\n", len(level0Keys.Keys))
+
+	// Phase 3 (concurrent): ring-switch R' → R and convert each key in parallel.
+	// FinalizeKey is thread-safe (pool-based scratch buffers).
+	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
+	finalizeErrs := make([]error, len(targetRots))
+	for i, rot := range targetRots {
+		wg.Add(1)
+		go func(idx, r int) {
+			defer wg.Done()
+			mk := level0Keys.Keys[r]
+			galoisKeys[idx], finalizeErrs[idx] = eval.FinalizeKey(r, mk, tk.HomingKey)
+		}(i, rot)
 	}
+	wg.Wait()
+
+	for i, e := range finalizeErrs {
+		if e != nil {
+			panic(fmt.Sprintf("finalize rotation %d: %v", targetRots[i], e))
+		}
+	}
+
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================
 	// VERIFY

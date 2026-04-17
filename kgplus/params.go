@@ -16,24 +16,45 @@ import (
 //   - P_hk: auxiliary primes consumed by the homing key during ring switching
 //
 // The hierarchy has k levels in the extension ring R' (degree 2N):
-//   - RPrime[0]: Q = Q_eval, P = P_eval — level-0 keys
-//   - RPrime[1]: Q = Q_eval ∪ P_eval, P = P_hk — first master level (same P as HK)
-//   - RPrime[i]: Q = RPrime[i-1].Q ∪ RPrime[i-1].P, P = P_i — higher levels
+//   - Levels[0]: Q = Q_eval, P = P_eval — level-0 keys
+//   - Levels[1]: Q = Q_eval ∪ P_eval, P = P_hk — first master level (same P as HK)
+//   - Levels[i]: Q = Levels[i-1].Q ∪ Levels[i-1].P, P = P_i — higher levels
 //
-// For k=2, this is the standard KG+ scheme.
+// For 2-level, this is the standard KG+ scheme.
 // For k>2, extra levels provide additional hierarchy depth.
 //
 // KG+ only supports the Standard ring type (not ConjugateInvariant),
 // because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
-	Eval   rlwe.Parameters
-	HK     rlwe.Parameters
-	RPrime []rlwe.Parameters // RPrime[0]=level0, RPrime[k-1]=top master
+	eval   rlwe.Parameters
+	hk     rlwe.Parameters
+	levels []rlwe.Parameters // levels[0]=level0, levels[k-1]=top master
 }
 
-// NumLevels returns the number of hierarchy levels (k = len(RPrime)).
+// Eval returns the evaluation-level parameters.
+func (p Parameters) Eval() rlwe.Parameters {
+	return p.eval
+}
+
+// HomingKey returns the homing-key-level parameters.
+func (p Parameters) HomingKey() rlwe.Parameters {
+	return p.hk
+}
+
+// Levels returns the R' hierarchy chain. Levels[0] is the eval-aligned R'
+// level, Levels[k-1] is the top master level.
+func (p Parameters) Levels() []rlwe.Parameters {
+	return p.levels
+}
+
+// Top returns the top (master) level parameters (Levels[k-1]).
+func (p Parameters) Top() rlwe.Parameters {
+	return p.levels[len(p.levels)-1]
+}
+
+// NumLevels returns the number of hierarchy levels (k = len(Levels)).
 func (p Parameters) NumLevels() int {
-	return len(p.RPrime)
+	return len(p.levels)
 }
 
 // ProjectToEvalKey projects a homing-key-level secret key to evaluation level.
@@ -41,16 +62,16 @@ func (p Parameters) NumLevels() int {
 //
 // Returns an error if the secret key is not at the expected HK level.
 func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, error) {
-	expectedQ := p.HK.QCount()
+	expectedQ := p.hk.QCount()
 	if skHK.LevelQ()+1 != expectedQ {
 		return nil, fmt.Errorf("sk has %d Q primes, want %d (HK level)", skHK.LevelQ()+1, expectedQ)
 	}
-	skEval := rlwe.NewSecretKey(p.Eval)
-	for m := 0; m <= p.Eval.MaxLevel(); m++ {
+	skEval := rlwe.NewSecretKey(p.eval)
+	for m := 0; m <= p.eval.MaxLevel(); m++ {
 		copy(skEval.Value.Q.Coeffs[m], skHK.Value.Q.Coeffs[m])
 	}
-	for m := 0; m <= p.Eval.MaxLevelP(); m++ {
-		copy(skEval.Value.P.Coeffs[m], skHK.Value.Q.Coeffs[p.Eval.QCount()+m])
+	for m := 0; m <= p.eval.MaxLevelP(); m++ {
+		copy(skEval.Value.P.Coeffs[m], skHK.Value.Q.Coeffs[p.eval.QCount()+m])
 	}
 	return skEval, nil
 }
@@ -58,15 +79,16 @@ func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, err
 // NewParameters constructs KG+ hierarchical key parameters from standard evaluation
 // parameters and auxiliary prime bit-sizes.
 //
-// logPHK specifies auxiliary primes for the homing key and RPrime[1].
-// logPExtra (optional) specifies P-prime bit-sizes for additional levels (k>2).
+// logPHK specifies auxiliary primes for the homing key and Levels[1].
+// logPExtra specifies P-prime bit-sizes for additional levels (k>2); pass nil
+// for the standard 2-level scheme.
 //
-// For k=2 (standard): NewParameters(eval, logPHK)
-// For k=3: NewParameters(eval, logPHK, logP2)
+// For 2-level (standard): NewParameters(eval, logPHK, nil)
+// For 3-level:            NewParameters(eval, logPHK, [][]int{logP2})
 //
 // All primes must be NTT-friendly for degree 2N. Returns an error if the evaluation
 // parameters use the ConjugateInvariant ring type.
-func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Parameters, error) {
+func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Parameters, error) {
 
 	if eval.RingType() == ring.ConjugateInvariant {
 		return Parameters{}, fmt.Errorf("KG+ does not support ConjugateInvariant ring type; use the llkn package instead")
@@ -98,7 +120,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 	nthRoot2N := nthRoot * 2 // NTT-friendly for degree 2N
 
 	// Generate HK P primes (avoiding existing primes).
-	// Must be NTT-friendly for degree 2N because they are also used as P in RPrime[1].
+	// Must be NTT-friendly for degree 2N because they are also used as P in Levels[1].
 	pHK, err := hierkeys.GenerateUniquePrimes(logPHK, nthRoot2N, usedPrimes)
 	if err != nil {
 		return Parameters{}, fmt.Errorf("cannot generate HK P primes: %w", err)
@@ -118,13 +140,13 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 		return Parameters{}, fmt.Errorf("cannot create HK parameters: %w", err)
 	}
 
-	// Build RPrime levels (degree 2N)
-	k := 2 + len(logPExtra) // k=2 minimum, +1 per extra level
+	// Build R' levels (degree 2N)
+	k := 2 + len(logPExtra) // 2-level minimum, +1 per extra level
 
-	rpLevels := make([]rlwe.Parameters, k)
+	levels := make([]rlwe.Parameters, k)
 
-	// RPrime[0]: Q = Q_eval, P = P_eval, degree 2N
-	paramsRPrime0, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+	// Levels[0]: Q = Q_eval, P = P_eval, degree 2N
+	paramsLevel0, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       eval.Q(),
 		P:       eval.P(),
@@ -133,10 +155,10 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 	if err != nil {
 		return Parameters{}, fmt.Errorf("cannot create R' level-0 parameters (primes may not be NTT-friendly for degree 2N): %w", err)
 	}
-	rpLevels[0] = paramsRPrime0
+	levels[0] = paramsLevel0
 
-	// RPrime[1]: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N
-	paramsRPrime1, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+	// Levels[1]: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N
+	paramsLevel1, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       qHK,
 		P:       pHK,
@@ -145,15 +167,15 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 	if err != nil {
 		return Parameters{}, fmt.Errorf("cannot create R' level-1 parameters: %w", err)
 	}
-	rpLevels[1] = paramsRPrime1
+	levels[1] = paramsLevel1
 
-	// Build additional RPrime levels (k>2)
+	// Build additional R' levels (k>2)
 	for i := 0; i < len(logPExtra); i++ {
 		if len(logPExtra[i]) == 0 {
 			return Parameters{}, fmt.Errorf("logPExtra[%d] must have at least one element", i)
 		}
 
-		prev := rpLevels[i+1]
+		prev := levels[i+1]
 
 		// Q_{next} = prev.Q ∪ prev.P
 		qNext := make([]uint64, 0, prev.QCount()+prev.PCount())
@@ -179,12 +201,12 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra ...[]int) (Para
 			return Parameters{}, fmt.Errorf("cannot create R' level-%d parameters: %w", i+2, err)
 		}
 
-		rpLevels[i+2] = next
+		levels[i+2] = next
 	}
 
 	return Parameters{
-		Eval:   eval,
-		HK:     paramsHK,
-		RPrime: rpLevels,
+		eval:   eval,
+		hk:     paramsHK,
+		levels: levels,
 	}, nil
 }

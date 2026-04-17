@@ -1,4 +1,4 @@
-// KG+ hierarchical rotation keys — per-level ExpandLevel API.
+// KG+ hierarchical rotation keys — per-level NewLevelExpansion API.
 //
 // Shows the inactive/active pattern with ring switching:
 //   - Phase 1 (inactive): expand {1, base} masters into the full base-4 set
@@ -7,7 +7,7 @@
 //     intermediate keys.
 //   - Phase 3: ring-switch R' keys to R and finalize as standard lattigo keys.
 //
-// For the simpler one-shot API, see ../simple.
+// For a simpler 3-level example, see ../simple.
 package main
 
 import (
@@ -27,9 +27,9 @@ func main() {
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
-		LogQ:            []int{50, 50, 50, 50, 50},
-		LogP:            []int{50, 50},
-		LogDefaultScale: 50,
+		LogQ:            []int{55, 40, 40, 40, 40},
+		LogP:            []int{55, 55},
+		LogDefaultScale: 40,
 		LogNthRoot:      16,
 	}); err != nil {
 		panic(err)
@@ -37,32 +37,33 @@ func main() {
 
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
-		[]int{56},
-		[]int{56},
+		[]int{55}, // LogPHK for Levels[1]
+		[][]int{
+			{55, 55, 55, 55, 55, 55, 55}, // LogPExtra for Levels[2]
+		},
 	); err != nil {
 		panic(err)
 	}
 
 	slots := ckksParams.MaxSlots()
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
-	fmt.Printf("KG+ CKKS (k=%d): LogN=%d, %d slots\n",
+	topParams := params.Top()
+	fmt.Printf("KG+ CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
 	// CLIENT: same key generation as simple example
 	// =========================================================================
 
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	k3Masters := []int{1, 4}
+	k3Masters := []int{1, 64}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
 		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
@@ -88,18 +89,24 @@ func main() {
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
 	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.RPrime[1], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 
-	// ExpandLevel combines shift-0 with the 2 master keys to produce the full
-	// set of 7+ rotation keys at this level. The intermediate keys can be
-	// serialized and stored between phases.
-	var level1Keys *kgplus.IntermediateKeys
-	if level1Keys, err = eval.ExpandLevel(1, shift0L1, tk.MasterRotKeys, masterRots); err != nil {
-		panic(err)
+	// NewLevelExpansion creates a derivation session at this level. Calling
+	// Derive once per master rotation produces the full base-4 set of rotation
+	// keys; the resulting IntermediateKeys can be serialized and stored
+	// between phases.
+	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
+	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
+	for _, r := range masterRots {
+		mk, err := exp1.Derive(r)
+		if err != nil {
+			panic(err)
+		}
+		level1Keys[r] = mk
 	}
-	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys.Keys))
+	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys))
 
 	// =========================================================================
 	// SERVER PHASE 2 (active): derive target rotations at R' level 0
@@ -109,26 +116,40 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.RPrime[0], params.RPrime[topLevel], tk.PublicKey); err != nil {
+	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 
-	var level0Keys *kgplus.IntermediateKeys
-	if level0Keys, err = eval.ExpandLevel(0, shift0L0, level1Keys.Keys, targetRots); err != nil {
-		panic(err)
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
+	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	for _, r := range targetRots {
+		mk, err := exp0.Derive(r)
+		if err != nil {
+			panic(err)
+		}
+		level0Keys.Keys[r] = mk
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
 	// =========================================================================
 	// SERVER PHASE 3: ring-switch R' → R and convert to lattigo convention
 	// =========================================================================
-	// FinalizeKeys uses the homing key to ring-switch each level-0 key from
+	// FinalizeKey uses the homing key to ring-switch each level-0 key from
 	// R' (degree 2N) back to R (degree N), then converts to standard lattigo
-	// GaloisKeys usable with ckks.Evaluator.
-	var evk *rlwe.MemEvaluationKeySet
-	if evk, err = eval.FinalizeKeys(tk, level0Keys); err != nil {
-		panic(err)
+	// GaloisKey usable with ckks.Evaluator. We release the R' MasterKey
+	// reference per iteration so the GC can reclaim it before the next
+	// FinalizeKey allocates its scratch buffers.
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
+	for _, r := range targetRots {
+		mk := level0Keys.Keys[r]
+		level0Keys.Keys[r] = nil
+		var gk *rlwe.GaloisKey
+		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+			panic(err)
+		}
+		galoisKeys = append(galoisKeys, gk)
 	}
+	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================

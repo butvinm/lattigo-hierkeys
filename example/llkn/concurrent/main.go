@@ -1,17 +1,20 @@
-// LLKN hierarchical rotation keys — per-level NewLevelExpansion API.
+// LLKN hierarchical rotation keys — concurrent derivation.
 //
-// Shows the inactive/active pattern: the server derives keys level by level,
-// allowing intermediate results to be serialized and stored between phases.
-// This is useful when:
-//   - The server pre-computes keys during an offline (inactive) phase
-//   - Target rotations are only known later, during the online (active) phase
+// Demonstrates concurrent key derivation using LevelExpansion.Derive from
+// goroutines. The evaluator is thread-safe — a single instance handles all
+// concurrent calls via pool-based scratch buffers (no ConcurrentCopy needed).
 //
-// For a simpler 2-level example, see ../simple.
+// The concurrency model is the same as lattigo v6.2: one evaluator, multiple
+// goroutines, each goroutine allocates its own output.
+//
+// Uses 3-level to show two-phase expansion: intermediate level first (sequential),
+// then target rotations at level 0 (concurrent).
 package main
 
 import (
 	"fmt"
 	"math/cmplx"
+	"sync"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/butvinm/lattigo-hierkeys/llkn"
@@ -22,7 +25,7 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS + LLKN parameters (same as simple example) ---
+	// --- CKKS + LLKN parameters ---
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
@@ -33,13 +36,11 @@ func main() {
 		panic(err)
 	}
 
-	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate
-	// level between eval and master. With 2-level this example would be trivial
-	// (only one NewLevelExpansion call), so we use 3-level to show the cascade.
+	// 3-level to demonstrate two-phase expansion.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{55}, // P for level 1 (intermediate)
-		{55}, // P for level 2 (top master)
+		{55}, // P for level 1
+		{55}, // P for level 2 (top)
 	}); err != nil {
 		panic(err)
 	}
@@ -47,19 +48,17 @@ func main() {
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
 	topLevel := params.NumLevels() - 1
-	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
+	fmt.Printf("LLKN concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
 	// =========================================================================
-	// CLIENT: same key generation as simple example
+	// CLIENT: generate keys (same as simple example)
 	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sk := kgen.GenSecretKeyNew()
 	pk := kgen.GenPublicKeyNew(sk)
 
-	// With 3-level, only {1, base} master rotations are needed at the top level.
-	// The full base-4 set is derived at the intermediate level by the server.
 	k3Masters := []int{1, 4}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
@@ -70,25 +69,21 @@ func main() {
 	}
 
 	tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
-	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
-		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
+	fmt.Printf("Client: %d master keys\n", len(k3Masters))
 
 	// =========================================================================
-	// SERVER PHASE 1 (inactive): expand master set at intermediate level
+	// SERVER: single evaluator, thread-safe
 	// =========================================================================
-	// PubToRot derives a shift-0 (identity) key at the target level from the
-	// client's public key. This is the starting point for RotToRot combinations.
+
 	eval := llkn.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
+	// Phase 1 (sequential): expand {1,4} → full base-4 set at level 1.
+	// This is typically done once during an offline phase.
 	var shift0L1 *hierkeys.MasterKey
 	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Levels()[topLevel], tk.PublicKey); err != nil {
 		panic(err)
 	}
-
-	// NewLevelExpansion creates a derivation session at level 1. Calling
-	// Derive once per master rotation produces the full base-4 rotation set;
-	// the resulting IntermediateKeys can be serialized and stored for later use.
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
 	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, r := range masterRots {
@@ -98,13 +93,12 @@ func main() {
 		}
 		level1Keys[r] = mk
 	}
-	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys))
+	fmt.Printf("Phase 1 (sequential): %d intermediate keys at level 1\n", len(level1Keys))
 
-	// =========================================================================
-	// SERVER PHASE 2 (active): derive target rotations at eval level
-	// =========================================================================
-	// Target rotations are now known. Derive them at level 0 using the
-	// intermediate keys from phase 1 as the new master set.
+	// Phase 2 (concurrent): derive target rotations at level 0.
+	// Create a LevelExpansion session and call Derive from goroutines.
+	// Each rotation is computed at most once — concurrent requests for the
+	// same rotation (as target or dependency) coordinate automatically.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
@@ -112,37 +106,64 @@ func main() {
 		panic(err)
 	}
 
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
-	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-	for _, r := range targetRots {
-		mk, err := exp0.Derive(r)
-		if err != nil {
-			panic(err)
-		}
-		level0Keys.Keys[r] = mk
-	}
-	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
+	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
 
-	// =========================================================================
-	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys
-	// =========================================================================
-	// Per-key finalize, releasing each level-0 MasterKey reference for GC.
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
-	for _, r := range targetRots {
-		mk := level0Keys.Keys[r]
-		level0Keys.Keys[r] = nil
-		var gk *rlwe.GaloisKey
-		if gk, err = eval.FinalizeKey(mk); err != nil {
-			panic(err)
-		}
-		galoisKeys = append(galoisKeys, gk)
+	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	errs := make([]error, len(targetRots))
+	for i, rot := range targetRots {
+		wg.Add(1)
+		go func(idx, r int) {
+			defer wg.Done()
+			mk, err := exp.Derive(r)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
+			mu.Lock()
+			level0Keys.Keys[r] = mk
+			mu.Unlock()
+		}(i, rot)
 	}
+	wg.Wait()
+
+	for i, e := range errs {
+		if e != nil {
+			panic(fmt.Sprintf("derive rotation %d: %v", targetRots[i], e))
+		}
+	}
+
+	fmt.Printf("Phase 2 (concurrent): %d level-0 keys from %d goroutines\n",
+		len(level0Keys.Keys), len(targetRots))
+
+	// Phase 3 (concurrent): finalize — convert each key in parallel.
+	// FinalizeKey is thread-safe.
+	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
+	finalizeErrs := make([]error, len(targetRots))
+	for i, rot := range targetRots {
+		wg.Add(1)
+		go func(idx, r int) {
+			defer wg.Done()
+			mk := level0Keys.Keys[r]
+			galoisKeys[idx], finalizeErrs[idx] = eval.FinalizeKey(mk)
+		}(i, rot)
+	}
+	wg.Wait()
+
+	for i, e := range finalizeErrs {
+		if e != nil {
+			panic(fmt.Sprintf("finalize rotation %d: %v", targetRots[i], e))
+		}
+	}
+
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// =========================================================================
 	// VERIFY
 	// =========================================================================
+
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {
 		panic(err)

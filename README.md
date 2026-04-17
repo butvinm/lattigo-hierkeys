@@ -28,10 +28,10 @@ Both produce standard lattigo Galois keys.
 
 ## Quick Start
 
-### LLKN k=2 (two-level hierarchy)
+### LLKN 2-level (two-level hierarchy)
 
 ```go
-// LLKN k=2: one level of P primes
+// LLKN 2-level: one level of P primes
 params, _ := llkn.NewParameters(paramsEval, [][]int{{61}})
 
 // CLIENT: generate keys with standard lattigo, convert to MasterKeys
@@ -48,12 +48,27 @@ for _, rot := range masterRots {
 tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 // send tk to server
 
-// SERVER: one-shot derivation → standard lattigo evaluation keys
+// SERVER: derive standard lattigo evaluation keys
 eval := llkn.NewEvaluator(params)
-evk, _ := eval.DeriveGaloisKeys(tk, targetRotations)
+shift0, _ := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRotations)
+level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRotations))}
+for _, r := range targetRotations {
+    mk, _ := exp.Derive(r)
+    level0.Keys[r] = mk
+}
+
+galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))
+for _, r := range targetRotations {
+    mk := level0.Keys[r]
+    level0.Keys[r] = nil // release for GC
+    gk, _ := eval.FinalizeKey(mk)
+    galoisKeys = append(galoisKeys, gk)
+}
+evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 ```
 
-### KG+ k=3 with gradual expansion
+### KG+ 3-level with gradual expansion
 
 KG+ uses an extension ring R' (degree 2N) and ring switching. The client generates two independent secrets, constructs an extended secret in R', and sends a homing key for ring switching.
 
@@ -61,53 +76,93 @@ See `example/kgplus/simple` for the complete flow.
 
 ## Benchmarks
 
-256 target rotation keys, base-4, Intel Xeon GraniteRapids 16 vCPUs. All parameter sets are **128-bit secure** (HE Standard, ternary secret with h=N/2).
+256 target rotation keys, base-4. All parameter sets are **128-bit secure** (h=N/2 sparse ternary, σ=3.2, Q_max from Mono et al., AFRICACRYPT 2023, matching LLKN/KG+ papers).
 
-**Scheme configurations** (each uses the same eval-level Q and P):
+Convention: q₀=55b, qᵢ=40b (Δ=2⁴⁰), Pᵢ=55b (eval), hierarchy P primes also 55b.
 
-| Scheme                            | Masters | m   | dnum       | Modulus bit length     | Max modulus |
-| --------------------------------- | ------- | --- | ---------- | ---------------------- | ----------- |
-| **LogN=14, Q=5×50b, P=2×50b**     |         |     |            |                        |             |
-| Conventional                      | —       | 256 | (3)        | (253, 101)             | 354         |
-| LLKN k=2                          | base-4  | 7   | (3, 7)     | (253, 101, 56)         | 411         |
-| KG+ k=3                           | {1, 4}  | 2   | (3, 7, 8)  | (253, 101, 56, 56)     | 467 / R'    |
-| **LogN=15, Q=55b+9×40b, P=3×61b** |         |     |            |                        |             |
-| Conventional                      | —       | 256 | (4)        | (419, 183)             | 602         |
-| LLKN k=2                          | base-4  | 7   | (4, 7)     | (419, 183, 122)        | 725         |
-| KG+ k=3                           | {1, 4}  | 2   | (4, 2, 5)  | (419, 183, 610, 305)   | 1527 / R'   |
-| **LogN=16, Q=24×55b, P=4×55b**    |         |     |            |                        |             |
-| Conventional                      | —       | 256 | (6)        | (1332, 222)            | 1554        |
-| LLKN k=2                          | base-4  | 8   | (6, 7)     | (1332, 222, 220)       | 1775        |
-| KG+ k=3                           | {1, 4}  | 2   | (6, 10, 1) | (1332, 222, 171, 1705) | 3450 / R'   |
+**Critical**: hierarchy P prime size must be ≥ max eval prime size. Lattigo's gadget
+decomposition is count-based (`dnum = ceil(QCount/PCount)`) with each digit holding
+exactly PCount consecutive Q primes. Smaller hierarchy P primes cause noise to blow
+up by `2^(max_digit_bits − P_bits)` per RotToRot. See CLAUDE.md "Noise from
+GadgetProduct".
 
-**Transmission key sizes:**
+**Scheme configurations:**
 
-| LogN | Conventional | LLKN k=2        | KG+ k=3       |
-| ---- | ------------ | --------------- | ------------- |
-| 14   | 1,344 MB     | 100 MB (7.4%)   | 90 MB (6.7%)  |
-| 15   | 6,656 MB     | 374 MB (5.6%)   | 326 MB (4.9%) |
-| 16   | 43,009 MB    | 1,820 MB (4.2%) | 620 MB (1.4%) |
+```
+LogN=14 (Q_max(N)=429, Q_max(2N)=857):
 
-**Client TX generation time:**
+  Eval: Q=[55]+[40]×4=215b  P=[55]×2=110b  QP=325/429  depth=4  dnum=3
 
-| LogN | LLKN k=2 | KG+ k=3 |
-| ---- | -------- | ------- |
-| 14   | 0.4s     | 0.3s    |
-| 15   | 1.3s     | 1.3s    |
-| 16   | 7.0s     | 3.2s    |
+  LLKN 2-level (7 masters {1,4,16,64,256,1024,4096}):
+    L1 (master): Q=325b  P=[55]×1=55b  QP=380/429  dnum=7
 
-**Server derivation time (sequential, single core):**
+  KG+ 3-level (2 masters {1,64}):
+    Homing:  Q=325b  P=[55]×1=55b   QP=380/429  dnum=7
+    L1 (R'): Q=380b  P=[55]×1=55b   QP=435/857  dnum=7
+    L2 (R'): Q=435b  P=[55]×7=385b  QP=820/857  dnum=2
 
-| LogN | LLKN k=2 | KG+ k=3 |
-| ---- | -------- | ------- |
-| 14   | 14s      | 48s     |
-| 15   | 76s      | 217s    |
-| 16   | 528s     | 2,179s  |
+LogN=15 (Q_max(N)=857, Q_max(2N)=1714):
+
+  Eval: Q=[55]+[40]×9=415b  P=[55]×3=165b  QP=580/857  depth=9  dnum=3
+
+  LLKN 2-level (7 masters {1,4,...,4096}):
+    L1 (master): Q=580b  P=[55]×5=275b  QP=855/857  dnum=3
+
+  KG+ 3-level (2 masters {1,64}):
+    Homing:  Q=580b  P=[55]×5=275b   QP=855/857   dnum=3
+    L1 (R'): Q=855b  P=[55]×5=275b   QP=1130/1714 dnum=3
+    L2 (R'): Q=1130b P=[55]×10=550b  QP=1680/1714 dnum=2
+
+LogN=16 (Q_max(N)=1714, Q_max(2N)=3428):
+
+  Eval: Q=[55]+[40]×27=1135b  P=[55]×4=220b  QP=1355/1714  depth=27  dnum=6
+
+  LLKN 2-level (8 masters {1,4,...,16384}):
+    L1 (master): Q=1355b  P=[55]×6=330b  QP=1685/1714  dnum=6
+
+  KG+ 3-level (2 masters {1,256}):
+    Homing:  Q=1355b  P=[55]×6=330b    QP=1685/1714  dnum=6
+    L1 (R'): Q=1685b  P=[55]×6=330b    QP=2015/3428  dnum=6
+    L2 (R'): Q=2015b  P=[55]×25=1375b  QP=3390/3428  dnum=2
+```
+
+**Transmission key sizes** (256 target rotations, base-4):
+
+| LogN | Conventional | LLKN 2-level    | KG+ 3-level    |
+| ---- | ------------ | --------------- | -------------- |
+| 14   | 1,344 MB     | 100 MB (7.4%)   | 51.5 MB (3.8%) |
+| 15   | 6,656 MB     | 198 MB (3.0%)   | 167 MB (2.5%)  |
+| 16   | 57,345 MB    | 1,862 MB (3.2%) | 858 MB (1.5%)  |
+
+**Client TX generation time** (16 vCPU Intel Xeon Icelake):
+
+| LogN | LLKN 2-level | KG+ 3-level |
+| ---- | ------------ | ----------- |
+| 14   | 0.67 s       | 0.36 s      |
+| 15   | 1.24 s       | 1.12 s      |
+| 16   | 12.5 s       | 6.5 s       |
+
+**Server derivation time, sequential** (16 vCPU Intel Xeon Icelake; LogN≤15 n=3 mean, LogN=16 n=1):
+
+| LogN | LLKN 2-level | KG+ 3-level |
+| ---- | ------------ | ----------- |
+| 14   | 80.5 s       | 241 s       |
+| 15   | 343 s        | 963 s       |
+| 16   | 4,784 s      | N/A         |
+
+**Server derivation time, concurrent** (16 vCPU Intel Xeon Icelake, GOMAXPROCS=16; LogN≤15 n=3 mean, LogN=16 n=1):
+
+| LogN | LLKN 2-level | KG+ 3-level |
+| ---- | ------------ | ----------- |
+| 14   | 10.2 s       | 57.8 s      |
+| 15   | 36.9 s       | 157 s       |
+| 16   | 536 s        | 2,549 s     |
 
 ```bash
-go test -bench BenchmarkKeySizes -benchtime 1x -run ^NONE ./...
-go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^NONE -timeout 60m ./...
-go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^NONE ./...
+go test -bench BenchmarkKeySizes -benchtime 1x -run ^$ ./...
+go test -bench BenchmarkDeriveGaloisKeys -benchtime 1x -run ^$ -timeout 60m ./...
+go test -bench BenchmarkDeriveGaloisKeysConcurrent -benchtime 1x -run ^$ -timeout 60m ./...
+go test -bench BenchmarkGenTransmissionKeys -benchtime 1x -run ^$ ./...
 ```
 
 ## Build & Test
@@ -122,11 +177,13 @@ go test -v -count=1 -short ./llkn/...
 
 ```bash
 cd example
-go run ./llkn/simple/       # one-shot DeriveGaloisKeys
-go run ./llkn/leveled/      # per-level ExpandLevel (inactive/active pattern)
+go run ./llkn/simple/       # minimal 2-level derivation
+go run ./llkn/leveled/      # per-level NewLevelExpansion (inactive/active pattern)
+go run ./llkn/concurrent/   # concurrent derivation with goroutines
 go run ./llkn/multiparty/   # N-out-of-N multiparty
-go run ./kgplus/simple/     # one-shot DeriveGaloisKeys with ring switching
-go run ./kgplus/leveled/    # per-level ExpandLevel with ring switching
+go run ./kgplus/simple/     # 3-level derivation with ring switching
+go run ./kgplus/leveled/    # per-level NewLevelExpansion with ring switching
+go run ./kgplus/concurrent/ # concurrent derivation with ring switching
 go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 ```
 

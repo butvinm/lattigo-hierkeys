@@ -1,7 +1,11 @@
 package hierkeys_test
 
 import (
+	"runtime"
+	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/butvinm/lattigo-hierkeys/kgplus"
@@ -9,20 +13,41 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-const benchNTargets = 256 // fixed number of derived rotation keys across all scenarios
+// Realistic sparse target rotation sets mimicking FHE workloads:
+// small positives (BSGS), powers of 2 (bootstrapping), convolution strides,
+// negative rotations (values near N/2). 256 targets spread across [1, N/2].
+var sparseTargets14 = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 32, 54, 64, 90, 96, 128, 160, 180, 192, 205, 218, 224, 245, 256, 261, 263, 270, 288, 320, 356, 360, 376, 384, 448, 450, 459, 512, 540, 570, 576, 585, 630, 640, 646, 654, 713, 720, 760, 768, 793, 810, 828, 838, 840, 896, 900, 913, 990, 1023, 1024, 1080, 1144, 1152, 1170, 1260, 1274, 1280, 1308, 1333, 1339, 1350, 1402, 1440, 1530, 1536, 1576, 1620, 1629, 1710, 1717, 1764, 1792, 1800, 1806, 1829, 1867, 1877, 1906, 1908, 2006, 2007, 2048, 2167, 2188, 2194, 2212, 2254, 2277, 2278, 2279, 2304, 2371, 2402, 2560, 2585, 2657, 2758, 2788, 2818, 2911, 2941, 2963, 2989, 3033, 3072, 3101, 3109, 3113, 3114, 3287, 3437, 3457, 3463, 3584, 3680, 3715, 3764, 3787, 4096, 4140, 4376, 4393, 4465, 4468, 4523, 4563, 4598, 4608, 4730, 4828, 4838, 4932, 4946, 4991, 5067, 5120, 5150, 5202, 5208, 5239, 5243, 5309, 5324, 5418, 5491, 5544, 5600, 5609, 5638, 5720, 5746, 5750, 5772, 5866, 5974, 5978, 6034, 6068, 6075, 6144, 6217, 6255, 6295, 6333, 6357, 6595, 6602, 6612, 6631, 6733, 6795, 6834, 6905, 6943, 7007, 7060, 7099, 7122, 7168, 7254, 7309, 7556, 7581, 7674, 7842, 7972, 8071, 8107, 8143, 8144, 8145, 8146, 8147, 8148, 8149, 8150, 8151, 8152, 8153, 8154, 8155, 8156, 8157, 8158, 8159, 8160, 8161, 8162, 8163, 8164, 8165, 8166, 8167, 8168, 8169, 8170, 8171, 8172, 8173, 8174, 8175, 8176, 8177, 8178, 8179, 8180, 8181, 8182, 8183, 8184, 8185, 8186, 8187, 8188, 8189, 8190, 8191}
+
+var sparseTargets15 = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 32, 64, 96, 107, 128, 160, 192, 224, 256, 288, 320, 384, 410, 435, 448, 489, 512, 521, 526, 576, 640, 712, 751, 768, 896, 917, 1024, 1085, 1140, 1152, 1170, 1280, 1292, 1308, 1408, 1425, 1520, 1536, 1585, 1655, 1664, 1675, 1680, 1792, 1825, 1920, 2046, 2048, 2176, 2287, 2304, 2432, 2548, 2560, 2616, 2665, 2678, 2804, 3072, 3151, 3258, 3433, 3457, 3484, 3528, 3583, 3584, 3599, 3612, 3658, 3734, 3753, 3812, 3815, 4011, 4013, 4096, 4334, 4375, 4387, 4423, 4507, 4553, 4555, 4558, 4608, 4742, 4804, 5120, 5156, 5169, 5314, 5515, 5575, 5636, 5821, 5882, 5926, 5978, 6066, 6144, 6202, 6217, 6225, 6228, 6573, 6874, 6913, 6925, 7168, 7360, 7429, 7528, 7574, 8180, 8192, 8280, 8752, 8786, 8929, 8936, 9045, 9126, 9196, 9216, 9293, 9460, 9655, 9675, 9864, 9892, 9981, 10134, 10300, 10404, 10416, 10477, 10486, 10618, 10648, 10739, 10835, 10981, 11088, 11200, 11217, 11275, 11439, 11491, 11499, 11544, 11732, 11763, 11947, 11956, 12067, 12136, 12150, 12433, 12510, 12589, 12666, 12714, 13190, 13203, 13224, 13262, 13465, 13589, 13667, 13810, 13886, 14014, 14119, 14197, 14243, 14359, 14508, 14618, 14961, 15111, 15162, 15347, 15449, 15683, 15944, 16142, 16213, 16335, 16336, 16337, 16338, 16339, 16340, 16341, 16342, 16343, 16344, 16345, 16346, 16347, 16348, 16349, 16350, 16351, 16352, 16353, 16354, 16355, 16356, 16357, 16358, 16359, 16360, 16361, 16362, 16363, 16364, 16365, 16366, 16367, 16368, 16369, 16370, 16371, 16372, 16373, 16374, 16375, 16376, 16377, 16378, 16379, 16380, 16381, 16382, 16383}
+
+var sparseTargets16 = []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 32, 64, 96, 128, 160, 181, 192, 213, 224, 256, 288, 320, 362, 384, 448, 512, 543, 576, 640, 724, 768, 820, 870, 896, 905, 977, 1024, 1042, 1086, 1152, 1267, 1280, 1424, 1448, 1502, 1536, 1629, 1792, 1810, 1833, 1991, 2048, 2172, 2280, 2304, 2340, 2353, 2534, 2560, 2583, 2615, 2715, 2849, 2896, 3040, 3071, 3072, 3077, 3170, 3258, 3310, 3350, 3359, 3439, 3584, 3649, 4091, 4096, 4573, 4608, 5095, 5120, 5232, 5330, 5355, 5608, 6144, 6301, 6516, 6866, 7056, 7165, 7168, 7197, 7224, 7315, 7468, 7506, 7624, 7629, 8022, 8025, 8192, 8668, 8749, 8846, 9013, 9106, 9109, 9116, 9216, 9483, 9607, 10627, 11030, 11150, 11271, 11642, 11764, 11851, 11955, 12131, 12404, 12434, 12450, 12456, 13747, 13826, 13849, 14720, 14858, 15055, 15148, 16384, 16560, 17503, 17572, 17857, 17871, 18090, 18251, 18391, 18919, 19310, 19350, 19727, 19783, 19961, 20268, 20600, 20807, 20831, 20953, 20972, 21235, 21296, 21669, 21961, 22175, 22399, 22434, 22550, 22877, 22982, 22998, 23088, 23463, 23893, 23912, 24133, 24271, 24300, 24865, 25019, 25177, 25332, 25428, 26406, 26448, 26524, 26929, 27178, 27333, 27619, 27771, 28028, 28237, 28393, 28486, 29015, 29235, 30222, 30324, 30693, 31366, 31888, 32284, 32425, 32719, 32720, 32721, 32722, 32723, 32724, 32725, 32726, 32727, 32728, 32729, 32730, 32731, 32732, 32733, 32734, 32735, 32736, 32737, 32738, 32739, 32740, 32741, 32742, 32743, 32744, 32745, 32746, 32747, 32748, 32749, 32750, 32751, 32752, 32753, 32754, 32755, 32756, 32757, 32758, 32759, 32760, 32761, 32762, 32763, 32764, 32765, 32766, 32767}
+
+// benchTargetRots returns the sparse target set for the given LogN.
+func benchTargetRots(logN int) []int {
+	switch logN {
+	case 14:
+		return sparseTargets14
+	case 15:
+		return sparseTargets15
+	case 16:
+		return sparseTargets16
+	default:
+		return sparseTargets14
+	}
+}
 
 type benchScenario struct {
 	Name   string
 	LogN   int
 	LogQ   []int // Q prime bit-sizes
 	LogP   []int // P prime bit-sizes
-	LogPHK []int // Homing key / master P prime bit-sizes (k=2)
+	LogPHK []int // Homing key / master P prime bit-sizes (2-level)
 	Base   int   // master rotation base
 
-	// k=3 KG+ parameters: P_hk with enough primes for noise control,
+	// 3-level KG+ parameters: P_hk with enough primes for noise control,
 	// P_extra large enough for dnum=1 at the top level.
-	LogPHK3   []int // P^(1) for RPrime[1] (≈ Q_eval primes for noise)
-	LogPExtra []int // P^(2) for RPrime[2] (≈ Q^(2) primes for dnum=1)
+	LogPHK3   []int // P^(1) for Levels[1] (≈ Q_eval primes for noise)
+	LogPExtra []int // P^(2) for Levels[2] (≈ Q^(2) primes for dnum=1)
 }
 
 func buildLogQ(n, bitSize int) []int {
@@ -33,30 +58,47 @@ func buildLogQ(n, bitSize int) []int {
 	return q
 }
 
-// 128-bit secure parameter sets (HE Standard, h=N/2 ternary secret).
+// 128-bit secure parameter sets.
+// h=N/2 sparse ternary, σ=3.2, Δ=2^40, Q_max from lattice estimator [32].
+// Convention: q₀=55b, qᵢ=40b, Pᵢ=55b. Hierarchy primes also 55b.
+//
+// CRITICAL: hierarchy P primes (LogPHK, LogPExtra) must be ≥ max eval prime size.
+// Lattigo's gadget decomposition is count-based: dnum = ceil(QCount/PCount), with
+// each digit holding exactly PCount consecutive Q primes regardless of size. Noise
+// blows up by 2^(max_digit_bits − P_bits) when P bits < max digit bits. See CLAUDE.md.
 var benchScenarios = []benchScenario{
 	{
-		Name: "LogN14_Q5_P2",
-		LogN: 14, LogQ: buildLogQ(5, 50), LogP: []int{50, 50}, LogPHK: []int{56},
+		// LogN=14: Q_max=429, Q_max(2N)=857. depth=4, dnum_eval=3.
+		// PHK = 1×55 (only fits 1 prime in margin=104b after eval QP=325).
+		// LLKN dnum_master=7, KG+ dnum_hk=7, dnum_int=7, dnum_top=2.
+		Name: "LogN14_D4_P2",
+		LogN: 14, LogQ: append([]int{55}, buildLogQ(4, 40)...), LogP: buildLogQ(2, 55),
+		LogPHK:    buildLogQ(1, 55),
 		Base:      4,
-		LogPHK3:   []int{56},
-		LogPExtra: []int{56},
+		LogPHK3:   buildLogQ(1, 55),
+		LogPExtra: buildLogQ(7, 55),
 	},
 	{
-		Name: "LogN15_Q10_P3",
-		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: []int{61, 61, 61},
-		LogPHK:    []int{61, 61},
+		// LogN=15: Q_max=857, Q_max(2N)=1714. depth=9, dnum_eval=3.
+		// PHK = 5×55 (fits in margin=277b after eval QP=580).
+		// LLKN dnum_master=3, KG+ dnum_hk=3, dnum_int=3, dnum_top=2.
+		Name: "LogN15_D9_P3",
+		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: buildLogQ(3, 55),
+		LogPHK:    buildLogQ(5, 55),
 		Base:      4,
-		LogPHK3:   buildLogQ(10, 61),
-		LogPExtra: buildLogQ(5, 61),
+		LogPHK3:   buildLogQ(5, 55),
+		LogPExtra: buildLogQ(10, 55),
 	},
 	{
-		Name: "LogN16_Q24_P4",
-		LogN: 16, LogQ: buildLogQ(24, 55), LogP: []int{55, 55, 55, 55},
-		LogPHK:    []int{55, 55, 55, 55},
+		// LogN=16: Q_max=1714, Q_max(2N)=3428. depth=27, dnum_eval=6.
+		// PHK = 6×55 (fits in margin=359b after eval QP=1355).
+		// LLKN dnum_master=6, KG+ dnum_hk=6, dnum_int=6, dnum_top=2.
+		Name: "LogN16_D27_P4",
+		LogN: 16, LogQ: append([]int{55}, buildLogQ(27, 40)...), LogP: buildLogQ(4, 55),
+		LogPHK:    buildLogQ(6, 55),
 		Base:      4,
-		LogPHK3:   buildLogQ(3, 57),
-		LogPExtra: buildLogQ(31, 55),
+		LogPHK3:   buildLogQ(6, 55),
+		LogPExtra: buildLogQ(25, 55),
 	},
 }
 
@@ -80,14 +122,13 @@ func genLLKNTransmissionKeys(b *testing.B, params llkn.Parameters, masterRots []
 
 // genKGPlusTransmissionKeys generates KG+ transmission keys using the new API.
 func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRots []int) *kgplus.TransmissionKeys {
-	kgenHK := rlwe.NewKeyGenerator(params.HK)
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	topLevel := params.NumLevels() - 1
-	topParams := params.RPrime[topLevel]
-	skExt := kgplus.ConstructExtendedSK(params.HK, topParams, sk, sk1)
+	topParams := params.Top()
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
@@ -103,7 +144,7 @@ func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRot
 	return &kgplus.TransmissionKeys{HomingKey: homingKey, PublicKey: pk, MasterRotKeys: masterKeys}
 }
 
-// BenchmarkKeySizes measures and reports transmission key sizes for LLKN k=2 and KG+ k=3.
+// BenchmarkKeySizes measures and reports transmission key sizes for LLKN 2-level and KG+ 3-level.
 func BenchmarkKeySizes(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -120,10 +161,7 @@ func BenchmarkKeySizes(b *testing.B) {
 
 			slots := paramsEval.N() / 2
 			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
-			targetRots := make([]int, 0, benchNTargets)
-			for i := 1; i <= benchNTargets && i < slots; i++ {
-				targetRots = append(targetRots, i)
-			}
+			targetRots := benchTargetRots(sc.LogN)
 
 			kgenRef := rlwe.NewKeyGenerator(paramsEval)
 			skRef := kgenRef.GenSecretKeyNew()
@@ -152,7 +190,7 @@ func BenchmarkKeySizes(b *testing.B) {
 				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
-				b.Logf("LLKN k=2: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
+				b.Logf("LLKN 2-level: dnum_master=%d, TX=%.1f MB (%.0f%% of conventional)",
 					dnumMaster, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
@@ -160,22 +198,25 @@ func BenchmarkKeySizes(b *testing.B) {
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
 
-				topRP := params.RPrime[params.NumLevels()-1]
+				topRP := params.Top()
 				dnumMaster := topRP.BaseRNSDecompositionVectorSize(
 					topRP.MaxLevel(), topRP.MaxLevelP())
 
-				k3MasterRots := []int{1, sc.Base}
+				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
+				// making level-1 expansion to the full base-p set efficient.
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				tkSize := tk.BinarySize()
 				ratio := float64(tkSize) / float64(conventionalBytes) * 100
 
-				b.Logf("KG+ k=3: dnum_master=%d, masters=%v, TX=%.1f MB (%.0f%% of conventional)",
+				b.Logf("KG+ 3-level: dnum_master=%d, masters=%v, TX=%.1f MB (%.0f%% of conventional)",
 					dnumMaster, k3MasterRots, float64(tkSize)/(1024*1024), ratio)
 				b.ReportMetric(float64(tkSize)/(1024*1024), "TX_MB")
 				b.ReportMetric(ratio, "vs_conv_%")
@@ -185,7 +226,56 @@ func BenchmarkKeySizes(b *testing.B) {
 	}
 }
 
-// BenchmarkDeriveGaloisKeys measures server-side key derivation time.
+// measurePhase reports peak and held HeapInuse (in MB) at the current
+// point in the expansion, excluded from the benchmark's timer via Stop/Start.
+//
+// peak = HeapInuse just before a forced GC. This includes everything
+// the program can still reach AND any garbage GC has not swept yet —
+// it is the right number for "how much memory did this phase need".
+//
+// held = HeapInuse just after the forced GC. This is what survives:
+//  1. GC sweep of unreachable garbage produced by the phase, and
+//  2. Go's runtime liveness analysis dropping local variables that
+//     have no use after this call (notably the LevelExpansion `exp`
+//     whose entries cache holds stepping-stone keys we no longer need).
+//
+// As a consequence, `held` is NOT "the working set during this phase"
+// — it is "what's still reachable from variables used after this call".
+// For expansion phases, that means held ≈ the keys you copied into
+// IntermediateKeys plus the previous level's masters; the stepping
+// stones in exp.entries get dropped automatically by Go's liveness.
+// Use peak when sizing memory; use the peak/held delta to see how
+// much of the phase's footprint is transient.
+//
+// For memory metrics to be meaningful, run with -benchtime=1x; with
+// higher iteration counts, ReportMetric overwrites per iteration but
+// values should be similar across runs.
+func measurePhase(b *testing.B, phase string, phaseStart *time.Time) {
+	b.StopTimer()
+	defer b.StartTimer()
+
+	// Wall time elapsed in this phase (since the previous measurePhase
+	// call or since *phaseStart was last set). Reported in seconds.
+	elapsed := time.Since(*phaseStart)
+	b.ReportMetric(elapsed.Seconds(), phase+"_s")
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	peak := float64(m.HeapInuse) / (1024 * 1024)
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	retained := float64(m.HeapInuse) / (1024 * 1024)
+
+	b.ReportMetric(peak, phase+"_peak_MB")
+	b.ReportMetric(retained, phase+"_held_MB")
+
+	// Reset the timer for the next phase, AFTER the forced GC so the
+	// measurement overhead is not counted toward the next phase.
+	*phaseStart = time.Now()
+}
+
+// BenchmarkDeriveGaloisKeys measures sequential server-side key derivation.
+// Each target is derived and finalized immediately — no key accumulation.
 func BenchmarkDeriveGaloisKeys(b *testing.B) {
 	for _, sc := range benchScenarios {
 		b.Run(sc.Name, func(b *testing.B) {
@@ -202,10 +292,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 
 			slots := paramsEval.N() / 2
 			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
-			targetRots := make([]int, 0, benchNTargets)
-			for i := 1; i <= benchNTargets && i < slots; i++ {
-				targetRots = append(targetRots, i)
-			}
+			targetRots := benchTargetRots(sc.LogN)
 
 			b.Run("LLKN", func(b *testing.B) {
 				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
@@ -216,26 +303,227 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 				eval := llkn.NewEvaluator(params)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+					phaseStart := time.Now()
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
+						for _, r := range masterRots {
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Fatal(err)
+							}
+							currentMasters[r] = mk
+						}
+					}
+					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+					if err != nil {
 						b.Fatal(err)
 					}
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					for _, r := range targetRots {
+						mk, err := exp0.Derive(r)
+						if err != nil {
+							b.Fatal(err)
+						}
+						if _, err := eval.FinalizeKey(mk); err != nil {
+							b.Fatal(err)
+						}
+					}
+					measurePhase(b, "derive", &phaseStart)
 				}
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
-				k3MasterRots := []int{1, sc.Base}
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2]
+				k3MasterRots := []int{1, bigMaster}
 				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				eval := kgplus.NewEvaluator(params)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					if _, err := eval.DeriveGaloisKeys(tk, targetRots); err != nil {
+					phaseStart := time.Now()
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
+						for _, r := range masterRots {
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Fatal(err)
+							}
+							currentMasters[r] = mk
+						}
+					}
+					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+					if err != nil {
 						b.Fatal(err)
 					}
+					exp0 := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					for _, r := range targetRots {
+						mk, err := exp0.Derive(r)
+						if err != nil {
+							b.Fatal(err)
+						}
+						if _, err := eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+							b.Fatal(err)
+						}
+					}
+					measurePhase(b, "derive", &phaseStart)
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkDeriveGaloisKeysConcurrent measures concurrent streaming derivation
+// with bounded workers (GOMAXPROCS). Each worker derives one target at a time
+// and finalizes it immediately.
+func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
+	workers := runtime.GOMAXPROCS(0)
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+				LogN:       sc.LogN,
+				LogQ:       sc.LogQ,
+				LogP:       sc.LogP,
+				NTTFlag:    true,
+				LogNthRoot: sc.LogN + 2,
+			})
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			slots := paramsEval.N() / 2
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := benchTargetRots(sc.LogN)
+
+			b.Run("LLKN", func(b *testing.B) {
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+				tk := genLLKNTransmissionKeys(b, params, masterRots)
+				eval := llkn.NewEvaluator(params)
+
+				runtime.GC()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					phaseStart := time.Now()
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
+						for _, r := range masterRots {
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Fatal(err)
+							}
+							currentMasters[r] = mk
+						}
+					}
+
+					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					sem := make(chan struct{}, workers)
+					var wg sync.WaitGroup
+					for _, rot := range targetRots {
+						wg.Add(1)
+						sem <- struct{}{}
+						go func(r int) {
+							defer wg.Done()
+							defer func() { <-sem }()
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Error(err)
+								return
+							}
+							if _, err := eval.FinalizeKey(mk); err != nil {
+								b.Error(err)
+							}
+						}(rot)
+					}
+					wg.Wait()
+					measurePhase(b, "derive", &phaseStart)
+				}
+			})
+
+			b.Run("KGPlus_k3", func(b *testing.B) {
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
+				if err != nil {
+					b.Fatal(err)
+				}
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2]
+				k3MasterRots := []int{1, bigMaster}
+				tk := genKGPlusTransmissionKeys(b, params, k3MasterRots)
+				eval := kgplus.NewEvaluator(params)
+
+				runtime.GC()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					phaseStart := time.Now()
+					currentMasters := tk.MasterRotKeys
+					for level := params.NumLevels() - 2; level >= 1; level-- {
+						shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tk.PublicKey)
+						if err != nil {
+							b.Fatal(err)
+						}
+						exp := eval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+						currentMasters = make(map[int]*hierkeys.MasterKey, len(masterRots))
+						for _, r := range masterRots {
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Fatal(err)
+							}
+							currentMasters[r] = mk
+						}
+					}
+
+					shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+					if err != nil {
+						b.Fatal(err)
+					}
+					exp := eval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+					sem := make(chan struct{}, workers)
+					var wg sync.WaitGroup
+					for _, rot := range targetRots {
+						wg.Add(1)
+						sem <- struct{}{}
+						go func(r int) {
+							defer wg.Done()
+							defer func() { <-sem }()
+							mk, err := exp.Derive(r)
+							if err != nil {
+								b.Error(err)
+								return
+							}
+							if _, err := eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+								b.Error(err)
+							}
+						}(rot)
+					}
+					wg.Wait()
+					measurePhase(b, "derive", &phaseStart)
 				}
 			})
 		})
@@ -272,17 +560,326 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 			})
 
 			b.Run("KGPlus_k3", func(b *testing.B) {
-				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, sc.LogPExtra)
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
 				if err != nil {
-					b.Skip("KG+ k=3 params failed:", err)
-					return
+					b.Fatal(err)
 				}
-				k3MasterRots := []int{1, sc.Base}
+				// KG+ 3-level: {1, p^(m/2)} masters — the large master jumps far,
+				// making level-1 expansion to the full base-p set efficient.
+				fullSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+				bigMaster := fullSet[len(fullSet)/2] // middle power of the base
+				k3MasterRots := []int{1, bigMaster}
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					genKGPlusTransmissionKeys(b, params, k3MasterRots)
 				}
 			})
+		})
+	}
+}
+
+// Per-operation benchmarks for individual operations at LogN=14.
+// Run: go test -bench Benchmark -run ^$ -v -timeout 10m .
+
+func setupLLKN(b *testing.B, sc benchScenario) (llkn.Parameters, *llkn.Evaluator, *rlwe.PublicKey, map[int]*hierkeys.MasterKey) {
+	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+		LogN: sc.LogN, LogQ: sc.LogQ, LogP: sc.LogP,
+		NTTFlag: true, LogNthRoot: sc.LogN + 2,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	topParams := params.Top()
+	kgen := rlwe.NewKeyGenerator(topParams)
+	sk := kgen.GenSecretKeyNew()
+	pk := kgen.GenPublicKeyNew(sk)
+
+	masterKeys := make(map[int]*hierkeys.MasterKey)
+	for _, rot := range []int{1, 4} {
+		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
+		mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
+		if err != nil {
+			b.Fatal(err)
+		}
+		masterKeys[rot] = mk
+	}
+
+	eval := llkn.NewEvaluator(params)
+	return params, eval, pk, masterKeys
+}
+
+func setupKGPlus(b *testing.B, sc benchScenario) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.TransmissionKeys) {
+	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+		LogN: sc.LogN, LogQ: sc.LogQ, LogP: sc.LogP,
+		NTTFlag: true, LogNthRoot: sc.LogN + 2,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
+	sk := kgenHK.GenSecretKeyNew()
+	sk1 := kgenHK.GenSecretKeyNew()
+	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
+
+	topParams := params.Top()
+	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
+	kgenRP := rlwe.NewKeyGenerator(topParams)
+	pk := kgenRP.GenPublicKeyNew(skExt)
+
+	masterKeys := make(map[int]*hierkeys.MasterKey)
+	for _, rot := range []int{1, 4} {
+		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
+		mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
+		if err != nil {
+			b.Fatal(err)
+		}
+		masterKeys[rot] = mk
+	}
+
+	tk := &kgplus.TransmissionKeys{HomingKey: homingKey, PublicKey: pk, MasterRotKeys: masterKeys}
+	eval := kgplus.NewEvaluator(params)
+	return params, eval, tk
+}
+
+// BenchmarkRotToRot measures a single RotToRot call at each level.
+func BenchmarkRotToRot(b *testing.B) {
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			b.Run("LLKN/level0", func(b *testing.B) {
+				params, eval, pk, masterKeys := setupLLKN(b, sc)
+				shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), pk)
+				if err != nil {
+					b.Fatal(err)
+				}
+				master1 := masterKeys[1]
+				galEl := params.Levels()[0].GaloisElement(1)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := eval.RotToRot(0, shift0, master1, galEl); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus/level0", func(b *testing.B) {
+				params, eval, tk := setupKGPlus(b, sc)
+				// level=0 RotToRot expects a master at Levels[1]. The transmission
+				// keys live at Top (Levels[k-1]), so derive a Levels[1] master
+				// from them via a single level=1 RotToRot.
+				shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey)
+				if err != nil {
+					b.Fatal(err)
+				}
+				masterLvl1, err := eval.RotToRot(1, shift0Lvl1, tk.MasterRotKeys[1], params.Levels()[1].GaloisElement(1))
+				if err != nil {
+					b.Fatal(err)
+				}
+				shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+				if err != nil {
+					b.Fatal(err)
+				}
+				galEl := params.Levels()[0].GaloisElement(1)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := eval.RotToRot(0, shift0, masterLvl1, galEl); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus/level1", func(b *testing.B) {
+				params, eval, tk := setupKGPlus(b, sc)
+				shift0, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey)
+				if err != nil {
+					b.Fatal(err)
+				}
+				master1 := tk.MasterRotKeys[1]
+				galEl := params.Levels()[1].GaloisElement(1)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := eval.RotToRot(1, shift0, master1, galEl); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkPubToRot measures PubToRot at each level.
+func BenchmarkPubToRot(b *testing.B) {
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			b.Run("LLKN/level0", func(b *testing.B) {
+				params, _, pk, _ := setupLLKN(b, sc)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), pk); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus/level0", func(b *testing.B) {
+				params, _, tk := setupKGPlus(b, sc)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus/level1", func(b *testing.B) {
+				params, _, tk := setupKGPlus(b, sc)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkFinalizeKey measures per-key finalization.
+func BenchmarkFinalizeKey(b *testing.B) {
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			b.Run("LLKN", func(b *testing.B) {
+				params, eval, pk, masterKeys := setupLLKN(b, sc)
+				shift0, _ := hierkeys.PubToRot(params.Levels()[0], params.Top(), pk)
+				galEl := params.Levels()[0].GaloisElement(1)
+
+				// Pre-generate keys to finalize
+				keys := make([]*hierkeys.MasterKey, b.N)
+				for i := range keys {
+					keys[i], _ = eval.RotToRot(0, shift0, masterKeys[1], galEl)
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := eval.FinalizeKey(keys[i]); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus", func(b *testing.B) {
+				params, eval, tk := setupKGPlus(b, sc)
+				// level=0 RotToRot expects a master at Levels[1]; derive one
+				// from the Top transmission keys via a level=1 RotToRot.
+				shift0Lvl1, _ := hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey)
+				masterLvl1, _ := eval.RotToRot(1, shift0Lvl1, tk.MasterRotKeys[1], params.Levels()[1].GaloisElement(1))
+				shift0, _ := hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey)
+				galEl := params.Levels()[0].GaloisElement(1)
+
+				// Pre-generate keys
+				keys := make([]*hierkeys.MasterKey, b.N)
+				for i := range keys {
+					keys[i], _ = eval.RotToRot(0, shift0, masterLvl1, galEl)
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := eval.FinalizeKey(1, keys[i], tk.HomingKey); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkGaloisKeyToMasterKey measures convention conversion.
+func BenchmarkGaloisKeyToMasterKey(b *testing.B) {
+	for _, sc := range benchScenarios {
+		b.Run(sc.Name, func(b *testing.B) {
+			b.Run("LLKN", func(b *testing.B) {
+				paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+					LogN: sc.LogN, LogQ: sc.LogQ, LogP: sc.LogP,
+					NTTFlag: true, LogNthRoot: sc.LogN + 2,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				params, err := llkn.NewParameters(paramsEval, [][]int{sc.LogPHK})
+				if err != nil {
+					b.Fatal(err)
+				}
+				topParams := params.Top()
+				kgen := rlwe.NewKeyGenerator(topParams)
+				sk := kgen.GenSecretKeyNew()
+				galEl := topParams.GaloisElement(1)
+
+				// Pre-generate GaloisKeys
+				gks := make([]*rlwe.GaloisKey, b.N)
+				for i := range gks {
+					gks[i] = kgen.GenGaloisKeyNew(galEl, sk)
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := hierkeys.GaloisKeyToMasterKey(topParams, gks[i]); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+
+			b.Run("KGPlus_Levels", func(b *testing.B) {
+				paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+					LogN: sc.LogN, LogQ: sc.LogQ, LogP: sc.LogP,
+					NTTFlag: true, LogNthRoot: sc.LogN + 2,
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				params, err := kgplus.NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
+				if err != nil {
+					b.Fatal(err)
+				}
+				topParams := params.Top()
+				kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
+				sk := kgenHK.GenSecretKeyNew()
+				sk1 := kgenHK.GenSecretKeyNew()
+				skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
+				kgenRP := rlwe.NewKeyGenerator(topParams)
+				galEl := topParams.GaloisElement(1)
+
+				gks := make([]*rlwe.GaloisKey, b.N)
+				for i := range gks {
+					gks[i] = kgenRP.GenGaloisKeyNew(galEl, skExt)
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := hierkeys.GaloisKeyToMasterKey(topParams, gks[i]); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkDecomposeRotation measures decomposition chain lengths.
+func BenchmarkDecomposeRotation(b *testing.B) {
+	masters2 := []int{1, 4}
+	masters7 := []int{1, 4, 16, 64, 256, 1024, 4096}
+
+	for _, target := range []int{1, 16, 100, 1000, 4096, 8191} {
+		b.Run("target="+strconv.Itoa(target), func(b *testing.B) {
+			steps2 := hierkeys.DecomposeRotation(target, masters2)
+			steps7 := hierkeys.DecomposeRotation(target, masters7)
+			b.Logf("target=%d: from {1,4}: %d steps, from base-4: %d steps",
+				target, len(steps2), len(steps7))
 		})
 	}
 }

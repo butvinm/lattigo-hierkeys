@@ -2,235 +2,43 @@ package kgplus
 
 import (
 	"fmt"
-	"sort"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// IntermediateKeys holds R' MasterKeys produced by [Evaluator.ExpandLevel] at a
-// single hierarchy level. Can be serialized, used as input to the next
-// ExpandLevel call, or finalized via [Evaluator.FinalizeKeys] (level 0 only).
-type IntermediateKeys struct {
-	Keys map[int]*hierkeys.MasterKey // indexed by rotation index
-}
-
-// DeriveGaloisKeys derives standard evaluation-level GaloisKeys from
-// transmission keys in one shot. The returned keys work with standard
-// lattigo evaluators.
-//
-// For per-level control (inactive/active pattern), use [Evaluator.ExpandLevel]
-// and [Evaluator.FinalizeKeys] directly. See example/kgplus.
-func (eval *Evaluator) DeriveGaloisKeys(tk *TransmissionKeys, targetRotations []int) (*rlwe.MemEvaluationKeySet, error) {
-
-	if tk == nil || tk.PublicKey == nil {
-		return nil, fmt.Errorf("transmission keys and PublicKey must not be nil")
-	}
-
-	k := eval.params.NumLevels()
-	topLevel := k - 1
-
-	masterRots := sortedKeys(tk.MasterRotKeys)
-	currentMasters := tk.MasterRotKeys
-
-	isDerived := false // tracks whether currentMasters is derived (safe to nil) vs original TX data
-	for level := k - 2; level >= 1; level-- {
-		shift0Key, err := hierkeys.PubToRot(eval.params.RPrime[level], eval.params.RPrime[topLevel], tk.PublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("PubToRot at level %d: %w", level, err)
-		}
-		derived, err := eval.ExpandLevel(level, shift0Key, currentMasters, masterRots)
-		if err != nil {
-			return nil, fmt.Errorf("expand R' level %d: %w", level, err)
-		}
-
-		// Release previous level's derived keys — no longer needed.
-		// Skip if currentMasters is tk.MasterRotKeys (don't mutate caller's data).
-		if isDerived {
-			for rot := range currentMasters {
-				currentMasters[rot] = nil // permit early GC
-			}
-		}
-
-		currentMasters = derived.Keys
-		isDerived = true
-	}
-
-	shift0Key0, err := hierkeys.PubToRot(eval.params.RPrime[0], eval.params.RPrime[topLevel], tk.PublicKey)
+// FinalizeKey ring-switches one R' MasterKey to R and converts to a standard
+// lattigo GaloisKey. Thread-safe.
+func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *rlwe.EvaluationKey) (*rlwe.GaloisKey, error) {
+	galElR := eval.params.eval.GaloisElement(rot)
+	rsGK, err := eval.RingSwitchGaloisKey(mk, homingKey, galElR)
 	if err != nil {
-		return nil, fmt.Errorf("PubToRot at level 0: %w", err)
+		return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
 	}
-	level0Keys, err := eval.ExpandLevel(0, shift0Key0, currentMasters, targetRotations)
-	if err != nil {
-		return nil, fmt.Errorf("expand R' level 0: %w", err)
+	if err = eval.convertToLattigoConvention(rsGK); err != nil {
+		return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
 	}
-
-	// Release intermediate masters — no longer needed after level-0 expansion.
-	if isDerived {
-		for rot := range currentMasters {
-			currentMasters[rot] = nil // permit early GC
-		}
-	}
-
-	return eval.FinalizeKeys(tk, level0Keys)
-}
-
-// ExpandLevel derives keys at the given R' hierarchy level using RotToRot.
-// shift0Key comes from [hierkeys.PubToRot], masterKeys from [TransmissionKeys]
-// or a previous ExpandLevel call. Shared decomposition prefixes are cached.
-func (eval *Evaluator) ExpandLevel(
-	level int,
-	shift0Key *hierkeys.MasterKey,
-	masterKeys map[int]*hierkeys.MasterKey,
-	targetRotations []int,
-) (*IntermediateKeys, error) {
-
-	if shift0Key == nil {
-		return nil, fmt.Errorf("shift-0 key must not be nil")
-	}
-
-	if len(masterKeys) == 0 {
-		return nil, fmt.Errorf("master keys must not be empty")
-	}
-
-	paramsLow := eval.params.RPrime[level]
-	nSlots := eval.params.Eval.N() / 2
-
-	// Decomposition base: sorted rotation indices available as masters
-	masterRots := sortedKeys(masterKeys)
-
-	// Cache: normalized rotation index -> key at this level
-	cache := make(map[int]*hierkeys.MasterKey)
-	cache[0] = shift0Key
-
-	for _, target := range targetRotations {
-		normalized := ((target % nSlots) + nSlots) % nSlots
-		if normalized == 0 {
-			continue
-		}
-
-		if _, ok := cache[normalized]; ok {
-			continue
-		}
-
-		steps := hierkeys.DecomposeRotation(normalized, masterRots)
-		if steps == nil {
-			return nil, fmt.Errorf("cannot decompose rotation %d (normalized from %d) from available masters",
-				normalized, target)
-		}
-
-		currentRot := 0
-		for _, step := range steps {
-			nextRot := currentRot + step
-
-			if _, ok := cache[nextRot]; !ok {
-				masterKey, ok := masterKeys[step]
-				if !ok {
-					return nil, fmt.Errorf("missing master key for rotation %d at level %d", step, level+1)
-				}
-				combinedGalEl := paramsLow.GaloisElement(nextRot)
-				key, err := eval.RotToRot(level, cache[currentRot], masterKey, combinedGalEl)
-				if err != nil {
-					return nil, fmt.Errorf("RotToRot step (current=%d + master=%d -> %d): %w",
-						currentRot, step, nextRot, err)
-				}
-				cache[nextRot] = key
-			}
-
-			currentRot = nextRot
-		}
-	}
-
-	// Build result indexed by requested rotations
-	result := &IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRotations))}
-	for _, target := range targetRotations {
-		normalized := ((target % nSlots) + nSlots) % nSlots
-		if normalized == 0 {
-			continue
-		}
-		if key, ok := cache[normalized]; ok {
-			result.Keys[target] = key
-		}
-	}
-	return result, nil
-}
-
-// sortedKeys extracts and sorts the integer keys from a map.
-func sortedKeys(m map[int]*hierkeys.MasterKey) []int {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	return keys
-}
-
-// FinalizeKeys ring-switches level-0 R' IntermediateKeys to R and converts
-// to standard [rlwe.MemEvaluationKeySet] usable with lattigo evaluators.
-func (eval *Evaluator) FinalizeKeys(tk *TransmissionKeys, intermediate *IntermediateKeys) (*rlwe.MemEvaluationKeySet, error) {
-
-	if tk == nil || tk.HomingKey == nil {
-		return nil, fmt.Errorf("transmission keys and homing key must not be nil")
-	}
-
-	if intermediate == nil || len(intermediate.Keys) == 0 {
-		return nil, fmt.Errorf("intermediate keys must not be nil or empty")
-	}
-
-	params := eval.params
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
-
-	for rot, mk := range intermediate.Keys {
-		// Ring-switch from R' to R
-		galElR := params.Eval.GaloisElement(rot)
-		rsGK, err := eval.RingSwitchGaloisKey(mk, tk.HomingKey, galElR)
-		if err != nil {
-			return nil, fmt.Errorf("ring switch for rotation %d: %w", rot, err)
-		}
-
-		// Release R' key — no longer needed after ring switching
-		intermediate.Keys[rot] = nil
-
-		// Post-convert from paper convention to lattigo convention
-		if err := eval.convertToLattigoConvention(rsGK); err != nil {
-			return nil, fmt.Errorf("convention conversion for rotation %d: %w", rot, err)
-		}
-
-		galoisKeys = append(galoisKeys, rsGK)
-	}
-
-	return rlwe.NewMemEvaluationKeySet(nil, galoisKeys...), nil
+	return rsGK, nil
 }
 
 // RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a
-// standard GaloisKey in R (degree N) using a homing key.
+// standard GaloisKey in R (degree N) using a homing key. Thread-safe.
 func (eval *Evaluator) RingSwitchGaloisKey(
-	masterKeyRPrime *hierkeys.MasterKey,
+	masterKeyRP *hierkeys.MasterKey,
 	homingKey *rlwe.EvaluationKey,
 	galoisElement uint64,
 ) (*rlwe.GaloisKey, error) {
 
-	paramsEval := eval.params.Eval
-	paramsHK := eval.params.HK
-	paramsRPrime := eval.params.RPrime[0]
+	paramsEval := eval.params.eval
+	paramsHK := eval.params.hk
+	paramsRP := eval.params.levels[0]
 
-	// Input validation
-	if paramsRPrime.N() != 2*paramsEval.N() {
-		return nil, fmt.Errorf("paramsRPrime.N()=%d must be 2*paramsEval.N()=%d", paramsRPrime.N(), 2*paramsEval.N())
-	}
-	if paramsHK.N() != paramsEval.N() {
-		return nil, fmt.Errorf("paramsHK.N()=%d must equal paramsEval.N()=%d", paramsHK.N(), paramsEval.N())
-	}
-	if paramsHK.QCount() != paramsEval.QCount()+paramsEval.PCount() {
-		return nil, fmt.Errorf("paramsHK.QCount()=%d must equal paramsEval.QCount()+PCount()=%d",
-			paramsHK.QCount(), paramsEval.QCount()+paramsEval.PCount())
-	}
-	if masterKeyRPrime == nil || homingKey == nil {
-		return nil, fmt.Errorf("masterKeyRPrime and homingKey must not be nil")
+	if masterKeyRP == nil || homingKey == nil {
+		return nil, fmt.Errorf("masterKeyRP and homingKey must not be nil")
 	}
 
-	rpGK := masterKeyRPrime.GaloisKey()
+	rpGK := masterKeyRP.GaloisKey()
 
 	N := paramsEval.N()
 	ringQHK := paramsHK.RingQ()
@@ -256,57 +64,77 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 		NthRoot:       paramsEval.RingQ().NthRoot(),
 	}
 
-	ringQRPrimeQ := paramsRPrime.RingQ()
-	ringPRPrime := paramsRPrime.RingP()
+	ringQRP := paramsRP.RingQ()
+	ringPRP := paramsRP.RingP()
 	ringQEval := paramsEval.RingQ()
 	ringPEval := paramsEval.RingP()
 
-	bQRPrime := eval.bQRPrime
-	aQRPrime := eval.aQRPrime
-	bQCoeff := eval.bQCoeff
-	aQCoeff := eval.aQCoeff
-	bPRPrime := eval.bPRPrime
-	aPRPrime := eval.aPRPrime
-	bPCoeff := eval.bPCoeff
-	aPCoeff := eval.aPCoeff
-	b0 := eval.b0RS
-	a0 := eval.a0RS
-	a1 := eval.a1RS
-	Xa1 := eval.Xa1RS
-	rsB := eval.rsBRS
-	rsA := eval.rsARS
-	ctKS := eval.ctKSRS
+	// Pool-based scratch buffers
+	poolRPQ := eval.poolRPQ.AtLevel(paramsRP.MaxLevel())
+	bQRP := poolRPQ.GetBuffPoly()
+	defer poolRPQ.RecycleBuffPoly(bQRP)
+	aQRP := poolRPQ.GetBuffPoly()
+	defer poolRPQ.RecycleBuffPoly(aQRP)
+	bQCoeff := poolRPQ.GetBuffPoly()
+	defer poolRPQ.RecycleBuffPoly(bQCoeff)
+	aQCoeff := poolRPQ.GetBuffPoly()
+	defer poolRPQ.RecycleBuffPoly(aQCoeff)
 
-	pIdx := levelQEval + 1 // start index of P_eval primes in Q_hk
+	poolRPP := eval.poolRPP.AtLevel(paramsRP.MaxLevelP())
+	bPRP := poolRPP.GetBuffPoly()
+	defer poolRPP.RecycleBuffPoly(bPRP)
+	aPRP := poolRPP.GetBuffPoly()
+	defer poolRPP.RecycleBuffPoly(aPRP)
+	bPCoeff := poolRPP.GetBuffPoly()
+	defer poolRPP.RecycleBuffPoly(bPCoeff)
+	aPCoeff := poolRPP.GetBuffPoly()
+	defer poolRPP.RecycleBuffPoly(aPCoeff)
+
+	poolHK := eval.poolHK.AtLevel(levelQHK)
+	b0 := poolHK.GetBuffPoly()
+	defer poolHK.RecycleBuffPoly(b0)
+	a0 := poolHK.GetBuffPoly()
+	defer poolHK.RecycleBuffPoly(a0)
+	a1 := poolHK.GetBuffPoly()
+	defer poolHK.RecycleBuffPoly(a1)
+	Xa1 := poolHK.GetBuffPoly()
+	defer poolHK.RecycleBuffPoly(Xa1)
+	rsB := poolHK.GetBuffPoly()
+	defer poolHK.RecycleBuffPoly(rsB)
+	rsA := poolHK.GetBuffPoly()
+	defer poolHK.RecycleBuffPoly(rsA)
+
+	ctKS := poolHK.GetBuffCt(1, levelQHK)
+	defer poolHK.RecycleBuffCt(ctKS)
+	ctKS.IsNTT = true
+
+	pIdx := levelQEval + 1
 
 	for i := 0; i < nEvalRNS; i++ {
 		component := gc.Value[i][0]
 
-		// --- Extract even/odd from Q and P parts of R' component ---
-		bQRPrime.CopyLvl(paramsRPrime.MaxLevel(), component[0].Q)
-		aQRPrime.CopyLvl(paramsRPrime.MaxLevel(), component[1].Q)
-		ringQRPrimeQ.IMForm(bQRPrime, bQRPrime)
-		ringQRPrimeQ.IMForm(aQRPrime, aQRPrime)
-		ringQRPrimeQ.INTT(bQRPrime, bQCoeff)
-		ringQRPrimeQ.INTT(aQRPrime, aQCoeff)
+		bQRP.CopyLvl(paramsRP.MaxLevel(), component[0].Q)
+		aQRP.CopyLvl(paramsRP.MaxLevel(), component[1].Q)
+		ringQRP.IMForm(*bQRP, *bQRP)
+		ringQRP.IMForm(*aQRP, *aQRP)
+		ringQRP.INTT(*bQRP, *bQCoeff)
+		ringQRP.INTT(*aQRP, *aQCoeff)
 
-		// P parts
-		bPRPrime.CopyLvl(paramsRPrime.MaxLevelP(), component[0].P)
-		aPRPrime.CopyLvl(paramsRPrime.MaxLevelP(), component[1].P)
-		ringPRPrime.IMForm(bPRPrime, bPRPrime)
-		ringPRPrime.IMForm(aPRPrime, aPRPrime)
-		ringPRPrime.INTT(bPRPrime, bPCoeff)
-		ringPRPrime.INTT(aPRPrime, aPCoeff)
+		bPRP.CopyLvl(paramsRP.MaxLevelP(), component[0].P)
+		aPRP.CopyLvl(paramsRP.MaxLevelP(), component[1].P)
+		ringPRP.IMForm(*bPRP, *bPRP)
+		ringPRP.IMForm(*aPRP, *aPRP)
+		ringPRP.INTT(*bPRP, *bPCoeff)
+		ringPRP.INTT(*aPRP, *aPCoeff)
 
-		// Even/odd extraction into Q_hk-level polynomials
-		for m := 0; m <= paramsRPrime.MaxLevel(); m++ {
+		for m := 0; m <= paramsRP.MaxLevel(); m++ {
 			for j := 0; j < N; j++ {
 				b0.Coeffs[m][j] = bQCoeff.Coeffs[m][2*j]
 				a0.Coeffs[m][j] = aQCoeff.Coeffs[m][2*j]
 				a1.Coeffs[m][j] = aQCoeff.Coeffs[m][2*j+1]
 			}
 		}
-		for m := 0; m <= paramsRPrime.MaxLevelP(); m++ {
+		for m := 0; m <= paramsRP.MaxLevelP(); m++ {
 			for j := 0; j < N; j++ {
 				b0.Coeffs[pIdx+m][j] = bPCoeff.Coeffs[m][2*j]
 				a0.Coeffs[pIdx+m][j] = aPCoeff.Coeffs[m][2*j]
@@ -314,7 +142,6 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 			}
 		}
 
-		// Multiply a1 by X: X*f(X) mod (X^N+1)
 		for m := range a1.Coeffs {
 			qi := ringQHK.SubRings[m].Modulus
 			Xa1.Coeffs[m][0] = qi - a1.Coeffs[m][N-1]
@@ -323,18 +150,15 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 			}
 		}
 
-		ringQHK.NTT(b0, b0)
-		ringQHK.NTT(a0, a0)
-		ringQHK.NTT(Xa1, Xa1)
+		ringQHK.NTT(*b0, *b0)
+		ringQHK.NTT(*a0, *a0)
+		ringQHK.NTT(*Xa1, *Xa1)
 
-		// --- Key-switch X*a1 with homing key ---
-		eval.evalHK.GadgetProduct(levelQHK, Xa1, &homingKey.GadgetCiphertext, ctKS)
+		eval.evalHK.GadgetProduct(levelQHK, *Xa1, &homingKey.GadgetCiphertext, ctKS)
 
-		// Ring-switched ciphertext at Q_hk level
-		ringQHK.Add(b0, ctKS.Value[0], rsB)
-		ringQHK.Add(a0, ctKS.Value[1], rsA)
+		ringQHK.Add(*b0, ctKS.Value[0], *rsB)
+		ringQHK.Add(*a0, ctKS.Value[1], *rsA)
 
-		// --- Split Q_hk into Q_eval and P_eval parts ---
 		for m := 0; m <= levelQEval; m++ {
 			s := ringQEval.SubRings[m]
 			s.MForm(rsB.Coeffs[m], targetGK.Value[i][0][0].Q.Coeffs[m])
@@ -353,10 +177,10 @@ func (eval *Evaluator) RingSwitchGaloisKey(
 
 // convertToLattigoConvention applies pi^{-1} to each GadgetCiphertext component,
 // converting from paper convention to lattigo convention in-place.
-// Uses pre-allocated buffers for efficiency.
+// Thread-safe: uses pool-based scratch buffers.
 func (eval *Evaluator) convertToLattigoConvention(gk *rlwe.GaloisKey) error {
 
-	paramsEval := eval.params.Eval
+	paramsEval := eval.params.eval
 
 	galEl := gk.GaloisElement
 	galElInv := paramsEval.ModInvGaloisElement(galEl)
@@ -377,31 +201,37 @@ func (eval *Evaluator) convertToLattigoConvention(gk *rlwe.GaloisKey) error {
 		}
 	}
 
+	// Pool-based scratch for automorphism
+	poolQ := eval.poolEvQ.AtLevel(paramsEval.MaxLevel())
+	autTmpQ := poolQ.GetBuffPoly()
+	defer poolQ.RecycleBuffPoly(autTmpQ)
+
+	var autTmpP *ring.Poly
+	if ringP != nil {
+		poolP := eval.poolEvP.AtLevel(paramsEval.MaxLevelP())
+		autTmpP = poolP.GetBuffPoly()
+		defer poolP.RecycleBuffPoly(autTmpP)
+	}
+
 	for i := range gk.Value {
 		for j := range gk.Value[i] {
 			component := gk.Value[i][j]
 
-			eval.automorphInPlaceQ(ringQ, indexQ, component[0].Q)
+			ringQ.AutomorphismNTTWithIndex(component[0].Q, indexQ, *autTmpQ)
+			component[0].Q.CopyLvl(component[0].Q.Level(), *autTmpQ)
 			if ringP != nil {
-				eval.automorphInPlaceP(ringP, indexP, component[0].P)
+				ringP.AutomorphismNTTWithIndex(component[0].P, indexP, *autTmpP)
+				component[0].P.CopyLvl(component[0].P.Level(), *autTmpP)
 			}
 
-			eval.automorphInPlaceQ(ringQ, indexQ, component[1].Q)
+			ringQ.AutomorphismNTTWithIndex(component[1].Q, indexQ, *autTmpQ)
+			component[1].Q.CopyLvl(component[1].Q.Level(), *autTmpQ)
 			if ringP != nil {
-				eval.automorphInPlaceP(ringP, indexP, component[1].P)
+				ringP.AutomorphismNTTWithIndex(component[1].P, indexP, *autTmpP)
+				component[1].P.CopyLvl(component[1].P.Level(), *autTmpP)
 			}
 		}
 	}
 
 	return nil
-}
-
-func (eval *Evaluator) automorphInPlaceQ(r *ring.Ring, index []uint64, p ring.Poly) {
-	r.AutomorphismNTTWithIndex(p, index, eval.autTmpQ)
-	p.CopyLvl(p.Level(), eval.autTmpQ)
-}
-
-func (eval *Evaluator) automorphInPlaceP(r *ring.Ring, index []uint64, p ring.Poly) {
-	r.AutomorphismNTTWithIndex(p, index, eval.autTmpP)
-	p.CopyLvl(p.Level(), eval.autTmpP)
 }
