@@ -33,8 +33,7 @@ func main() {
 	}
 
 	// --- LLKN parameters --- 2-level: one extra level of P primes for master keys.
-	// Master level: Q=7 primes, P=1×55b prime → dnum=7,
-	// QP=380 ≤ 430.
+	// Master level: Q=7 primes, P=1×55b prime → dnum=7, QP=380 ≤ 430.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{55}, // P for master level — dnum=7
@@ -47,8 +46,7 @@ func main() {
 	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// CLIENT: generate keys with standard lattigo,
-	// convert to hierkeys types
+	// CLIENT: generate keys with standard lattigo, convert to hierkeys types
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 

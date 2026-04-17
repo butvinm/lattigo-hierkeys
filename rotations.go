@@ -20,8 +20,7 @@ func MasterRotationsForBase(base, nSlots int) []int {
 // DecomposeRotation decomposes a target rotation as a sum of master rotation indices using greedy p-ary decomposition (largest master first).
 //
 // masterRots must be a sorted (ascending) p-ary set (powers of some base p) as produced by [MasterRotationsForBase].
-// The function greedily subtracts the largest fitting master at each step,
-// which is optimal for p-ary sets.
+// The function greedily subtracts the largest fitting master at each step, which is optimal for p-ary sets.
 //
 // Returns a sequence of master rotation indices whose sum equals target.
 // Returns nil if target cannot be decomposed (e.g., target <= 0 or no masters).

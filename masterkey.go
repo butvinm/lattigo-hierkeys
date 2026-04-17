@@ -8,8 +8,7 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// MasterKey is a rotation key in paper convention (automorph-then-keyswitch),
-// used as input to [RotToRot] expansion.
+// MasterKey is a rotation key in paper convention (automorph-then-keyswitch), used as input to [RotToRot] expansion.
 //
 // Construct via:
 //   - [GaloisKeyToMasterKey]: converts a standard lattigo GaloisKey (recommended)

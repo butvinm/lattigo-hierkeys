@@ -83,8 +83,7 @@ func main() {
 	}
 
 	// PHASE 1: Collective homing key — EvalKey(s̃₁ → s) at HK level The homing key is NOT a GaloisKey — it's an EvaluationKey that switches from the auxiliary secret s̃₁ to the main secret s.
-	// We use EvaluationKeyGenProtocol directly,
-	// not GaloisKeyGenProtocol.
+	// We use EvaluationKeyGenProtocol directly, not GaloisKeyGenProtocol.
 	// Each party contributes GenShare(skIn=s̃₁_i, skOut=s_i).
 
 	hkProto := multiparty.NewEvaluationKeyGenProtocol(params.HomingKey())
@@ -124,8 +123,7 @@ func main() {
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
 	fmt.Println("Collective public key generated")
 
-	// PHASE 3: Collective master rotation keys in R' Standard GaloisKeyGenProtocol,
-	// using the extended secrets s̃_i.
+	// PHASE 3: Collective master rotation keys in R' Standard GaloisKeyGenProtocol, using the extended secrets s̃_i.
 	// GaloisKeyToMasterKey converts to the format needed by RotToRot.
 
 	k3Masters := []int{1, 64}

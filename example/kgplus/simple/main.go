@@ -1,8 +1,7 @@
 // KG+ hierarchical rotation keys — leveled server-side derivation example.
 //
 // KG+ uses ring switching (extension ring R' of degree 2N) to further reduce transmission key sizes compared to LLKN.
-// The trade-off: only supports Standard ring type,
-// and primes must satisfy q ≡ 1 mod 4N.
+// The trade-off: only supports Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
 //
 // The client generates two independent secrets (sk, sk1),
 // constructs an extended secret in R', and sends a homing key for ring switching.
@@ -54,8 +53,7 @@ func main() {
 	// CLIENT: generate keys
 
 	// Two independent secrets at the homing-key (HK) level.
-	// sk is the main secret; sk1 is auxiliary,
-	// used only for ring switching.
+	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
 	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()

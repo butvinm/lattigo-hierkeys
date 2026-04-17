@@ -16,8 +16,7 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// buildParams constructs LLKN 2-level parameters from a production scenario,
-// using the given ring type.
+// buildParams constructs LLKN 2-level parameters from a production scenario, using the given ring type.
 // Scenarios use LogNthRoot = LogN+2 (= 4N),
 // which satisfies both Standard (requires 2N) and ConjugateInvariant (requires 4N) NTT root-of-unity constraints.
 func buildParams(t *testing.T, sc testutil.Scenario, ringType ring.Type) Parameters {

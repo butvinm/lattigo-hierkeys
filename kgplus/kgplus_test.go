@@ -381,8 +381,7 @@ func testRotToRot(tc *testContext, t *testing.T) {
 	})
 }
 
-// testRotToRotMultiStep tests composing RotToRot twice: shift0 + master(1) -> rot-1,
-// then rot-1 + master(4) -> rot-5.
+// testRotToRotMultiStep tests composing RotToRot twice: shift0 + master(1) -> rot-1, then rot-1 + master(4) -> rot-5.
 func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -818,8 +817,7 @@ func testMasterRotationsForBase(t *testing.T) {
 	})
 }
 
-// testCKKSRotation verifies that derived rotation keys work end-to-end with CKKS slot encoding/decoding,
-// not just raw RLWE polynomials.
+// testCKKSRotation verifies that derived rotation keys work end-to-end with CKKS slot encoding/decoding, not just raw RLWE polynomials.
 func testCKKSRotation(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -913,8 +911,7 @@ func productionScenarios() []testutil.Scenario {
 }
 
 // kgplus3LevelMasters mirrors the benchmark convention: transmit {1, bigMaster} where bigMaster is the middle power of the base.
-// The server expands this pair at level 1 into the full base-p set,
-// then derives targets at level 0.
+// The server expands this pair at level 1 into the full base-p set, then derives targets at level 0.
 // Using the full base-p set at top would bypass the level-1 expansion entirely and inflate top-level GenGaloisKeyNew cost (expensive at LogN=15/16).
 func kgplus3LevelMasters(base, slots int) []int {
 	fullSet := hierkeys.MasterRotationsForBase(base, slots)

@@ -25,8 +25,7 @@ func ConstructExtendedSecretKey(paramsHK, paramsRP rlwe.Parameters, skS, skS1 *r
 	ringQHK.IMForm(skS1.Value.Q, s1CoeffsQ)
 	ringQHK.INTT(s1CoeffsQ, s1CoeffsQ)
 
-	// Interleave into R' (degree 2N): even = s,
-	// odd = s̃₁.
+	// Interleave into R' (degree 2N): even = s, odd = s̃₁.
 	sTildeCoeffs := ringQRP.NewPoly()
 
 	// Fill from HK Q primes

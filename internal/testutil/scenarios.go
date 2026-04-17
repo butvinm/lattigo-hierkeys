@@ -44,8 +44,7 @@ var Scenarios = []Scenario{
 		// LogN=14: Q_max=429, Q_max(2N)=857.
 		// depth=4, dnum_eval=3.
 		// PHK = 1×55 (only fits 1 prime in margin=104b after eval QP=325).
-		// LLKN dnum_master=7, KG+ dnum_hk=7, dnum_int=7,
-		// dnum_top=2.
+		// LLKN dnum_master=7, KG+ dnum_hk=7, dnum_int=7, dnum_top=2.
 		Name:      "LogN14_D4_P2",
 		LogN:      14,
 		LogQ:      append([]int{55}, buildLogQ(4, 40)...),
@@ -59,8 +58,7 @@ var Scenarios = []Scenario{
 		// LogN=15: Q_max=857, Q_max(2N)=1714.
 		// depth=9, dnum_eval=3.
 		// PHK = 5×55 (fits in margin=277b after eval QP=580).
-		// LLKN dnum_master=3, KG+ dnum_hk=3, dnum_int=3,
-		// dnum_top=2.
+		// LLKN dnum_master=3, KG+ dnum_hk=3, dnum_int=3, dnum_top=2.
 		Name:      "LogN15_D9_P3",
 		LogN:      15,
 		LogQ:      append([]int{55}, buildLogQ(9, 40)...),
@@ -74,8 +72,7 @@ var Scenarios = []Scenario{
 		// LogN=16: Q_max=1714, Q_max(2N)=3428.
 		// depth=27, dnum_eval=6.
 		// PHK = 6×55 (fits in margin=359b after eval QP=1355).
-		// LLKN dnum_master=6, KG+ dnum_hk=6, dnum_int=6,
-		// dnum_top=2.
+		// LLKN dnum_master=6, KG+ dnum_hk=6, dnum_int=6, dnum_top=2.
 		Name:      "LogN16_D27_P4",
 		LogN:      16,
 		LogQ:      append([]int{55}, buildLogQ(27, 40)...),

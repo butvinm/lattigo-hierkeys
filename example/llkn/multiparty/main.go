@@ -52,8 +52,7 @@ func main() {
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
 	// PARTIES: each generates a secret key independently All parties use the same parameters.
-	// Each sk_i is generated at the top (master) level,
-	// same as single-party GenSecretKeyNew.
+	// Each sk_i is generated at the top (master) level, same as single-party GenSecretKeyNew.
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sks := make([]*rlwe.SecretKey, nParties)

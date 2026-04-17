@@ -34,8 +34,7 @@ func main() {
 	}
 
 	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate level between eval and master.
-	// With 2-level this example would be trivial (only one NewLevelExpansion call),
-	// so we use 3-level to show the cascade.
+	// With 2-level this example would be trivial (only one NewLevelExpansion call), so we use 3-level to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{55}, // P for level 1 (intermediate)
