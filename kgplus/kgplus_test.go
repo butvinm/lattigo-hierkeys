@@ -7,14 +7,32 @@ import (
 	"math/cmplx"
 	"runtime"
 	"sort"
+	"sync"
 	"testing"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
+	"github.com/butvinm/lattigo-hierkeys/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
 )
+
+// buildParams constructs KG+ 3-level parameters from a production scenario.
+func buildParams(t *testing.T, sc testutil.Scenario) Parameters {
+	t.Helper()
+	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+		LogN:       sc.LogN,
+		LogQ:       sc.LogQ,
+		LogP:       sc.LogP,
+		NTTFlag:    true,
+		LogNthRoot: sc.LogN + 2,
+	})
+	require.NoError(t, err)
+	params, err := NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
+	require.NoError(t, err)
+	return params
+}
 
 func testString(params Parameters, opname string) string {
 	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/%d-level",
@@ -125,42 +143,35 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	return result, nil
 }
 
-// TestKGPlus is the main entry point, iterating over parameter sets
-// and running all individual test functions.
+// TestKGPlus runs the unit-style test suite against the LogN=14 production
+// scenario. Production-scale smoke coverage across all scenarios lives in
+// TestDeriveGaloisKeysProduction.
 func TestKGPlus(t *testing.T) {
 
-	for _, paramsLit := range testInsecure {
+	params := buildParams(t, testutil.Scenarios[0])
 
-		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
-		require.NoError(t, err)
+	// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}
+	masterRots := []int{1, 4}
 
-		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra)
-		require.NoError(t, err)
+	tc, err := newTestContext(params, masterRots)
+	require.NoError(t, err)
 
-		// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}
-		masterRots := []int{1, 4}
-
-		tc, err := newTestContext(params, masterRots)
-		require.NoError(t, err)
-
-		for _, testSet := range []func(*testContext, *testing.T){
-			testKeyGenerator,
-			testRotToRot,
-			testRotToRotMultiStep,
-			testDeriveGaloisKeys,
-			testDeriveGaloisKeysWithEvaluator,
-			testExpandAndFinalize,
-			testIntermediateKeyReuse,
-			testSerialization,
-			testCKKSRotation,
-		} {
-			testSet(tc, t)
-			runtime.GC()
-		}
+	for _, testSet := range []func(*testContext, *testing.T){
+		testKeyGenerator,
+		testRotToRot,
+		testRotToRotMultiStep,
+		testDeriveGaloisKeys,
+		testDeriveGaloisKeysWithEvaluator,
+		testExpandAndFinalize,
+		testIntermediateKeyReuse,
+		testSerialization,
+		testCKKSRotation,
+	} {
+		testSet(tc, t)
+		runtime.GC()
 	}
 
 	testMasterRotationsForBase(t)
-	testDeriveGaloisKeysLargeN(t)
 }
 
 // testKeyGenerator tests secret key generation, ProjectToEvalKey, and transmission key construction.
@@ -902,101 +913,131 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 	})
 }
 
-// testDeriveGaloisKeysLargeN tests with LogN=14, closer to production scale.
-// Uses 8 Q primes + 1 P prime, base-4 master rotations.
-// Skipped in short mode.
-func testDeriveGaloisKeysLargeN(t *testing.T) {
+// productionScenarios returns testutil.Scenarios, reduced to LogN=14 only in
+// -short mode so PR-time CI stays fast while master pushes cover all sizes.
+func productionScenarios() []testutil.Scenario {
+	if testing.Short() {
+		return testutil.Scenarios[:1]
+	}
+	return testutil.Scenarios
+}
 
-	t.Run("DeriveGaloisKeys/LargeN", func(t *testing.T) {
+// TestDeriveGaloisKeys exercises the full client/server pipeline
+// (MasterRotationsForBase → expandAll → FinalizeKey → rotation verification)
+// sequentially against each production scenario. Mirrors BenchmarkDeriveGaloisKeys.
+func TestDeriveGaloisKeys(t *testing.T) {
+	for _, sc := range productionScenarios() {
+		t.Run(sc.Name, func(t *testing.T) {
+			params := buildParams(t, sc)
+			paramsEval := params.Eval()
+			slots := paramsEval.N() / 2
 
-		if testing.Short() {
-			t.Skip("skipped in -short mode")
-		}
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := testutil.ReducedTestTargets(slots)
+			t.Logf("LogN=%d, masters=%d (%v), targets=%d",
+				paramsEval.LogN(), len(masterRots), masterRots, len(targetRots))
 
-		paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
-			LogN:    14,
-			Q:       testQi60[:8],
-			P:       testPi60[:1],
-			NTTFlag: true,
-		})
-		require.NoError(t, err)
-
-		params, err := NewParameters(paramsEval, []int{61}, nil)
-		require.NoError(t, err)
-
-		t.Logf("Eval: LogN=%d, Q=%d primes, P=%d primes, N=%d",
-			paramsEval.LogN(), paramsEval.QCount(), paramsEval.PCount(), paramsEval.N())
-
-		// Client
-		kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
-		sk := kgenHK.GenSecretKeyNew()
-		skEval, err := params.ProjectToEvalKey(sk)
-		require.NoError(t, err)
-
-		masterRots := hierkeys.MasterRotationsForBase(4, paramsEval.N()/2)
-		t.Logf("master rotations (base-4): %v (%d keys)", masterRots, len(masterRots))
-
-		sk1 := kgenHK.GenSecretKeyNew()
-		homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
-
-		topParams := params.Top()
-		skExt := ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
-
-		pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
-
-		kgenRP := rlwe.NewKeyGenerator(topParams)
-		masterKeys := make(map[int]*hierkeys.MasterKey)
-		for _, rot := range masterRots {
-			galEl := topParams.GaloisElement(rot)
-			gk := kgenRP.GenGaloisKeyNew(galEl, skExt)
-			mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
+			tc, err := newTestContext(params, masterRots)
 			require.NoError(t, err)
-			masterKeys[rot] = mk
-		}
 
-		tk := &TransmissionKeys{
-			HomingKey:     homingKey,
-			PublicKey:     pk,
-			MasterRotKeys: masterKeys,
-		}
-
-		// Server: derive
-		targetRots := []int{1, 2, 3, 5, 7, 10, 17, 31, 64, 100, 255, 512, 1000}
-		hkEval := NewEvaluator(params)
-		intermediate, err := expandAll(hkEval, tk, targetRots)
-		require.NoError(t, err)
-		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
-		for r, mk := range intermediate.Keys {
-			intermediate.Keys[r] = nil
-			gk, err := hkEval.FinalizeKey(r, mk, tk.HomingKey)
+			intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
 			require.NoError(t, err)
-			galoisKeys = append(galoisKeys, gk)
-		}
-		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-		t.Logf("derived %d evaluation keys", len(evk.GetGaloisKeysList()))
 
-		// Verify a subset
-		ringQ := paramsEval.RingQ()
-		encR := rlwe.NewEncryptor(paramsEval, skEval)
-
-		pt := rlwe.NewPlaintext(paramsEval, paramsEval.MaxLevel())
-		for m := range pt.Value.Coeffs {
-			for k := range pt.Value.Coeffs[m] {
-				pt.Value.Coeffs[m][k] = 0
+			galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
+			for _, r := range targetRots {
+				mk := intermediate.Keys[r]
+				intermediate.Keys[r] = nil
+				gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+				require.NoError(t, err)
+				galoisKeys = append(galoisKeys, gk)
 			}
-			pt.Value.Coeffs[m][0] = 42
-		}
-		ringQ.NTT(pt.Value, pt.Value)
-		pt.IsNTT = true
+			evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 
-		ct := rlwe.NewCiphertext(paramsEval, 1, paramsEval.MaxLevel())
-		require.NoError(t, encR.Encrypt(pt, ct))
+			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
+			stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			for _, rot := range targetRots {
+				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
+			}
+			runtime.GC()
+		})
+	}
+}
 
-		stdEval := rlwe.NewEvaluator(paramsEval, evk)
+// TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys
+// but derives + finalizes targets concurrently across GOMAXPROCS workers.
+// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool
+// buffers). Run with -race in CI to catch regressions in the concurrent path.
+// Mirrors BenchmarkDeriveGaloisKeysConcurrent.
+func TestDeriveGaloisKeysConcurrent(t *testing.T) {
+	workers := runtime.GOMAXPROCS(0)
+	for _, sc := range productionScenarios() {
+		t.Run(sc.Name, func(t *testing.T) {
+			params := buildParams(t, sc)
+			paramsEval := params.Eval()
+			slots := paramsEval.N() / 2
 
-		verifyRots := []int{1, 5, 17, 100, 1000}
-		for _, rot := range verifyRots {
-			verifyDeriveRotation(t, paramsEval, skEval, stdEval, ct, rot, float64(1<<30))
-		}
-	})
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := testutil.ReducedTestTargets(slots)
+
+			tc, err := newTestContext(params, masterRots)
+			require.NoError(t, err)
+
+			// Cascade through intermediate levels sequentially (levels are
+			// dependent), then derive + finalize level-0 targets concurrently.
+			k := params.NumLevels()
+			currentMasters := tc.tk.MasterRotKeys
+			for level := k - 2; level >= 1; level-- {
+				shift0Key, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tc.tk.PublicKey)
+				require.NoError(t, err)
+				exp := tc.hkEval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
+				nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+				for _, r := range masterRots {
+					mk, err := exp.Derive(r)
+					require.NoError(t, err)
+					nextMasters[r] = mk
+				}
+				currentMasters = nextMasters
+			}
+
+			shift0Key, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
+			require.NoError(t, err)
+			exp := tc.hkEval.NewLevelExpansion(0, shift0Key, currentMasters, targetRots)
+
+			sem := make(chan struct{}, workers)
+			var wg sync.WaitGroup
+			results := make([]*rlwe.GaloisKey, len(targetRots))
+			errs := make([]error, len(targetRots))
+			for i, r := range targetRots {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(i, r int) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					mk, err := exp.Derive(r)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					results[i] = gk
+				}(i, r)
+			}
+			wg.Wait()
+			for i, err := range errs {
+				require.NoError(t, err, "target %d", targetRots[i])
+			}
+
+			evk := rlwe.NewMemEvaluationKeySet(nil, results...)
+			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
+			stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			for _, rot := range targetRots {
+				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
+			}
+			runtime.GC()
+		})
+	}
 }
