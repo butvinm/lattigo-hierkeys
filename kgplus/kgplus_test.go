@@ -976,76 +976,68 @@ func TestDeriveGaloisKeys(t *testing.T) {
 	}
 }
 
-// TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys but derives + finalizes targets concurrently across GOMAXPROCS workers.
-// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool buffers).
-// Run with -race in CI to catch regressions in the concurrent path.
-// Mirrors BenchmarkDeriveGaloisKeysConcurrent.
+// TestDeriveGaloisKeysConcurrent exercises LevelExpansion.Derive's thread-safety
+// (sync.Once dedup, pool buffers) by deriving + finalizing targets concurrently
+// across GOMAXPROCS workers. Run with -race in CI to catch regressions in the
+// concurrent path.
+//
+// Pinned to LogN=14: the race surface is purely code-level, so larger scenarios
+// add cost without adding coverage. Correctness of derived keys is verified by
+// the sequential TestDeriveGaloisKeys at all scenarios; this test only asserts
+// that concurrent Derive/FinalizeKey complete without error or races.
 func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 	workers := runtime.GOMAXPROCS(0)
-	for _, sc := range productionScenarios() {
-		t.Run(sc.Name, func(t *testing.T) {
-			params := buildParams(t, sc)
-			paramsEval := params.Eval()
-			slots := paramsEval.N() / 2
+	sc := testutil.Scenarios[0]
+	t.Run(sc.Name, func(t *testing.T) {
+		params := buildParams(t, sc)
+		slots := params.Eval().N() / 2
 
-			k3Masters := kgplus3LevelMasters(sc.Base, slots)
-			fullBasePSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
-			targetRots := testutil.ReducedTestTargets(slots)
+		k3Masters := kgplus3LevelMasters(sc.Base, slots)
+		fullBasePSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+		targetRots := testutil.ReducedTestTargets(slots)
 
-			tc, err := newTestContext(params, k3Masters)
+		tc, err := newTestContext(params, k3Masters)
+		require.NoError(t, err)
+
+		// Level-1 expansion is sequential (base for level 0),
+		// then level-0 targets are derived + finalized concurrently.
+		shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
+		require.NoError(t, err)
+		expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
+		lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+		for _, r := range fullBasePSet {
+			mk, err := expLvl1.Derive(r)
 			require.NoError(t, err)
+			lvl1Masters[r] = mk
+		}
 
-			// Level-1 expansion is sequential (base for level 0),
-			// then level-0 targets are derived + finalized concurrently.
-			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
-			require.NoError(t, err)
-			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
-			lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
-			for _, r := range fullBasePSet {
-				mk, err := expLvl1.Derive(r)
-				require.NoError(t, err)
-				lvl1Masters[r] = mk
-			}
+		shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
+		require.NoError(t, err)
+		exp := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
 
-			shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
-			require.NoError(t, err)
-			exp := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
-
-			sem := make(chan struct{}, workers)
-			var wg sync.WaitGroup
-			results := make([]*rlwe.GaloisKey, len(targetRots))
-			errs := make([]error, len(targetRots))
-			for i, r := range targetRots {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func(i, r int) {
-					defer wg.Done()
-					defer func() { <-sem }()
-					mk, err := exp.Derive(r)
-					if err != nil {
-						errs[i] = err
-						return
-					}
-					gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
-					if err != nil {
-						errs[i] = err
-						return
-					}
-					results[i] = gk
-				}(i, r)
-			}
-			wg.Wait()
-			for i, err := range errs {
-				require.NoError(t, err, "target %d", targetRots[i])
-			}
-
-			evk := rlwe.NewMemEvaluationKeySet(nil, results...)
-			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
-			stdEval := rlwe.NewEvaluator(paramsEval, evk)
-			for _, rot := range targetRots {
-				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
-			}
-			runtime.GC()
-		})
-	}
+		sem := make(chan struct{}, workers)
+		var wg sync.WaitGroup
+		errs := make([]error, len(targetRots))
+		for i, r := range targetRots {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i, r int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				mk, err := exp.Derive(r)
+				if err != nil {
+					errs[i] = err
+					return
+				}
+				if _, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey); err != nil {
+					errs[i] = err
+				}
+			}(i, r)
+		}
+		wg.Wait()
+		for i, err := range errs {
+			require.NoError(t, err, "target %d", targetRots[i])
+		}
+		runtime.GC()
+	})
 }
