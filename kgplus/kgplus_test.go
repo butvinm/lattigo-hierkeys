@@ -922,9 +922,23 @@ func productionScenarios() []testutil.Scenario {
 	return testutil.Scenarios
 }
 
-// TestDeriveGaloisKeys exercises the full client/server pipeline
-// (MasterRotationsForBase → expandAll → FinalizeKey → rotation verification)
-// sequentially against each production scenario. Mirrors BenchmarkDeriveGaloisKeys.
+// kgplus3LevelMasters mirrors the benchmark convention: transmit {1, bigMaster}
+// where bigMaster is the middle power of the base. The server expands this
+// pair at level 1 into the full base-p set, then derives targets at level 0.
+// Using the full base-p set at top would bypass the level-1 expansion entirely
+// and inflate top-level GenGaloisKeyNew cost (expensive at LogN=15/16).
+func kgplus3LevelMasters(base, slots int) []int {
+	fullSet := hierkeys.MasterRotationsForBase(base, slots)
+	bigMaster := fullSet[len(fullSet)/2]
+	return []int{1, bigMaster}
+}
+
+// TestDeriveGaloisKeys exercises the full client/server pipeline sequentially
+// against each production scenario. Mirrors BenchmarkDeriveGaloisKeys:
+//
+//   - transmit 2 masters {1, bigMaster} at top
+//   - expand to full base-p set at level 1
+//   - derive + finalize reduced target set at level 0
 func TestDeriveGaloisKeys(t *testing.T) {
 	for _, sc := range productionScenarios() {
 		t.Run(sc.Name, func(t *testing.T) {
@@ -932,21 +946,34 @@ func TestDeriveGaloisKeys(t *testing.T) {
 			paramsEval := params.Eval()
 			slots := paramsEval.N() / 2
 
-			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			k3Masters := kgplus3LevelMasters(sc.Base, slots)
+			fullBasePSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
 			targetRots := testutil.ReducedTestTargets(slots)
-			t.Logf("LogN=%d, masters=%d (%v), targets=%d",
-				paramsEval.LogN(), len(masterRots), masterRots, len(targetRots))
+			t.Logf("LogN=%d, k3Masters=%v, base-p=%v, targets=%d",
+				paramsEval.LogN(), k3Masters, fullBasePSet, len(targetRots))
 
-			tc, err := newTestContext(params, masterRots)
+			tc, err := newTestContext(params, k3Masters)
 			require.NoError(t, err)
 
-			intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
+			// Level-1 expansion: {1, bigMaster} → full base-p set.
+			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
+			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
+			lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+			for _, r := range fullBasePSet {
+				mk, err := expLvl1.Derive(r)
+				require.NoError(t, err)
+				lvl1Masters[r] = mk
+			}
 
+			// Level-0 derivation: base-p set → targets → finalize.
+			shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
+			require.NoError(t, err)
+			expLvl0 := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
 			galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
 			for _, r := range targetRots {
-				mk := intermediate.Keys[r]
-				intermediate.Keys[r] = nil
+				mk, err := expLvl0.Derive(r)
+				require.NoError(t, err)
 				gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
 				require.NoError(t, err)
 				galoisKeys = append(galoisKeys, gk)
@@ -976,32 +1003,28 @@ func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 			paramsEval := params.Eval()
 			slots := paramsEval.N() / 2
 
-			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			k3Masters := kgplus3LevelMasters(sc.Base, slots)
+			fullBasePSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
 			targetRots := testutil.ReducedTestTargets(slots)
 
-			tc, err := newTestContext(params, masterRots)
+			tc, err := newTestContext(params, k3Masters)
 			require.NoError(t, err)
 
-			// Cascade through intermediate levels sequentially (levels are
-			// dependent), then derive + finalize level-0 targets concurrently.
-			k := params.NumLevels()
-			currentMasters := tc.tk.MasterRotKeys
-			for level := k - 2; level >= 1; level-- {
-				shift0Key, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tc.tk.PublicKey)
+			// Level-1 expansion is sequential (base for level 0), then level-0
+			// targets are derived + finalized concurrently.
+			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
+			require.NoError(t, err)
+			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
+			lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+			for _, r := range fullBasePSet {
+				mk, err := expLvl1.Derive(r)
 				require.NoError(t, err)
-				exp := tc.hkEval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
-				nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
-				for _, r := range masterRots {
-					mk, err := exp.Derive(r)
-					require.NoError(t, err)
-					nextMasters[r] = mk
-				}
-				currentMasters = nextMasters
+				lvl1Masters[r] = mk
 			}
 
-			shift0Key, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
+			shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
-			exp := tc.hkEval.NewLevelExpansion(0, shift0Key, currentMasters, targetRots)
+			exp := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
 
 			sem := make(chan struct{}, workers)
 			var wg sync.WaitGroup
