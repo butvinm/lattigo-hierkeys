@@ -8,6 +8,7 @@ import (
 	"time"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
+	"github.com/butvinm/lattigo-hierkeys/internal/testutil"
 	"github.com/butvinm/lattigo-hierkeys/kgplus"
 	"github.com/butvinm/lattigo-hierkeys/llkn"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
@@ -34,72 +35,6 @@ func benchTargetRots(logN int) []int {
 	default:
 		return sparseTargets14
 	}
-}
-
-type benchScenario struct {
-	Name   string
-	LogN   int
-	LogQ   []int // Q prime bit-sizes
-	LogP   []int // P prime bit-sizes
-	LogPHK []int // Homing key / master P prime bit-sizes (2-level)
-	Base   int   // master rotation base
-
-	// 3-level KG+ parameters: P_hk with enough primes for noise control,
-	// P_extra large enough for dnum=1 at the top level.
-	LogPHK3   []int // P^(1) for Levels[1] (≈ Q_eval primes for noise)
-	LogPExtra []int // P^(2) for Levels[2] (≈ Q^(2) primes for dnum=1)
-}
-
-func buildLogQ(n, bitSize int) []int {
-	q := make([]int, n)
-	for i := range q {
-		q[i] = bitSize
-	}
-	return q
-}
-
-// 128-bit secure parameter sets.
-// h=N/2 sparse ternary, σ=3.2, Δ=2^40, Q_max from lattice estimator [32].
-// Convention: q₀=55b, qᵢ=40b, Pᵢ=55b. Hierarchy primes also 55b.
-//
-// CRITICAL: hierarchy P primes (LogPHK, LogPExtra) must be ≥ max eval prime size.
-// Lattigo's gadget decomposition is count-based: dnum = ceil(QCount/PCount), with
-// each digit holding exactly PCount consecutive Q primes regardless of size. Noise
-// blows up by 2^(max_digit_bits − P_bits) when P bits < max digit bits. See CLAUDE.md.
-var benchScenarios = []benchScenario{
-	{
-		// LogN=14: Q_max=429, Q_max(2N)=857. depth=4, dnum_eval=3.
-		// PHK = 1×55 (only fits 1 prime in margin=104b after eval QP=325).
-		// LLKN dnum_master=7, KG+ dnum_hk=7, dnum_int=7, dnum_top=2.
-		Name: "LogN14_D4_P2",
-		LogN: 14, LogQ: append([]int{55}, buildLogQ(4, 40)...), LogP: buildLogQ(2, 55),
-		LogPHK:    buildLogQ(1, 55),
-		Base:      4,
-		LogPHK3:   buildLogQ(1, 55),
-		LogPExtra: buildLogQ(7, 55),
-	},
-	{
-		// LogN=15: Q_max=857, Q_max(2N)=1714. depth=9, dnum_eval=3.
-		// PHK = 5×55 (fits in margin=277b after eval QP=580).
-		// LLKN dnum_master=3, KG+ dnum_hk=3, dnum_int=3, dnum_top=2.
-		Name: "LogN15_D9_P3",
-		LogN: 15, LogQ: append([]int{55}, buildLogQ(9, 40)...), LogP: buildLogQ(3, 55),
-		LogPHK:    buildLogQ(5, 55),
-		Base:      4,
-		LogPHK3:   buildLogQ(5, 55),
-		LogPExtra: buildLogQ(10, 55),
-	},
-	{
-		// LogN=16: Q_max=1714, Q_max(2N)=3428. depth=27, dnum_eval=6.
-		// PHK = 6×55 (fits in margin=359b after eval QP=1355).
-		// LLKN dnum_master=6, KG+ dnum_hk=6, dnum_int=6, dnum_top=2.
-		Name: "LogN16_D27_P4",
-		LogN: 16, LogQ: append([]int{55}, buildLogQ(27, 40)...), LogP: buildLogQ(4, 55),
-		LogPHK:    buildLogQ(6, 55),
-		Base:      4,
-		LogPHK3:   buildLogQ(6, 55),
-		LogPExtra: buildLogQ(25, 55),
-	},
 }
 
 // genLLKNTransmissionKeys generates LLKN transmission keys using the new API.
@@ -146,7 +81,7 @@ func genKGPlusTransmissionKeys(b *testing.B, params kgplus.Parameters, masterRot
 
 // BenchmarkKeySizes measures and reports transmission key sizes for LLKN 2-level and KG+ 3-level.
 func BenchmarkKeySizes(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
@@ -277,7 +212,7 @@ func measurePhase(b *testing.B, phase string, phaseStart *time.Time) {
 // BenchmarkDeriveGaloisKeys measures sequential server-side key derivation.
 // Each target is derived and finalized immediately — no key accumulation.
 func BenchmarkDeriveGaloisKeys(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
@@ -393,7 +328,7 @@ func BenchmarkDeriveGaloisKeys(b *testing.B) {
 // and finalizes it immediately.
 func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 	workers := runtime.GOMAXPROCS(0)
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
@@ -532,7 +467,7 @@ func BenchmarkDeriveGaloisKeysConcurrent(b *testing.B) {
 
 // BenchmarkGenTransmissionKeys measures client-side key generation time.
 func BenchmarkGenTransmissionKeys(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 				LogN:       sc.LogN,
@@ -581,7 +516,7 @@ func BenchmarkGenTransmissionKeys(b *testing.B) {
 // Per-operation benchmarks for individual operations at LogN=14.
 // Run: go test -bench Benchmark -run ^$ -v -timeout 10m .
 
-func setupLLKN(b *testing.B, sc benchScenario) (llkn.Parameters, *llkn.Evaluator, *rlwe.PublicKey, map[int]*hierkeys.MasterKey) {
+func setupLLKN(b *testing.B, sc testutil.Scenario) (llkn.Parameters, *llkn.Evaluator, *rlwe.PublicKey, map[int]*hierkeys.MasterKey) {
 	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN: sc.LogN, LogQ: sc.LogQ, LogP: sc.LogP,
 		NTTFlag: true, LogNthRoot: sc.LogN + 2,
@@ -613,7 +548,7 @@ func setupLLKN(b *testing.B, sc benchScenario) (llkn.Parameters, *llkn.Evaluator
 	return params, eval, pk, masterKeys
 }
 
-func setupKGPlus(b *testing.B, sc benchScenario) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.TransmissionKeys) {
+func setupKGPlus(b *testing.B, sc testutil.Scenario) (kgplus.Parameters, *kgplus.Evaluator, *kgplus.TransmissionKeys) {
 	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN: sc.LogN, LogQ: sc.LogQ, LogP: sc.LogP,
 		NTTFlag: true, LogNthRoot: sc.LogN + 2,
@@ -653,7 +588,7 @@ func setupKGPlus(b *testing.B, sc benchScenario) (kgplus.Parameters, *kgplus.Eva
 
 // BenchmarkRotToRot measures a single RotToRot call at each level.
 func BenchmarkRotToRot(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			b.Run("LLKN/level0", func(b *testing.B) {
 				params, eval, pk, masterKeys := setupLLKN(b, sc)
@@ -718,7 +653,7 @@ func BenchmarkRotToRot(b *testing.B) {
 
 // BenchmarkPubToRot measures PubToRot at each level.
 func BenchmarkPubToRot(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			b.Run("LLKN/level0", func(b *testing.B) {
 				params, _, pk, _ := setupLLKN(b, sc)
@@ -755,7 +690,7 @@ func BenchmarkPubToRot(b *testing.B) {
 
 // BenchmarkFinalizeKey measures per-key finalization.
 func BenchmarkFinalizeKey(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			b.Run("LLKN", func(b *testing.B) {
 				params, eval, pk, masterKeys := setupLLKN(b, sc)
@@ -802,7 +737,7 @@ func BenchmarkFinalizeKey(b *testing.B) {
 
 // BenchmarkGaloisKeyToMasterKey measures convention conversion.
 func BenchmarkGaloisKeyToMasterKey(b *testing.B) {
-	for _, sc := range benchScenarios {
+	for _, sc := range testutil.Scenarios {
 		b.Run(sc.Name, func(b *testing.B) {
 			b.Run("LLKN", func(b *testing.B) {
 				paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
