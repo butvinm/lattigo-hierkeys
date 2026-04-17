@@ -22,13 +22,31 @@ Reference papers are in `./papers/` (gitignored). Read them for algorithm detail
 **Always run tests, examples, and benchmarks sequentially — never simultaneously.
 Parallel runs exceed available memory and cause OOM kills.**
 
+**Test cost by mode (verify before running anything unfamiliar):**
+
+- `-short` includes TestKGPlus/TestLLKN unit tests + `TestDeriveGaloisKeys{,Concurrent}` at **LogN=14 only**. Budget: kgplus ~35s, llkn ~10s.
+- Full (`-count=1`, no `-short`) runs the production tests at **LogN=14, 15, and 16**. Budget: kgplus ~10 min (LogN=16 alone is ~8 min), llkn ~3 min. Don't run casually.
+- `-race` adds ~10–25× overhead on RLWE ops. Only worth applying to `TestDeriveGaloisKeysConcurrent` (the only test that spawns goroutines).
+
 ```bash
 go build ./...
-go test -v -count=1 -short ./kgplus/...   # KG+ tests
-go test -v -count=1 -short ./llkn/...     # LLKN tests
-go test -v -count=1 ./...                  # full suite including LogN=14
-go test -run "TestKGPlus/CKKSRotation" ./kgplus/...  # specific subtest
+go build ./example/...
+
+# Default: short tests, no race. ~45s total.
+go test -count=1 -short -skip TestDeriveGaloisKeysConcurrent ./kgplus/... ./llkn/...
+
+# Race coverage: only the concurrent test, short mode (LogN=14). ~2 min.
+go test -count=1 -race -short -run TestDeriveGaloisKeysConcurrent ./kgplus/... ./llkn/...
+
+# Specific subtest (fast).
+go test -count=1 -run "TestKGPlus/CKKSRotation" ./kgplus/...
+
+# Full production suite (all LogN). Slow — explicit request only.
+go test -count=1 -skip TestDeriveGaloisKeysConcurrent ./kgplus/... ./llkn/...
+go test -count=1 -race -run TestDeriveGaloisKeysConcurrent ./kgplus/... ./llkn/...
 ```
+
+**Default when Claude Code needs to check tests passes**: use the short command. The full command is for PR sign-off or debugging a LogN=15/16-specific failure — ask the user before running it unprompted.
 
 Go files are auto-formatted by gofmt via a PostToolUse hook (`.claude/hooks/gofmt.sh`).
 
