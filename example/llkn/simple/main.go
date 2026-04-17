@@ -46,9 +46,7 @@ func main() {
 	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: generate keys with standard lattigo, convert to hierkeys types
-	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 
@@ -77,9 +75,7 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(masterRots), float64(tk.BinarySize())/(1024*1024))
 
-	// =========================================================================
 	// SERVER: derive target rotation keys via PubToRot + NewLevelExpansion + FinalizeKey
-	// =========================================================================
 
 	eval := llkn.NewEvaluator(params)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
@@ -116,11 +112,9 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY: encrypt, rotate, check precision
 	// (In a real system, client encrypts and server evaluates — here we do
 	// both locally for demonstration.)
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {

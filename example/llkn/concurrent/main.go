@@ -51,9 +51,7 @@ func main() {
 	fmt.Printf("LLKN concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: generate keys (same as simple example)
-	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sk := kgen.GenSecretKeyNew()
@@ -71,9 +69,7 @@ func main() {
 	tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 	fmt.Printf("Client: %d master keys\n", len(k3Masters))
 
-	// =========================================================================
 	// SERVER: single evaluator, thread-safe
-	// =========================================================================
 
 	eval := llkn.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
@@ -159,9 +155,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {

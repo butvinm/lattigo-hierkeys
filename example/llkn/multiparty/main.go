@@ -52,9 +52,7 @@ func main() {
 	fmt.Printf("LLKN CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// PARTIES: each generates a secret key independently
-	// =========================================================================
 	// All parties use the same parameters. Each sk_i is generated at the top
 	// (master) level, same as single-party GenSecretKeyNew.
 
@@ -78,9 +76,7 @@ func main() {
 		topParams.RingQP().Add(skIdeal.Value, sk.Value, skIdeal.Value)
 	}
 
-	// =========================================================================
 	// PHASE 1: Collective public key
-	// =========================================================================
 	// Each party generates a share from their sk_i. The aggregated shares
 	// produce a public key for the ideal secret s = sum(s_i).
 	// This public key serves two purposes:
@@ -101,9 +97,7 @@ func main() {
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
 	fmt.Println("Collective public key generated")
 
-	// =========================================================================
 	// PHASE 2: Collective master rotation keys
-	// =========================================================================
 	// Each party generates a GaloisKey share for each master rotation.
 	// GaloisKeyGenProtocol produces standard lattigo-convention GaloisKeys.
 	// GaloisKeyToMasterKey converts them for use with RotToRot — same as
@@ -145,9 +139,7 @@ func main() {
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(masterRots), masterRots)
 
-	// =========================================================================
 	// SERVER: derive evaluation keys (identical to single-party)
-	// =========================================================================
 
 	tk := &llkn.TransmissionKeys{PublicKey: collectivePK, MasterRotKeys: masterKeys}
 	fmt.Printf("TX size = %.1f MB\n", float64(tk.BinarySize())/(1024*1024))
@@ -182,9 +174,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(skIdeal); err != nil {

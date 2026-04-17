@@ -51,9 +51,7 @@ func main() {
 	fmt.Printf("KG+ CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: same key generation as simple example
-	// =========================================================================
 
 	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
@@ -81,9 +79,7 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
-	// =========================================================================
 	// SERVER PHASE 1 (inactive): expand {1,4} → full base-4 set at level 1
-	// =========================================================================
 	// PubToRot derives a shift-0 key from the public key. In KG+ this operates
 	// in R' (degree 2N) — the extension ring where all intermediate keys live.
 	eval := kgplus.NewEvaluator(params)
@@ -108,9 +104,7 @@ func main() {
 	}
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys))
 
-	// =========================================================================
 	// SERVER PHASE 2 (active): derive target rotations at R' level 0
-	// =========================================================================
 	// Now that target rotations are known, derive them using the level-1 keys
 	// as the new master set.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
@@ -131,9 +125,7 @@ func main() {
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
-	// =========================================================================
 	// SERVER PHASE 3: ring-switch R' → R and convert to lattigo convention
-	// =========================================================================
 	// FinalizeKey uses the homing key to ring-switch each level-0 key from
 	// R' (degree 2N) back to R (degree N), then converts to standard lattigo
 	// GaloisKey usable with ckks.Evaluator. We release the R' MasterKey
@@ -152,9 +144,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {
 		panic(err)

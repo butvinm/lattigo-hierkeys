@@ -49,9 +49,7 @@ func main() {
 	fmt.Printf("KG+ CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: generate keys
-	// =========================================================================
 
 	// Two independent secrets at the homing-key (HK) level.
 	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
@@ -89,9 +87,7 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
-	// =========================================================================
 	// SERVER: per-level derivation via PubToRot + NewLevelExpansion + FinalizeKey
-	// =========================================================================
 
 	eval := kgplus.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
@@ -143,9 +139,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {

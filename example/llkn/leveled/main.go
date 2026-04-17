@@ -51,9 +51,7 @@ func main() {
 	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: same key generation as simple example
-	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sk := kgen.GenSecretKeyNew()
@@ -74,9 +72,7 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
-	// =========================================================================
 	// SERVER PHASE 1 (inactive): expand master set at intermediate level
-	// =========================================================================
 	// PubToRot derives a shift-0 (identity) key at the target level from the
 	// client's public key. This is the starting point for RotToRot combinations.
 	eval := llkn.NewEvaluator(params)
@@ -101,9 +97,7 @@ func main() {
 	}
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys))
 
-	// =========================================================================
 	// SERVER PHASE 2 (active): derive target rotations at eval level
-	// =========================================================================
 	// Target rotations are now known. Derive them at level 0 using the
 	// intermediate keys from phase 1 as the new master set.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
@@ -124,9 +118,7 @@ func main() {
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
 
-	// =========================================================================
 	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys
-	// =========================================================================
 	// Per-key finalize, releasing each level-0 MasterKey reference for GC.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {
@@ -141,9 +133,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {
 		panic(err)
