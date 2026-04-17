@@ -24,8 +24,7 @@ func MasterRotationsForBase(base, nSlots int) []int {
 // which is optimal for p-ary sets.
 //
 // Returns a sequence of master rotation indices whose sum equals target.
-// Returns nil if target cannot be decomposed (e.g.,
-// target <= 0 or no masters).
+// Returns nil if target cannot be decomposed (e.g., target <= 0 or no masters).
 func DecomposeRotation(target int, masterRots []int) []int {
 	if target <= 0 || len(masterRots) == 0 {
 		return nil

@@ -8,8 +8,7 @@
 //   - GaloisKeyGenProtocol for master rotation keys
 //
 // The ideal secret key s = sum(s_i) is computed only for verification.
-// In a real deployment,
-// parties use a collective decryption protocol instead.
+// In a real deployment, parties use a collective decryption protocol instead.
 package main
 
 import (
@@ -52,9 +51,9 @@ func main() {
 	fmt.Printf("LLKN CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
-	// PARTIES: each generates a secret key independently
-	// All parties use the same parameters. Each sk_i is generated at the top
-	// (master) level, same as single-party GenSecretKeyNew.
+	// PARTIES: each generates a secret key independently All parties use the same parameters.
+	// Each sk_i is generated at the top (master) level,
+	// same as single-party GenSecretKeyNew.
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sks := make([]*rlwe.SecretKey, nParties)
@@ -69,8 +68,7 @@ func main() {
 	}
 
 	// Ideal secret key s = sum(s_i) — for verification only.
-	// In a real deployment,
-	// no single entity holds this.
+	// In a real deployment, no single entity holds this.
 	skIdeal := rlwe.NewSecretKey(topParams)
 	for _, sk := range sks {
 		topParams.RingQP().Add(skIdeal.Value, sk.Value, skIdeal.Value)
@@ -97,11 +95,10 @@ func main() {
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
 	fmt.Println("Collective public key generated")
 
-	// PHASE 2: Collective master rotation keys
-	// Each party generates a GaloisKey share for each master rotation.
+	// PHASE 2: Collective master rotation keys Each party generates a GaloisKey share for each master rotation.
 	// GaloisKeyGenProtocol produces standard lattigo-convention GaloisKeys.
-	// GaloisKeyToMasterKey converts them for use with RotToRot — same as
-	// single-party, no multiparty-specific knowledge needed.
+	// GaloisKeyToMasterKey converts them for use with RotToRot — same as single-party,
+	// no multiparty-specific knowledge needed.
 	//
 	// Note: the accumulator's GaloisElement must be set before aggregation,
 	// otherwise AggregateShares returns a mismatch error.
@@ -127,8 +124,7 @@ func main() {
 			}
 		}
 
-		// Finalize the collective GaloisKey,
-		// then convert to MasterKey.
+		// Finalize the collective GaloisKey, then convert to MasterKey.
 		gk := rlwe.NewGaloisKey(topParams)
 		if err = gkg.GenGaloisKey(acc, crp, gk); err != nil {
 			panic(err)

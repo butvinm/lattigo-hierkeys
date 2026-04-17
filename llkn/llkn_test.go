@@ -218,8 +218,7 @@ func TestDeriveGaloisKeys(t *testing.T) {
 }
 
 // TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys but derives + finalizes targets concurrently across GOMAXPROCS workers.
-// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup,
-// pool buffers).
+// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool buffers).
 // Run with -race in CI to catch regressions in the concurrent path.
 // Mirrors BenchmarkDeriveGaloisKeysConcurrent.
 func TestDeriveGaloisKeysConcurrent(t *testing.T) {
@@ -504,8 +503,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 				}
 
 				if level == 0 {
-					// At level 0,
-					// finalize and verify with actual rotation
+					// At level 0, finalize and verify with actual rotation
 					galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 					for _, mk := range intermediate.Keys {
 						gk, err := eval.FinalizeKey(mk)
@@ -526,8 +524,7 @@ func testPubToRot(tc *testContext, t *testing.T) {
 						verifyDeriveRotation(t, params.Eval(), tc.skEval, stdEval, ct, rot, threshold)
 					}
 				} else {
-					// For intermediate levels,
-					// verify the keys are non-nil
+					// For intermediate levels, verify the keys are non-nil
 					require.NotEmpty(t, intermediate.Keys)
 					for _, rot := range targetRots {
 						_, ok := intermediate.Keys[rot]

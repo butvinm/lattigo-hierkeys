@@ -173,7 +173,8 @@ func TestKGPlus(t *testing.T) {
 	testMasterRotationsForBase(t)
 }
 
-// testKeyGenerator tests secret key generation, ProjectToEvalKey, and transmission key construction.
+// testKeyGenerator tests secret key generation,
+// ProjectToEvalKey, and transmission key construction.
 func testKeyGenerator(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -301,8 +302,7 @@ func verifyRotationKey(
 		}
 	}
 
-	// Use log2 of the noise for reporting,
-	// consistent with lattigo style
+	// Use log2 of the noise for reporting, consistent with lattigo style
 	log2Noise := math.Log2(maxDiff + 1)
 	t.Logf("rotation %d: maxDiff=%.0f (log2=%.1f)", rot, maxDiff, log2Noise)
 	require.Less(t, maxDiff, noiseThreshold,
@@ -894,8 +894,7 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 			}
 		}
 
-		// With LogDefaultScale=45,
-		// we expect roughly 45 bits of precision.
+		// With LogDefaultScale=45, we expect roughly 45 bits of precision.
 		// Allow generous threshold of 2^{-10} given the small parameters and potential extra noise from hierarchical key derivation.
 		threshold := math.Exp2(-10)
 		t.Logf("CKKS rotation by %d: maxErr=%.2e (threshold=%.2e)", rot, maxErr, threshold)
@@ -913,8 +912,7 @@ func productionScenarios() []testutil.Scenario {
 	return testutil.Scenarios
 }
 
-// kgplus3LevelMasters mirrors the benchmark convention: transmit {1,
-// bigMaster} where bigMaster is the middle power of the base.
+// kgplus3LevelMasters mirrors the benchmark convention: transmit {1, bigMaster} where bigMaster is the middle power of the base.
 // The server expands this pair at level 1 into the full base-p set,
 // then derives targets at level 0.
 // Using the full base-p set at top would bypass the level-1 expansion entirely and inflate top-level GenGaloisKeyNew cost (expensive at LogN=15/16).
@@ -982,8 +980,7 @@ func TestDeriveGaloisKeys(t *testing.T) {
 }
 
 // TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys but derives + finalizes targets concurrently across GOMAXPROCS workers.
-// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup,
-// pool buffers).
+// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool buffers).
 // Run with -race in CI to catch regressions in the concurrent path.
 // Mirrors BenchmarkDeriveGaloisKeysConcurrent.
 func TestDeriveGaloisKeysConcurrent(t *testing.T) {
@@ -1001,7 +998,8 @@ func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 			tc, err := newTestContext(params, k3Masters)
 			require.NoError(t, err)
 
-			// Level-1 expansion is sequential (base for level 0), then level-0 targets are derived + finalized concurrently.
+			// Level-1 expansion is sequential (base for level 0),
+			// then level-0 targets are derived + finalized concurrently.
 			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
 			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)

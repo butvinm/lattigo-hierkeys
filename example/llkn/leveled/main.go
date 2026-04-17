@@ -6,8 +6,7 @@
 //   - The server pre-computes keys during an offline (inactive) phase
 //   - Target rotations are only known later, during the online (active) phase
 //
-// For a simpler 2-level example,
-// see ../simple.
+// For a simpler 2-level example, see ../simple.
 package main
 
 import (
@@ -72,9 +71,8 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
-	// SERVER PHASE 1 (inactive): expand master set at intermediate level
-	// PubToRot derives a shift-0 (identity) key at the target level from the
-	// client's public key. This is the starting point for RotToRot combinations.
+	// SERVER PHASE 1 (inactive): expand master set at intermediate level PubToRot derives a shift-0 (identity) key at the target level from the client's public key.
+	// This is the starting point for RotToRot combinations.
 	eval := llkn.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
@@ -97,9 +95,8 @@ func main() {
 	}
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys))
 
-	// SERVER PHASE 2 (active): derive target rotations at eval level
-	// Target rotations are now known. Derive them at level 0 using the
-	// intermediate keys from phase 1 as the new master set.
+	// SERVER PHASE 2 (active): derive target rotations at eval level Target rotations are now known.
+	// Derive them at level 0 using the intermediate keys from phase 1 as the new master set.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
@@ -118,8 +115,8 @@ func main() {
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
 
-	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys
-	// Per-key finalize, releasing each level-0 MasterKey reference for GC.
+	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys Per-key finalize,
+	// releasing each level-0 MasterKey reference for GC.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {
 		mk := level0Keys.Keys[r]

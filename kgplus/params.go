@@ -22,7 +22,8 @@ import (
 // For 2-level, this is the standard KG+ scheme.
 // For k>2, extra levels provide additional hierarchy depth.
 //
-// KG+ only supports the Standard ring type (not ConjugateInvariant), because the X → Y² extension ring embedding requires Standard cyclotomic structure.
+// KG+ only supports the Standard ring type (not ConjugateInvariant),
+// because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
 	eval   rlwe.Parameters
 	hk     rlwe.Parameters
@@ -40,7 +41,8 @@ func (p Parameters) HomingKey() rlwe.Parameters {
 }
 
 // Levels returns the R' hierarchy chain.
-// Levels[0] is the eval-aligned R' level, Levels[k-1] is the top master level.
+// Levels[0] is the eval-aligned R' level,
+// Levels[k-1] is the top master level.
 func (p Parameters) Levels() []rlwe.Parameters {
 	return p.levels
 }
@@ -126,7 +128,8 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 		usedPrimes[p] = true
 	}
 
-	// Homing key: Q = Q_eval ∪ P_eval, P = P_hk, degree N.
+	// Homing key: Q = Q_eval ∪ P_eval, P = P_hk,
+	// degree N.
 	paramsHK, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN(),
 		Q:       qHK,
@@ -154,7 +157,8 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 	}
 	levels[0] = paramsLevel0
 
-	// Levels[1]: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N.
+	// Levels[1]: Q = Q_eval ∪ P_eval, P = P_hk,
+	// degree 2N.
 	paramsLevel1, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       qHK,
@@ -179,7 +183,8 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 		qNext = append(qNext, prev.Q()...)
 		qNext = append(qNext, prev.P()...)
 
-		// Generate fresh P primes avoiding all used primes, NTT-friendly for degree 2N.
+		// Generate fresh P primes avoiding all used primes,
+		// NTT-friendly for degree 2N.
 		pNext, err := hierkeys.GenerateUniquePrimes(logPExtra[i], nthRoot2N, usedPrimes)
 		if err != nil {
 			return Parameters{}, fmt.Errorf("cannot generate P primes for R' level %d: %w", i+2, err)

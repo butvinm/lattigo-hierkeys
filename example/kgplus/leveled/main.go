@@ -7,8 +7,7 @@
 //     intermediate keys.
 //   - Phase 3: ring-switch R' keys to R and finalize as standard lattigo keys.
 //
-// For a simpler 3-level example,
-// see ../simple.
+// For a simpler 3-level example, see ../simple.
 package main
 
 import (
@@ -79,9 +78,8 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
-	// SERVER PHASE 1 (inactive): expand {1,4} → full base-4 set at level 1
-	// PubToRot derives a shift-0 key from the public key. In KG+ this operates
-	// in R' (degree 2N) — the extension ring where all intermediate keys live.
+	// SERVER PHASE 1 (inactive): expand {1,4} → full base-4 set at level 1 PubToRot derives a shift-0 key from the public key.
+	// In KG+ this operates in R' (degree 2N) — the extension ring where all intermediate keys live.
 	eval := kgplus.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
@@ -104,9 +102,8 @@ func main() {
 	}
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys))
 
-	// SERVER PHASE 2 (active): derive target rotations at R' level 0
-	// Now that target rotations are known, derive them using the level-1 keys
-	// as the new master set.
+	// SERVER PHASE 2 (active): derive target rotations at R' level 0 Now that target rotations are known,
+	// derive them using the level-1 keys as the new master set.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
@@ -125,12 +122,9 @@ func main() {
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
-	// SERVER PHASE 3: ring-switch R' → R and convert to lattigo convention
-	// FinalizeKey uses the homing key to ring-switch each level-0 key from
-	// R' (degree 2N) back to R (degree N), then converts to standard lattigo
-	// GaloisKey usable with ckks.Evaluator. We release the R' MasterKey
-	// reference per iteration so the GC can reclaim it before the next
-	// FinalizeKey allocates its scratch buffers.
+	// SERVER PHASE 3: ring-switch R' → R and convert to lattigo convention FinalizeKey uses the homing key to ring-switch each level-0 key from R' (degree 2N) back to R (degree N),
+	// then converts to standard lattigo GaloisKey usable with ckks.Evaluator.
+	// We release the R' MasterKey reference per iteration so the GC can reclaim it before the next FinalizeKey allocates its scratch buffers.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {
 		mk := level0Keys.Keys[r]

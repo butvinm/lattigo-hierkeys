@@ -30,10 +30,8 @@ func PubToRot(paramsTarget, paramsPK rlwe.Parameters, pk *rlwe.PublicKey) (*Mast
 			paramsPK.QCount(), paramsTarget.QCount()+paramsTarget.PCount())
 	}
 
-	// Construction: given pk = (b, a) where b = -a*s + e, set for each gadget component i:
-	//   b_i = b' (pk b reduced to Q_target ∪ P_target)
-	//   a_i = a' + P*G_i (pk a reduced + gadget constant)
-	// Then b_i + a_i*s = e + P*G_i*s — a valid shift-0 evaluation key component.
+	// Construction: given pk = (b, a) where b = -a*s + e,
+	// set for each gadget component i: b_i = b' (pk b reduced to Q_target ∪ P_target) a_i = a' + P*G_i (pk a reduced + gadget constant) Then b_i + a_i*s = e + P*G_i*s — a valid shift-0 evaluation key component.
 
 	levelQLow := paramsTarget.MaxLevel()
 	levelPLow := paramsTarget.MaxLevelP()

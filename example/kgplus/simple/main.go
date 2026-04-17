@@ -1,9 +1,11 @@
 // KG+ hierarchical rotation keys — leveled server-side derivation example.
 //
 // KG+ uses ring switching (extension ring R' of degree 2N) to further reduce transmission key sizes compared to LLKN.
-// The trade-off: only supports Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
+// The trade-off: only supports Standard ring type,
+// and primes must satisfy q ≡ 1 mod 4N.
 //
-// The client generates two independent secrets (sk, sk1), constructs an extended secret in R', and sends a homing key for ring switching.
+// The client generates two independent secrets (sk, sk1),
+// constructs an extended secret in R', and sends a homing key for ring switching.
 // The server derives evaluation keys using PubToRot + NewLevelExpansion + FinalizeKey.
 package main
 
@@ -52,7 +54,8 @@ func main() {
 	// CLIENT: generate keys
 
 	// Two independent secrets at the homing-key (HK) level.
-	// sk is the main secret; sk1 is auxiliary, used only for ring switching.
+	// sk is the main secret; sk1 is auxiliary,
+	// used only for ring switching.
 	kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
@@ -123,8 +126,7 @@ func main() {
 		level0Keys.Keys[r] = mk
 	}
 
-	// Finalize each key: ring-switch R' → R,
-	// convert to lattigo convention.
+	// Finalize each key: ring-switch R' → R, convert to lattigo convention.
 	// Release the R' MasterKey reference per iteration so the GC can reclaim it before the next FinalizeKey allocates its scratch buffers.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {

@@ -124,7 +124,8 @@ func (rtr *RotToRotEvaluator) RotToRot(
 			// Step 4: Add automorphed b component
 			ringQMaster.Add(*bAut, ctKS.Value[0], ctKS.Value[0])
 
-			// Step 5: Split Q_master back into Q_target and P_target, apply MForm.
+			// Step 5: Split Q_master back into Q_target and P_target,
+			// apply MForm.
 			for m := 0; m <= levelQTarget; m++ {
 				s := ringQTarget.SubRings[m]
 				s.MForm(ctKS.Value[0].Coeffs[m], outputKey.Value[i][j][0].Q.Coeffs[m])

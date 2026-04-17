@@ -4,8 +4,7 @@
 // The evaluator is thread-safe — a single instance handles all concurrent calls via pool-based scratch buffers (no ConcurrentCopy needed).
 //
 // The concurrency model is the same as lattigo v6.2: one evaluator,
-// multiple goroutines,
-// each goroutine allocates its own output.
+// multiple goroutines, each goroutine allocates its own output.
 //
 // Uses 3-level to show two-phase expansion: intermediate level first (sequential),
 // then target rotations at level 0 (concurrent).
