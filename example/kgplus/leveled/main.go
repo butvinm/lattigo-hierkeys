@@ -7,7 +7,8 @@
 //     intermediate keys.
 //   - Phase 3: ring-switch R' keys to R and finalize as standard lattigo keys.
 //
-// For a simpler 3-level example, see ../simple.
+// For a simpler 3-level example,
+// see ../simple.
 package main
 
 import (
@@ -93,10 +94,9 @@ func main() {
 		panic(err)
 	}
 
-	// NewLevelExpansion creates a derivation session at this level. Calling
-	// Derive once per master rotation produces the full base-4 set of rotation
-	// keys; the resulting IntermediateKeys can be serialized and stored
-	// between phases.
+	// NewLevelExpansion creates a derivation session at this level.
+	// Calling Derive once per master rotation produces the full base-4 set of rotation keys;
+	// the resulting IntermediateKeys can be serialized and stored between phases.
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
 	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, r := range masterRots {

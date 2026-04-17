@@ -3,8 +3,7 @@
 //	Client: rlwe.GenSecretKeyNew (×2) → ConstructExtendedSecretKey → rlwe.GenGaloisKeyNew → hierkeys.GaloisKeyToMasterKey → TransmissionKeys
 //	Server: PubToRot → NewLevelExpansion (per level) → FinalizeKey (per key, ring-switch + convention convert) → rlwe.MemEvaluationKeySet
 //
-// See example/kgplus/simple for complete single-party flow,
-// and example/kgplus/multiparty for N-out-of-N multiparty.
+// See example/kgplus/simple for complete single-party flow, and example/kgplus/multiparty for N-out-of-N multiparty.
 package kgplus
 
 import (

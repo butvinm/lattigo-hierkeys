@@ -8,8 +8,7 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// Parameters bundles the parameter sets needed for KG+
-// hierarchical rotation key generation via ring switching.
+// Parameters bundles the parameter sets needed for KG+ hierarchical rotation key generation via ring switching.
 //
 // Three tiers of primes:
 //   - Q_eval, P_eval: standard evaluation parameters (computation + key-switching)
@@ -23,8 +22,7 @@ import (
 // For 2-level, this is the standard KG+ scheme.
 // For k>2, extra levels provide additional hierarchy depth.
 //
-// KG+ only supports the Standard ring type (not ConjugateInvariant),
-// because the X → Y² extension ring embedding requires Standard cyclotomic structure.
+// KG+ only supports the Standard ring type (not ConjugateInvariant), because the X → Y² extension ring embedding requires Standard cyclotomic structure.
 type Parameters struct {
 	eval   rlwe.Parameters
 	hk     rlwe.Parameters
@@ -41,8 +39,8 @@ func (p Parameters) HomingKey() rlwe.Parameters {
 	return p.hk
 }
 
-// Levels returns the R' hierarchy chain. Levels[0] is the eval-aligned R'
-// level, Levels[k-1] is the top master level.
+// Levels returns the R' hierarchy chain.
+// Levels[0] is the eval-aligned R' level, Levels[k-1] is the top master level.
 func (p Parameters) Levels() []rlwe.Parameters {
 	return p.levels
 }
@@ -76,18 +74,17 @@ func (p Parameters) ProjectToEvalKey(skHK *rlwe.SecretKey) (*rlwe.SecretKey, err
 	return skEval, nil
 }
 
-// NewParameters constructs KG+ hierarchical key parameters from standard evaluation
-// parameters and auxiliary prime bit-sizes.
+// NewParameters constructs KG+ hierarchical key parameters from standard evaluation parameters and auxiliary prime bit-sizes.
 //
 // logPHK specifies auxiliary primes for the homing key and Levels[1].
-// logPExtra specifies P-prime bit-sizes for additional levels (k>2); pass nil
-// for the standard 2-level scheme.
+// logPExtra specifies P-prime bit-sizes for additional levels (k>2);
+// pass nil for the standard 2-level scheme.
 //
-// For 2-level (standard): NewParameters(eval, logPHK, nil)
-// For 3-level:            NewParameters(eval, logPHK, [][]int{logP2})
+// For 2-level (standard): NewParameters(eval, logPHK, nil).
+// For 3-level: NewParameters(eval, logPHK, [][]int{logP2}).
 //
-// All primes must be NTT-friendly for degree 2N. Returns an error if the evaluation
-// parameters use the ConjugateInvariant ring type.
+// All primes must be NTT-friendly for degree 2N.
+// Returns an error if the evaluation parameters use the ConjugateInvariant ring type.
 func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Parameters, error) {
 
 	if eval.RingType() == ring.ConjugateInvariant {
@@ -129,7 +126,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 		usedPrimes[p] = true
 	}
 
-	// Homing key: Q = Q_eval ∪ P_eval, P = P_hk, degree N
+	// Homing key: Q = Q_eval ∪ P_eval, P = P_hk, degree N.
 	paramsHK, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN(),
 		Q:       qHK,
@@ -145,7 +142,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 
 	levels := make([]rlwe.Parameters, k)
 
-	// Levels[0]: Q = Q_eval, P = P_eval, degree 2N
+	// Levels[0]: Q = Q_eval, P = P_eval, degree 2N.
 	paramsLevel0, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       eval.Q(),
@@ -157,7 +154,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 	}
 	levels[0] = paramsLevel0
 
-	// Levels[1]: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N
+	// Levels[1]: Q = Q_eval ∪ P_eval, P = P_hk, degree 2N.
 	paramsLevel1, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:    eval.LogN() + 1,
 		Q:       qHK,
@@ -182,7 +179,7 @@ func NewParameters(eval rlwe.Parameters, logPHK []int, logPExtra [][]int) (Param
 		qNext = append(qNext, prev.Q()...)
 		qNext = append(qNext, prev.P()...)
 
-		// Generate fresh P primes avoiding all used primes, NTT-friendly for degree 2N
+		// Generate fresh P primes avoiding all used primes, NTT-friendly for degree 2N.
 		pNext, err := hierkeys.GenerateUniquePrimes(logPExtra[i], nthRoot2N, usedPrimes)
 		if err != nil {
 			return Parameters{}, fmt.Errorf("cannot generate P primes for R' level %d: %w", i+2, err)

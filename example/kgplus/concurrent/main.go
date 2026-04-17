@@ -1,8 +1,7 @@
 // KG+ hierarchical rotation keys — concurrent derivation.
 //
-// Demonstrates concurrent key derivation with ring switching. The evaluator
-// is thread-safe — pool-based scratch buffers for both RotToRot and
-// RingSwitchGaloisKey operations.
+// Demonstrates concurrent key derivation with ring switching.
+// The evaluator is thread-safe — pool-based scratch buffers for both RotToRot and RingSwitchGaloisKey operations.
 //
 // Uses 3-level with per-level expansion:
 //   - Phase 1 (sequential): expand {1,4} → full base-4 set at R' level 1

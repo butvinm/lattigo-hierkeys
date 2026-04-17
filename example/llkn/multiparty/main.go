@@ -1,16 +1,15 @@
 // LLKN hierarchical rotation keys — N-out-of-N multiparty key generation.
 //
-// N parties collectively generate transmission keys without any single party
-// knowing the full secret key. The server derives evaluation keys exactly as
-// in the single-party case — it cannot distinguish multiparty keys from
-// single-party ones.
+// N parties collectively generate transmission keys without any single party knowing the full secret key.
+// The server derives evaluation keys exactly as in the single-party case — it cannot distinguish multiparty keys from single-party ones.
 //
 // Uses lattigo's standard multiparty protocols:
 //   - PublicKeyGenProtocol for the collective public key
 //   - GaloisKeyGenProtocol for master rotation keys
 //
 // The ideal secret key s = sum(s_i) is computed only for verification.
-// In a real deployment, parties use a collective decryption protocol instead.
+// In a real deployment,
+// parties use a collective decryption protocol instead.
 package main
 
 import (
@@ -65,15 +64,15 @@ func main() {
 		sks[i] = kgen.GenSecretKeyNew()
 	}
 
-	// Common Reference String (CRS) — shared by all parties for deterministic
-	// "a"-part generation in the multiparty protocols.
+	// Common Reference String (CRS) — shared by all parties for deterministic "a"-part generation in the multiparty protocols.
 	crs, err := sampling.NewPRNG()
 	if err != nil {
 		panic(err)
 	}
 
 	// Ideal secret key s = sum(s_i) — for verification only.
-	// In a real deployment, no single entity holds this.
+	// In a real deployment,
+	// no single entity holds this.
 	skIdeal := rlwe.NewSecretKey(topParams)
 	for _, sk := range sks {
 		topParams.RingQP().Add(skIdeal.Value, sk.Value, skIdeal.Value)
@@ -134,7 +133,8 @@ func main() {
 			}
 		}
 
-		// Finalize the collective GaloisKey, then convert to MasterKey.
+		// Finalize the collective GaloisKey,
+		// then convert to MasterKey.
 		gk := rlwe.NewGaloisKey(topParams)
 		if err = gkg.GenGaloisKey(acc, crp, gk); err != nil {
 			panic(err)

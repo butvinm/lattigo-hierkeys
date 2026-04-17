@@ -6,9 +6,8 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// GenerateUniquePrimes generates NTT-friendly primes of the given bit sizes
-// that are not in the usedPrimes set. Used by both LLKN and KG+ to avoid
-// prime collisions when building multi-level parameter chains.
+// GenerateUniquePrimes generates NTT-friendly primes of the given bit sizes that are not in the usedPrimes set.
+// Used by both LLKN and KG+ to avoid prime collisions when building multi-level parameter chains.
 func GenerateUniquePrimes(logP []int, nthRoot uint64, usedPrimes map[uint64]bool) ([]uint64, error) {
 	primes := make([]uint64, 0, len(logP))
 

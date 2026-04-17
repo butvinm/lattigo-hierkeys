@@ -1,11 +1,9 @@
 // KG+ hierarchical rotation keys — leveled server-side derivation example.
 //
-// KG+ uses ring switching (extension ring R' of degree 2N) to further reduce
-// transmission key sizes compared to LLKN. The trade-off: only supports
-// Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
+// KG+ uses ring switching (extension ring R' of degree 2N) to further reduce transmission key sizes compared to LLKN.
+// The trade-off: only supports Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
 //
-// The client generates two independent secrets (sk, sk1), constructs an
-// extended secret in R', and sends a homing key for ring switching.
+// The client generates two independent secrets (sk, sk1), constructs an extended secret in R', and sends a homing key for ring switching.
 // The server derives evaluation keys using PubToRot + NewLevelExpansion + FinalizeKey.
 package main
 
@@ -22,8 +20,7 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS parameters ---
-	// 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
+	// --- CKKS parameters --- 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
 	// LogNthRoot=16 ensures primes are NTT-friendly for degree 2N (KG+ requirement).
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
@@ -36,8 +33,7 @@ func main() {
 		panic(err)
 	}
 
-	// --- KG+ parameters ---
-	// 3-level: two extra P levels in R' (degree 2N).
+	// --- KG+ parameters --- 3-level: two extra P levels in R' (degree 2N).
 	var params kgplus.Parameters
 	if params, err = kgplus.NewParameters(ckksParams.Parameters,
 		[]int{55}, // LogPHK for Levels[1]
@@ -63,20 +59,19 @@ func main() {
 	sk := kgenHK.GenSecretKeyNew()
 	sk1 := kgenHK.GenSecretKeyNew()
 
-	// Homing key: EvalKey(sk1 → sk) at HK level. Enables the server to
-	// ring-switch derived keys from R' (degree 2N) back to R (degree N).
+	// Homing key: EvalKey(sk1 → sk) at HK level.
+	// Enables the server to ring-switch derived keys from R' (degree 2N) back to R (degree N).
 	homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
 
-	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N). This is the secret
-	// under which master keys and the public key are generated in R'.
+	// Extended secret s̃ = sk + Y·sk1 in R' (degree 2N).
+	// This is the secret under which master keys and the public key are generated in R'.
 	skExt := kgplus.ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
 
 	// Public key and master rotation keys in R' at the top level.
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	// With 3-level, only {1, middle} masters are needed — the server derives the
-	// full base-4 set at the intermediate level.
+	// With 3-level, only {1, middle} masters are needed — the server derives the full base-4 set at the intermediate level.
 	k3Masters := []int{1, 64}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
@@ -132,9 +127,9 @@ func main() {
 		level0Keys.Keys[r] = mk
 	}
 
-	// Finalize each key: ring-switch R' → R, convert to lattigo convention.
-	// Release the R' MasterKey reference per iteration so the GC can reclaim
-	// it before the next FinalizeKey allocates its scratch buffers.
+	// Finalize each key: ring-switch R' → R,
+	// convert to lattigo convention.
+	// Release the R' MasterKey reference per iteration so the GC can reclaim it before the next FinalizeKey allocates its scratch buffers.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {
 		mk := level0Keys.Keys[r]

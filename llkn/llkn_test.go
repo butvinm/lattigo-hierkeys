@@ -17,9 +17,9 @@ import (
 )
 
 // buildParams constructs LLKN 2-level parameters from a production scenario,
-// using the given ring type. Scenarios use LogNthRoot = LogN+2 (= 4N), which
-// satisfies both Standard (requires 2N) and ConjugateInvariant (requires 4N)
-// NTT root-of-unity constraints.
+// using the given ring type.
+// Scenarios use LogNthRoot = LogN+2 (= 4N),
+// which satisfies both Standard (requires 2N) and ConjugateInvariant (requires 4N) NTT root-of-unity constraints.
 func buildParams(t *testing.T, sc testutil.Scenario, ringType ring.Type) Parameters {
 	t.Helper()
 	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
@@ -91,8 +91,8 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
-// expandAll cascades NewLevelExpansion through all levels. Test-internal
-// helper used by tests that need level-0 IntermediateKeys.
+// expandAll cascades NewLevelExpansion through all levels.
+// Test-internal helper used by tests that need level-0 IntermediateKeys.
 func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
@@ -135,10 +135,8 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	return result, nil
 }
 
-// TestLLKN runs the unit-style test suite against the LogN=14 production
-// scenario in both supported ring types (Standard and ConjugateInvariant).
-// Production-scale smoke coverage across all scenarios lives in
-// TestDeriveGaloisKeys.
+// TestLLKN runs the unit-style test suite against the LogN=14 production scenario in both supported ring types (Standard and ConjugateInvariant).
+// Production-scale smoke coverage across all scenarios lives in TestDeriveGaloisKeys.
 func TestLLKN(t *testing.T) {
 
 	fixtures := []struct {
@@ -170,8 +168,8 @@ func TestLLKN(t *testing.T) {
 	testMasterRotationsForBase(t)
 }
 
-// productionScenarios returns testutil.Scenarios, reduced to LogN=14 only in
-// -short mode so PR-time CI stays fast while master pushes cover all sizes.
+// productionScenarios returns testutil.Scenarios,
+// reduced to LogN=14 only in -short mode so PR-time CI stays fast while master pushes cover all sizes.
 func productionScenarios() []testutil.Scenario {
 	if testing.Short() {
 		return testutil.Scenarios[:1]
@@ -179,9 +177,8 @@ func productionScenarios() []testutil.Scenario {
 	return testutil.Scenarios
 }
 
-// TestDeriveGaloisKeys exercises the full client/server pipeline
-// (MasterRotationsForBase → expandAll → FinalizeKey → rotation verification)
-// sequentially against each production scenario. Mirrors BenchmarkDeriveGaloisKeys.
+// TestDeriveGaloisKeys exercises the full client/server pipeline (MasterRotationsForBase → expandAll → FinalizeKey → rotation verification) sequentially against each production scenario.
+// Mirrors BenchmarkDeriveGaloisKeys.
 func TestDeriveGaloisKeys(t *testing.T) {
 	for _, sc := range productionScenarios() {
 		t.Run(sc.Name, func(t *testing.T) {
@@ -220,10 +217,10 @@ func TestDeriveGaloisKeys(t *testing.T) {
 	}
 }
 
-// TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys
-// but derives + finalizes targets concurrently across GOMAXPROCS workers.
-// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool
-// buffers). Run with -race in CI to catch regressions in the concurrent path.
+// TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys but derives + finalizes targets concurrently across GOMAXPROCS workers.
+// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup,
+// pool buffers).
+// Run with -race in CI to catch regressions in the concurrent path.
 // Mirrors BenchmarkDeriveGaloisKeysConcurrent.
 func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 	workers := runtime.GOMAXPROCS(0)
@@ -451,9 +448,8 @@ func testPubToRot(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "PubToRot"), func(t *testing.T) {
 
 		// The PublicKey in TransmissionKeys is at the top level.
-		// PubToRot is now integrated into the pipeline, so we verify
-		// that the full derive flow works with PubToRot-derived
-		// shift-0 keys at each level.
+		// PubToRot is now integrated into the pipeline,
+		// so we verify that the full derive flow works with PubToRot-derived shift-0 keys at each level.
 		k := params.NumLevels()
 		for level := 0; level < k-1; level++ {
 			t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
@@ -508,7 +504,8 @@ func testPubToRot(tc *testContext, t *testing.T) {
 				}
 
 				if level == 0 {
-					// At level 0, finalize and verify with actual rotation
+					// At level 0,
+					// finalize and verify with actual rotation
 					galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
 					for _, mk := range intermediate.Keys {
 						gk, err := eval.FinalizeKey(mk)
@@ -529,7 +526,8 @@ func testPubToRot(tc *testContext, t *testing.T) {
 						verifyDeriveRotation(t, params.Eval(), tc.skEval, stdEval, ct, rot, threshold)
 					}
 				} else {
-					// For intermediate levels, verify the keys are non-nil
+					// For intermediate levels,
+					// verify the keys are non-nil
 					require.NotEmpty(t, intermediate.Keys)
 					for _, rot := range targetRots {
 						_, ok := intermediate.Keys[rot]
@@ -592,8 +590,7 @@ type automorphEvaluator interface {
 	Automorphism(ctIn *rlwe.Ciphertext, galEl uint64, opOut *rlwe.Ciphertext) error
 }
 
-// verifyDeriveRotation compares automorphism output from the given evaluator
-// against a reference automorphism computed using lattigo's own GenGaloisKeyNew.
+// verifyDeriveRotation compares automorphism output from the given evaluator against a reference automorphism computed using lattigo's own GenGaloisKeyNew.
 func verifyDeriveRotation(
 	t *testing.T,
 	paramsEval rlwe.Parameters,

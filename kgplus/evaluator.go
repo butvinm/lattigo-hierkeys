@@ -51,15 +51,15 @@ func NewEvaluator(params Parameters) *Evaluator {
 	return eval
 }
 
-// RotToRot at a specific R' level. Thread-safe.
+// RotToRot at a specific R' level.
+// Thread-safe.
 func (eval *Evaluator) RotToRot(level int, inputKey, masterKey *hierkeys.MasterKey, targetGalEl uint64) (*hierkeys.MasterKey, error) {
 	return eval.rotEvals[level].RotToRot(inputKey, masterKey, targetGalEl)
 }
 
-// NewLevelExpansion creates a thread-safe expansion session at the given R'
-// level. targetRotations is the complete set of rotations the caller will
-// request via [hierkeys.LevelExpansion.Derive]; it is used to evict
-// intermediate keys whose chains have all completed.
+// NewLevelExpansion creates a thread-safe expansion session at the given R' level.
+// targetRotations is the complete set of rotations the caller will request via [hierkeys.LevelExpansion.Derive];
+// it is used to evict intermediate keys whose chains have all completed.
 func (eval *Evaluator) NewLevelExpansion(level int, shift0Key *hierkeys.MasterKey, masterKeys map[int]*hierkeys.MasterKey, targetRotations []int) *hierkeys.LevelExpansion {
 	return hierkeys.NewLevelExpansion(
 		eval.rotEvals[level].RotToRot,

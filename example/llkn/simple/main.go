@@ -20,8 +20,7 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS parameters ---
-	// 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
+	// --- CKKS parameters --- 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
 	// Eval QP = 55 + 4×40 + 2×55 = 325 ≤ 430.
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
@@ -33,8 +32,7 @@ func main() {
 		panic(err)
 	}
 
-	// --- LLKN parameters ---
-	// 2-level: one extra level of P primes for master keys.
+	// --- LLKN parameters --- 2-level: one extra level of P primes for master keys.
 	// Master level: Q=7 primes, P=1×55b prime → dnum=7, QP=380 ≤ 430.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
@@ -58,19 +56,16 @@ func main() {
 	// Use params.ProjectToEvalKey(sk) to get the eval-level key for encryption.
 	sk := kgen.GenSecretKeyNew()
 
-	// Public key at the top level — used by server's PubToRot to derive
-	// shift-0 (identity) keys at each hierarchy level.
+	// Public key at the top level — used by server's PubToRot to derive shift-0 (identity) keys at each hierarchy level.
 	pk := kgen.GenPublicKeyNew(sk)
 
-	// Master rotation keys: a small set of GaloisKeys covering base-4 powers
-	// {1, 4, 16, 64, ...}. Any target rotation can be decomposed as a sum of
-	// these masters and derived server-side via RotToRot.
+	// Master rotation keys: a small set of GaloisKeys covering base-4 powers {1, 4, 16, 64, ...}.
+	// Any target rotation can be decomposed as a sum of these masters and derived server-side via RotToRot.
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
 	for _, rot := range masterRots {
 		// Generate a standard lattigo GaloisKey, then convert to MasterKey.
-		// GaloisKeyToMasterKey applies a convention transformation needed by
-		// the RotToRot algorithm — the user doesn't need to know the details.
+		// GaloisKeyToMasterKey applies a convention transformation needed by the RotToRot algorithm — the user doesn't need to know the details.
 		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
 		if masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk); err != nil {
 			panic(err)
@@ -90,8 +85,8 @@ func main() {
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	// PubToRot derives a shift-0 (identity) key from the public key.
-	// NewLevelExpansion + Derive combine it with master keys to produce all
-	// target rotations. FinalizeKey converts each to a standard lattigo GaloisKey.
+	// NewLevelExpansion + Derive combine it with master keys to produce all target rotations.
+	// FinalizeKey converts each to a standard lattigo GaloisKey.
 	var shift0 *hierkeys.MasterKey
 	if shift0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
@@ -106,7 +101,8 @@ func main() {
 		level0.Keys[r] = mk
 	}
 
-	// Finalize per key, releasing the level-0 MasterKey reference for GC.
+	// Finalize per key,
+	// releasing the level-0 MasterKey reference for GC.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))
 	for _, r := range targetRots {
 		mk := level0.Keys[r]

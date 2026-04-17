@@ -1,13 +1,11 @@
 package hierkeys
 
-// MasterRotationsForBase returns the set of master rotation indices for a
-// p-ary number system with the given base and number of slots.
+// MasterRotationsForBase returns the set of master rotation indices for a p-ary number system with the given base and number of slots.
 //
 // For base=4, nSlots=32768: returns {1, 4, 16, 64, 256, 1024, 4096, 16384}.
 // These are powers of base up to nSlots/2 (since rotations are mod nSlots).
 //
-// With these master keys, any rotation in [1, nSlots/2] can be decomposed as a
-// sum of at most ceil(log_base(nSlots)) master rotations via RotToRot.
+// With these master keys, any rotation in [1, nSlots/2] can be decomposed as a sum of at most ceil(log_base(nSlots)) master rotations via RotToRot.
 func MasterRotationsForBase(base, nSlots int) []int {
 	if base < 2 || nSlots < 1 {
 		return nil
@@ -19,15 +17,15 @@ func MasterRotationsForBase(base, nSlots int) []int {
 	return rots
 }
 
-// DecomposeRotation decomposes a target rotation as a sum of master rotation
-// indices using greedy p-ary decomposition (largest master first).
+// DecomposeRotation decomposes a target rotation as a sum of master rotation indices using greedy p-ary decomposition (largest master first).
 //
-// masterRots must be a sorted (ascending) p-ary set (powers of some base p)
-// as produced by [MasterRotationsForBase]. The function greedily subtracts
-// the largest fitting master at each step, which is optimal for p-ary sets.
+// masterRots must be a sorted (ascending) p-ary set (powers of some base p) as produced by [MasterRotationsForBase].
+// The function greedily subtracts the largest fitting master at each step,
+// which is optimal for p-ary sets.
 //
 // Returns a sequence of master rotation indices whose sum equals target.
-// Returns nil if target cannot be decomposed (e.g., target <= 0 or no masters).
+// Returns nil if target cannot be decomposed (e.g.,
+// target <= 0 or no masters).
 func DecomposeRotation(target int, masterRots []int) []int {
 	if target <= 0 || len(masterRots) == 0 {
 		return nil

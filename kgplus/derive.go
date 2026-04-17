@@ -8,8 +8,8 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// FinalizeKey ring-switches one R' MasterKey to R and converts to a standard
-// lattigo GaloisKey. Thread-safe.
+// FinalizeKey ring-switches one R' MasterKey to R and converts to a standard lattigo GaloisKey.
+// Thread-safe.
 func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *rlwe.EvaluationKey) (*rlwe.GaloisKey, error) {
 	galElR := eval.params.eval.GaloisElement(rot)
 	rsGK, err := eval.RingSwitchGaloisKey(mk, homingKey, galElR)
@@ -22,8 +22,8 @@ func (eval *Evaluator) FinalizeKey(rot int, mk *hierkeys.MasterKey, homingKey *r
 	return rsGK, nil
 }
 
-// RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a
-// standard GaloisKey in R (degree N) using a homing key. Thread-safe.
+// RingSwitchGaloisKey ring-switches a MasterKey from R' (degree 2N) to a standard GaloisKey in R (degree N) using a homing key.
+// Thread-safe.
 func (eval *Evaluator) RingSwitchGaloisKey(
 	masterKeyRP *hierkeys.MasterKey,
 	homingKey *rlwe.EvaluationKey,

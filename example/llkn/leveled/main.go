@@ -6,7 +6,8 @@
 //   - The server pre-computes keys during an offline (inactive) phase
 //   - Target rotations are only known later, during the online (active) phase
 //
-// For a simpler 2-level example, see ../simple.
+// For a simpler 2-level example,
+// see ../simple.
 package main
 
 import (
@@ -33,9 +34,9 @@ func main() {
 		panic(err)
 	}
 
-	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate
-	// level between eval and master. With 2-level this example would be trivial
-	// (only one NewLevelExpansion call), so we use 3-level to show the cascade.
+	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate level between eval and master.
+	// With 2-level this example would be trivial (only one NewLevelExpansion call),
+	// so we use 3-level to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{55}, // P for level 1 (intermediate)
@@ -86,8 +87,8 @@ func main() {
 		panic(err)
 	}
 
-	// NewLevelExpansion creates a derivation session at level 1. Calling
-	// Derive once per master rotation produces the full base-4 rotation set;
+	// NewLevelExpansion creates a derivation session at level 1.
+	// Calling Derive once per master rotation produces the full base-4 rotation set;
 	// the resulting IntermediateKeys can be serialized and stored for later use.
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
 	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))

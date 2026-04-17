@@ -7,8 +7,7 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// Parameters bundles the multi-tier parameter sets needed for LLKN
-// hierarchical rotation key generation (same ring, no ring switching).
+// Parameters bundles the multi-tier parameter sets needed for LLKN hierarchical rotation key generation (same ring, no ring switching).
 //
 // The hierarchy has k levels (k = len(Levels)):
 //   - Levels[0] = Eval: Q = Q_eval, P = P_eval — for ciphertext evaluation
@@ -17,15 +16,13 @@ import (
 //   - Levels[k-1]: top master level
 //
 // For 2-level, this is the standard LLKN two-tier scheme from Lee-Lee-Kim-No.
-// For k>2, intermediate levels enable further TX bandwidth reduction
-// at the cost of additional server-side computation.
+// For k>2, intermediate levels enable further TX bandwidth reduction at the cost of additional server-side computation.
 //
 // At each adjacent level pair, the RotToRot constraint must hold:
 //
 //	Levels[i+1].QCount() == Levels[i].QCount() + Levels[i].PCount()
 //
-// Unlike KG+, LLKN does not use an extension ring and supports both
-// Standard and ConjugateInvariant ring types.
+// Unlike KG+, LLKN does not use an extension ring and supports both Standard and ConjugateInvariant ring types.
 type Parameters struct {
 	levels []rlwe.Parameters
 }
@@ -35,8 +32,8 @@ func (p Parameters) Eval() rlwe.Parameters {
 	return p.levels[0]
 }
 
-// Levels returns the hierarchy chain. Levels[0] is the eval level,
-// Levels[k-1] is the top master level.
+// Levels returns the hierarchy chain.
+// Levels[0] is the eval level, Levels[k-1] is the top master level.
 func (p Parameters) Levels() []rlwe.Parameters {
 	return p.levels
 }
@@ -72,18 +69,16 @@ func (p Parameters) ProjectToEvalKey(skTop *rlwe.SecretKey) (*rlwe.SecretKey, er
 	return skLevel, nil
 }
 
-// NewParameters constructs LLKN hierarchical key parameters from standard
-// evaluation parameters and auxiliary prime bit-sizes for each level above eval.
+// NewParameters constructs LLKN hierarchical key parameters from standard evaluation parameters and auxiliary prime bit-sizes for each level above eval.
 //
 // logPLevels[i] gives the P-prime bit-sizes for Levels[i+1].
 // The number of hierarchy levels is k = len(logPLevels) + 1.
 //
-// P primes at each level are generated to be distinct from all Q primes at
-// that level and from all primes used at lower levels. This prevents the
-// prime collision that would cause GadgetProduct/ModDown to fail.
+// P primes at each level are generated to be distinct from all Q primes at that level and from all primes used at lower levels.
+// This prevents the prime collision that would cause GadgetProduct/ModDown to fail.
 //
-// For 2-level (standard two-tier): NewParameters(eval, [][]int{{61}})
-// For 3-level (three-tier):        NewParameters(eval, [][]int{{61}, {61}})
+// For 2-level (standard two-tier): NewParameters(eval, [][]int{{61}}).
+// For 3-level (three-tier): NewParameters(eval, [][]int{{61}, {61}}).
 func NewParameters(eval rlwe.Parameters, logPLevels [][]int) (Parameters, error) {
 
 	if len(logPLevels) == 0 {
@@ -115,7 +110,7 @@ func NewParameters(eval rlwe.Parameters, logPLevels [][]int) (Parameters, error)
 	levels := make([]rlwe.Parameters, k)
 	levels[0] = eval
 
-	// Build each level: Q_{i+1} = Q_i ∪ P_i, P_{i+1} = fresh primes from logPLevels[i]
+	// Build each level: Q_{i+1} = Q_i ∪ P_i, P_{i+1} = fresh primes from logPLevels[i].
 	for i := 0; i < len(logPLevels); i++ {
 		prev := levels[i]
 

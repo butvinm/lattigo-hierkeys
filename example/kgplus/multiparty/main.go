@@ -7,8 +7,7 @@
 //   - PublicKeyGenProtocol for the collective public key (in R')
 //   - GaloisKeyGenProtocol for master rotation keys (in R')
 //
-// The server-side derivation is identical to single-party — it cannot
-// distinguish multiparty keys from single-party ones.
+// The server-side derivation is identical to single-party — it cannot distinguish multiparty keys from single-party ones.
 package main
 
 import (
@@ -217,7 +216,8 @@ func main() {
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
 
-	// Finalize per key, releasing R' MasterKey references for GC.
+	// Finalize per key,
+	// releasing R' MasterKey references for GC.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {
 		mk := level0Keys.Keys[r]

@@ -11,8 +11,7 @@ import (
 )
 
 // PubToRot derives a shift-0 [MasterKey] (GaloisElement=1) from a public key.
-// The server calls this at each hierarchy level to obtain the identity key
-// needed by [RotToRot].
+// The server calls this at each hierarchy level to obtain the identity key needed by [RotToRot].
 //
 // Requires paramsPK.QCount() >= paramsTarget.QCount() + paramsTarget.PCount().
 func PubToRot(paramsTarget, paramsPK rlwe.Parameters, pk *rlwe.PublicKey) (*MasterKey, error) {
@@ -96,8 +95,7 @@ func PubToRot(paramsTarget, paramsPK rlwe.Parameters, pk *rlwe.PublicKey) (*Mast
 	return &MasterKey{gk: outputKey}, nil
 }
 
-// addGadgetToAPart adds P * G_i to the Q-part of the 'a' component
-// (component[1]) of each gadget slot.
+// addGadgetToAPart adds P * G_i to the Q-part of the 'a' component (component[1]) of each gadget slot.
 //
 // This mirrors AddPolyTimesGadgetVectorToGadgetCiphertext but:
 //   - Operates on the 'a' part (index 1) instead of 'b' (index 0)
