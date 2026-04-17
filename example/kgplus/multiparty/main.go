@@ -157,7 +157,7 @@ func main() {
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(k3Masters), k3Masters)
 
-	// SERVER: per-level expansion (identical to single-party leveled example)
+	// SERVER: per-level expansion (identical to single-party simple example)
 
 	tk := &kgplus.TransmissionKeys{
 		HomingKey:     homingKey,

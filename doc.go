@@ -17,5 +17,5 @@
 //	}
 //
 // See [llkn] and [kgplus] for scheme-specific evaluators and parameters,
-// and example/{llkn,kgplus}/{simple,leveled,concurrent,multiparty} for runnable end-to-end flows.
+// and example/{llkn,kgplus}/{simple,concurrent,multiparty} for runnable end-to-end flows.
 package hierkeys
