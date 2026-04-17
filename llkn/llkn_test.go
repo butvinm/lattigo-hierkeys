@@ -13,10 +13,14 @@ import (
 	"github.com/butvinm/lattigo-hierkeys/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
+	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// buildStandardParams constructs LLKN 2-level parameters from a production scenario.
-func buildStandardParams(t *testing.T, sc testutil.Scenario) Parameters {
+// buildParams constructs LLKN 2-level parameters from a production scenario,
+// using the given ring type. Scenarios use LogNthRoot = LogN+2 (= 4N), which
+// satisfies both Standard (requires 2N) and ConjugateInvariant (requires 4N)
+// NTT root-of-unity constraints.
+func buildParams(t *testing.T, sc testutil.Scenario, ringType ring.Type) Parameters {
 	t.Helper()
 	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
 		LogN:       sc.LogN,
@@ -24,19 +28,10 @@ func buildStandardParams(t *testing.T, sc testutil.Scenario) Parameters {
 		LogP:       sc.LogP,
 		NTTFlag:    true,
 		LogNthRoot: sc.LogN + 2,
+		RingType:   ringType,
 	})
 	require.NoError(t, err)
 	params, err := NewParameters(paramsEval, [][]int{sc.LogPHK})
-	require.NoError(t, err)
-	return params
-}
-
-// buildConjugateInvariantParams constructs the ConjugateInvariant fixture.
-func buildConjugateInvariantParams(t *testing.T) Parameters {
-	t.Helper()
-	paramsEval, err := rlwe.NewParametersFromLiteral(testConjugateInvariantParams.ParametersLiteral)
-	require.NoError(t, err)
-	params, err := NewParameters(paramsEval, testConjugateInvariantParams.LogPLevels)
 	require.NoError(t, err)
 	return params
 }
@@ -140,21 +135,18 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	return result, nil
 }
 
-// TestLLKN runs the unit-style test suite against two fixtures:
-//   - Standard ring from the LogN=14 production scenario (testutil.Scenarios[0])
-//   - ConjugateInvariant ring from the fixture in test_params.go (no equivalent
-//     in testutil; production scenarios cover Standard only)
-//
+// TestLLKN runs the unit-style test suite against the LogN=14 production
+// scenario in both supported ring types (Standard and ConjugateInvariant).
 // Production-scale smoke coverage across all scenarios lives in
-// TestDeriveGaloisKeysProduction.
+// TestDeriveGaloisKeys.
 func TestLLKN(t *testing.T) {
 
 	fixtures := []struct {
 		name   string
 		params Parameters
 	}{
-		{"Standard", buildStandardParams(t, testutil.Scenarios[0])},
-		{"ConjugateInvariant", buildConjugateInvariantParams(t)},
+		{"Standard", buildParams(t, testutil.Scenarios[0], ring.Standard)},
+		{"ConjugateInvariant", buildParams(t, testutil.Scenarios[0], ring.ConjugateInvariant)},
 	}
 
 	for _, fix := range fixtures {
@@ -193,7 +185,7 @@ func productionScenarios() []testutil.Scenario {
 func TestDeriveGaloisKeys(t *testing.T) {
 	for _, sc := range productionScenarios() {
 		t.Run(sc.Name, func(t *testing.T) {
-			params := buildStandardParams(t, sc)
+			params := buildParams(t, sc, ring.Standard)
 			paramsEval := params.Eval()
 			slots := paramsEval.N() / 2
 
@@ -237,7 +229,7 @@ func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 	workers := runtime.GOMAXPROCS(0)
 	for _, sc := range productionScenarios() {
 		t.Run(sc.Name, func(t *testing.T) {
-			params := buildStandardParams(t, sc)
+			params := buildParams(t, sc, ring.Standard)
 			paramsEval := params.Eval()
 			slots := paramsEval.N() / 2
 
