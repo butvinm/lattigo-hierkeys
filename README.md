@@ -3,6 +3,8 @@
 [![Go](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
+> **Status: research / experimental.** Not independently audited. Functional correctness is covered by tests; no third-party cryptographic review has been performed. Use at your own risk and do not rely on this code for production deployments without independent review.
+
 Hierarchical rotation key generation for [lattigo](https://github.com/tuneinsight/lattigo) v6 FHE library, reducing client-to-server key transmission cost.
 
 Instead of transmitting one rotation key per needed cyclic shift, the client generates a small set of master rotation keys and sends them to the server. The server expands these into all required evaluation keys using the LLKN or KG+ algorithms. Derived keys are standard `rlwe.GaloisKey` objects, compatible with `rlwe.Evaluator`, `ckks.Evaluator.Rotate`, and hoisted rotations.

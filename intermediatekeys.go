@@ -10,8 +10,8 @@ import (
 )
 
 // IntermediateKeys holds MasterKeys produced by [LevelExpansion.Derive].
-// Can be serialized, used as input to the next level's expansion, or
-// finalized into standard lattigo GaloisKeys.
+// Can be serialized, used as input to the next level's expansion,
+// or finalized into standard lattigo GaloisKeys.
 type IntermediateKeys struct {
 	Keys map[int]*MasterKey // indexed by rotation index
 }

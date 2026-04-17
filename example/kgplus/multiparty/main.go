@@ -7,8 +7,7 @@
 //   - PublicKeyGenProtocol for the collective public key (in R')
 //   - GaloisKeyGenProtocol for master rotation keys (in R')
 //
-// The server-side derivation is identical to single-party — it cannot
-// distinguish multiparty keys from single-party ones.
+// The server-side derivation is identical to single-party — it cannot distinguish multiparty keys from single-party ones.
 package main
 
 import (
@@ -60,12 +59,8 @@ func main() {
 		panic(err)
 	}
 
-	// =========================================================================
-	// PARTIES: each generates two secrets and constructs extended secret in R'
-	// =========================================================================
-	// s_i:   main secret at HK level (degree N)
-	// s̃₁_i: auxiliary secret at HK level (degree N), independent from s_i
-	// s̃_i:  extended secret s_i + Y·s̃₁_i in R' (degree 2N)
+	// PARTIES: each generates two secrets and constructs extended secret in R' s_i: main secret at HK level (degree N) s̃₁_i: auxiliary secret at HK level (degree N),
+	// independent from s_i s̃_i: extended secret s_i + Y·s̃₁_i in R' (degree 2N)
 	//
 	// The homing key enables ring-switching from s̃₁ back to s.
 	// The public key and master keys are generated under s̃ in R'.
@@ -87,12 +82,8 @@ func main() {
 		params.HomingKey().RingQP().Add(skIdealHK.Value, sk.Value, skIdealHK.Value)
 	}
 
-	// =========================================================================
-	// PHASE 1: Collective homing key — EvalKey(s̃₁ → s) at HK level
-	// =========================================================================
-	// The homing key is NOT a GaloisKey — it's an EvaluationKey that switches
-	// from the auxiliary secret s̃₁ to the main secret s. We use
-	// EvaluationKeyGenProtocol directly, not GaloisKeyGenProtocol.
+	// PHASE 1: Collective homing key — EvalKey(s̃₁ → s) at HK level The homing key is NOT a GaloisKey — it's an EvaluationKey that switches from the auxiliary secret s̃₁ to the main secret s.
+	// We use EvaluationKeyGenProtocol directly, not GaloisKeyGenProtocol.
 	// Each party contributes GenShare(skIn=s̃₁_i, skOut=s_i).
 
 	hkProto := multiparty.NewEvaluationKeyGenProtocol(params.HomingKey())
@@ -115,10 +106,7 @@ func main() {
 	}
 	fmt.Println("Collective homing key generated")
 
-	// =========================================================================
-	// PHASE 2: Collective public key in R' at top level
-	// =========================================================================
-	// Generated under the extended secret s̃ = sum(s̃_i).
+	// PHASE 2: Collective public key in R' at top level Generated under the extended secret s̃ = sum(s̃_i).
 	// Serves the same purpose as single-party: PubToRot + encryption.
 
 	cpkProto := multiparty.NewPublicKeyGenProtocol(topParams)
@@ -135,10 +123,7 @@ func main() {
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
 	fmt.Println("Collective public key generated")
 
-	// =========================================================================
-	// PHASE 3: Collective master rotation keys in R'
-	// =========================================================================
-	// Standard GaloisKeyGenProtocol, using the extended secrets s̃_i.
+	// PHASE 3: Collective master rotation keys in R' Standard GaloisKeyGenProtocol, using the extended secrets s̃_i.
 	// GaloisKeyToMasterKey converts to the format needed by RotToRot.
 
 	k3Masters := []int{1, 64}
@@ -172,9 +157,7 @@ func main() {
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(k3Masters), k3Masters)
 
-	// =========================================================================
 	// SERVER: per-level expansion (identical to single-party leveled example)
-	// =========================================================================
 
 	tk := &kgplus.TransmissionKeys{
 		HomingKey:     homingKey,
@@ -231,9 +214,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(skIdealHK); err != nil {

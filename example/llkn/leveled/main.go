@@ -33,9 +33,8 @@ func main() {
 		panic(err)
 	}
 
-	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate
-	// level between eval and master. With 2-level this example would be trivial
-	// (only one NewLevelExpansion call), so we use 3-level to show the cascade.
+	// 3-level: two extra P levels — enables a 3-tier hierarchy with an intermediate level between eval and master.
+	// With 2-level this example would be trivial (only one NewLevelExpansion call), so we use 3-level to show the cascade.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
 		{55}, // P for level 1 (intermediate)
@@ -50,9 +49,7 @@ func main() {
 	fmt.Printf("LLKN CKKS (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: same key generation as simple example
-	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sk := kgen.GenSecretKeyNew()
@@ -73,11 +70,8 @@ func main() {
 	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
 		len(k3Masters), float64(tk.BinarySize())/(1024*1024))
 
-	// =========================================================================
-	// SERVER PHASE 1 (inactive): expand master set at intermediate level
-	// =========================================================================
-	// PubToRot derives a shift-0 (identity) key at the target level from the
-	// client's public key. This is the starting point for RotToRot combinations.
+	// SERVER PHASE 1 (inactive): expand master set at intermediate level PubToRot derives a shift-0 (identity) key at the target level from the client's public key.
+	// This is the starting point for RotToRot combinations.
 	eval := llkn.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
@@ -86,8 +80,8 @@ func main() {
 		panic(err)
 	}
 
-	// NewLevelExpansion creates a derivation session at level 1. Calling
-	// Derive once per master rotation produces the full base-4 rotation set;
+	// NewLevelExpansion creates a derivation session at level 1.
+	// Calling Derive once per master rotation produces the full base-4 rotation set;
 	// the resulting IntermediateKeys can be serialized and stored for later use.
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
 	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
@@ -100,11 +94,8 @@ func main() {
 	}
 	fmt.Printf("\nServer (inactive): derived %d intermediate keys at level 1\n", len(level1Keys))
 
-	// =========================================================================
-	// SERVER PHASE 2 (active): derive target rotations at eval level
-	// =========================================================================
-	// Target rotations are now known. Derive them at level 0 using the
-	// intermediate keys from phase 1 as the new master set.
+	// SERVER PHASE 2 (active): derive target rotations at eval level Target rotations are now known.
+	// Derive them at level 0 using the intermediate keys from phase 1 as the new master set.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
@@ -123,10 +114,8 @@ func main() {
 	}
 	fmt.Printf("Server (active): derived %d level-0 keys\n", len(level0Keys.Keys))
 
-	// =========================================================================
-	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys
-	// =========================================================================
-	// Per-key finalize, releasing each level-0 MasterKey reference for GC.
+	// SERVER PHASE 3: finalize — convert to standard lattigo evaluation keys Per-key finalize,
+	// releasing each level-0 MasterKey reference for GC.
 	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
 	for _, r := range targetRots {
 		mk := level0Keys.Keys[r]
@@ -140,9 +129,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {
 		panic(err)

@@ -9,8 +9,8 @@ import (
 )
 
 // RotToRotEvaluator performs RotToRot between two adjacent hierarchy levels.
-// Thread-safe: scratch buffers are drawn from sync.Pool per call, matching
-// lattigo v6.2's evaluator pattern.
+// Thread-safe: scratch buffers are drawn from sync.Pool per call,
+// matching lattigo v6.2's evaluator pattern.
 //
 // Create with [NewRotToRotEvaluator].
 type RotToRotEvaluator struct {
@@ -20,8 +20,7 @@ type RotToRotEvaluator struct {
 	pool         *rlwe.BufferPool // thread-safe (backed by sync.Pool)
 }
 
-// NewRotToRotEvaluator creates a thread-safe evaluator for RotToRot between
-// the given parameter pairs.
+// NewRotToRotEvaluator creates a thread-safe evaluator for RotToRot between the given parameter pairs.
 //
 // Requires paramsMaster.QCount() == paramsTarget.QCount() + paramsTarget.PCount().
 func NewRotToRotEvaluator(paramsTarget, paramsMaster rlwe.Parameters) *RotToRotEvaluator {
@@ -33,13 +32,11 @@ func NewRotToRotEvaluator(paramsTarget, paramsMaster rlwe.Parameters) *RotToRotE
 	}
 }
 
-// RotToRot combines inputKey (shift r) with masterKey (shift r') to produce
-// a [MasterKey] for shift r+r' (Algorithm 2 from Lee-Lee-Kim-No 2022).
+// RotToRot combines inputKey (shift r) with masterKey (shift r') to produce a [MasterKey] for shift r+r' (Algorithm 2 from Lee-Lee-Kim-No 2022).
 //
 // Thread-safe: can be called concurrently from multiple goroutines.
 //
-// Requires paramsTarget.LogN() == paramsMaster.LogN() and
-// paramsMaster.QCount() == paramsTarget.QCount() + paramsTarget.PCount().
+// Requires paramsTarget.LogN() == paramsMaster.LogN() and paramsMaster.QCount() == paramsTarget.QCount() + paramsTarget.PCount().
 func (rtr *RotToRotEvaluator) RotToRot(
 	inputKey *MasterKey,
 	masterKey *MasterKey,
@@ -121,13 +118,13 @@ func (rtr *RotToRotEvaluator) RotToRot(
 			ringQMaster.AutomorphismNTTWithIndex(*bCombined, autIdx, *bAut)
 			ringQMaster.AutomorphismNTTWithIndex(*aCombined, autIdx, *aAut)
 
-			// Step 3: GadgetProduct(aAut, masterKey) at paramsMaster
+			// Step 3: GadgetProduct(aAut, masterKey) at paramsMaster.
 			rtr.eval.GadgetProduct(levelQMaster, *aAut, &masterGK.GadgetCiphertext, ctKS)
 
 			// Step 4: Add automorphed b component
 			ringQMaster.Add(*bAut, ctKS.Value[0], ctKS.Value[0])
 
-			// Step 5: Split Q_master back into Q_target and P_target, apply MForm
+			// Step 5: Split Q_master back into Q_target and P_target, apply MForm.
 			for m := 0; m <= levelQTarget; m++ {
 				s := ringQTarget.SubRings[m]
 				s.MForm(ctKS.Value[0].Coeffs[m], outputKey.Value[i][j][0].Q.Coeffs[m])

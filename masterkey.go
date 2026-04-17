@@ -8,8 +8,7 @@ import (
 	"github.com/tuneinsight/lattigo/v6/ring"
 )
 
-// MasterKey is a rotation key in paper convention (automorph-then-keyswitch),
-// used as input to [RotToRot] expansion.
+// MasterKey is a rotation key in paper convention (automorph-then-keyswitch), used as input to [RotToRot] expansion.
 //
 // Construct via:
 //   - [GaloisKeyToMasterKey]: converts a standard lattigo GaloisKey (recommended)
@@ -22,11 +21,9 @@ type MasterKey struct {
 }
 
 // NewMasterKey wraps a GaloisKey as a MasterKey.
-// The caller asserts that gk is already in paper convention
-// (EvalKey with skIn=σ_r(s), skOut=s).
+// The caller asserts that gk is already in paper convention (EvalKey with skIn=σ_r(s), skOut=s).
 //
-// Prefer [GaloisKeyToMasterKey] which converts from standard lattigo
-// convention automatically.
+// Prefer [GaloisKeyToMasterKey] which converts from standard lattigo convention automatically.
 func NewMasterKey(gk *rlwe.GaloisKey) *MasterKey {
 	return &MasterKey{gk: gk}
 }
@@ -77,8 +74,7 @@ func (mk *MasterKey) UnmarshalBinary(p []byte) error {
 	return mk.gk.UnmarshalBinary(p)
 }
 
-// GaloisKeyToMasterKey converts a standard lattigo [rlwe.GaloisKey] to a
-// [MasterKey] by applying σ_r to all GadgetCiphertext components.
+// GaloisKeyToMasterKey converts a standard lattigo [rlwe.GaloisKey] to a [MasterKey] by applying σ_r to all GadgetCiphertext components.
 // Consumes the input in-place.
 func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKey, error) {
 	if err := automorphGadgetCiphertext(params, gk, gk.GaloisElement); err != nil {
@@ -87,8 +83,7 @@ func GaloisKeyToMasterKey(params rlwe.Parameters, gk *rlwe.GaloisKey) (*MasterKe
 	return &MasterKey{gk: gk}, nil
 }
 
-// MasterKeyToGaloisKey converts a [MasterKey] back to a standard lattigo
-// [rlwe.GaloisKey] by applying σ^{-1}_r to all GadgetCiphertext components.
+// MasterKeyToGaloisKey converts a [MasterKey] back to a standard lattigo [rlwe.GaloisKey] by applying σ^{-1}_r to all GadgetCiphertext components.
 // Returns a new GaloisKey; the MasterKey is not modified.
 func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKey, error) {
 	gk := mk.gk.CopyNew()
@@ -99,8 +94,7 @@ func MasterKeyToGaloisKey(params rlwe.Parameters, mk *MasterKey) (*rlwe.GaloisKe
 	return gk, nil
 }
 
-// automorphGadgetCiphertext applies an automorphism (identified by galEl) to every
-// component of a GaloisKey's GadgetCiphertext in-place.
+// automorphGadgetCiphertext applies an automorphism (identified by galEl) to every component of a GaloisKey's GadgetCiphertext in-place.
 func automorphGadgetCiphertext(params rlwe.Parameters, gk *rlwe.GaloisKey, galEl uint64) error {
 	ringQ := params.RingQ()
 	ringP := params.RingP()

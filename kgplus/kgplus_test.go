@@ -7,14 +7,32 @@ import (
 	"math/cmplx"
 	"runtime"
 	"sort"
+	"sync"
 	"testing"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
+	"github.com/butvinm/lattigo-hierkeys/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/ring"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
 )
+
+// buildParams constructs KG+ 3-level parameters from a production scenario.
+func buildParams(t *testing.T, sc testutil.Scenario) Parameters {
+	t.Helper()
+	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+		LogN:       sc.LogN,
+		LogQ:       sc.LogQ,
+		LogP:       sc.LogP,
+		NTTFlag:    true,
+		LogNthRoot: sc.LogN + 2,
+	})
+	require.NoError(t, err)
+	params, err := NewParameters(paramsEval, sc.LogPHK3, [][]int{sc.LogPExtra})
+	require.NoError(t, err)
+	return params
+}
 
 func testString(params Parameters, opname string) string {
 	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/%d-level",
@@ -82,8 +100,8 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
-// expandAll cascades NewLevelExpansion through all levels. Test-internal
-// helper used by tests that need level-0 IntermediateKeys.
+// expandAll cascades NewLevelExpansion through all levels.
+// Test-internal helper used by tests that need level-0 IntermediateKeys.
 func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
@@ -125,45 +143,38 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	return result, nil
 }
 
-// TestKGPlus is the main entry point, iterating over parameter sets
-// and running all individual test functions.
+// TestKGPlus runs the unit-style test suite against the LogN=14 production scenario.
+// Production-scale smoke coverage across all scenarios lives in TestDeriveGaloisKeysProduction.
 func TestKGPlus(t *testing.T) {
 
-	for _, paramsLit := range testInsecure {
+	params := buildParams(t, testutil.Scenarios[0])
 
-		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
-		require.NoError(t, err)
+	// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}.
+	masterRots := []int{1, 4}
 
-		params, err := NewParameters(paramsEval, paramsLit.LogPHK, paramsLit.LogPExtra)
-		require.NoError(t, err)
+	tc, err := newTestContext(params, masterRots)
+	require.NoError(t, err)
 
-		// Master rotations: {1, 4} — enough to derive targets {1,2,3,4,5}
-		masterRots := []int{1, 4}
-
-		tc, err := newTestContext(params, masterRots)
-		require.NoError(t, err)
-
-		for _, testSet := range []func(*testContext, *testing.T){
-			testKeyGenerator,
-			testRotToRot,
-			testRotToRotMultiStep,
-			testDeriveGaloisKeys,
-			testDeriveGaloisKeysWithEvaluator,
-			testExpandAndFinalize,
-			testIntermediateKeyReuse,
-			testSerialization,
-			testCKKSRotation,
-		} {
-			testSet(tc, t)
-			runtime.GC()
-		}
+	for _, testSet := range []func(*testContext, *testing.T){
+		testKeyGenerator,
+		testRotToRot,
+		testRotToRotMultiStep,
+		testDeriveGaloisKeys,
+		testDeriveGaloisKeysWithEvaluator,
+		testExpandAndFinalize,
+		testIntermediateKeyReuse,
+		testSerialization,
+		testCKKSRotation,
+	} {
+		testSet(tc, t)
+		runtime.GC()
 	}
 
 	testMasterRotationsForBase(t)
-	testDeriveGaloisKeysLargeN(t)
 }
 
-// testKeyGenerator tests secret key generation, ProjectToEvalKey, and transmission key construction.
+// testKeyGenerator tests secret key generation,
+// ProjectToEvalKey, and transmission key construction.
 func testKeyGenerator(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -200,9 +211,8 @@ func testKeyGenerator(tc *testContext, t *testing.T) {
 	})
 }
 
-// constructExtendedSKForParams builds s_tilde = s + Y*s1 in R' for a specific
-// R' parameter set. This is a test helper that generalizes the KeyGenerator's
-// constructExtendedSK to work with arbitrary R' params.
+// constructExtendedSKForParams builds s_tilde = s + Y*s1 in R' for a specific R' parameter set.
+// This is a test helper that generalizes the KeyGenerator's constructExtendedSK to work with arbitrary R' params.
 // constructExtendedSKForParams delegates to the exported ConstructExtendedSecretKey.
 func constructExtendedSKForParams(
 	paramsHK rlwe.Parameters,
@@ -212,8 +222,7 @@ func constructExtendedSKForParams(
 	return ConstructExtendedSecretKey(paramsHK, paramsRP, skS, skS1)
 }
 
-// verifyRotationKey verifies a derived GaloisKey against a reference key
-// generated directly from the secret key.
+// verifyRotationKey verifies a derived GaloisKey against a reference key generated directly from the secret key.
 func verifyRotationKey(
 	t *testing.T,
 	paramsEval rlwe.Parameters,
@@ -301,9 +310,8 @@ func verifyRotationKey(
 		rot, maxDiff, noiseThreshold)
 }
 
-// testRotToRot tests the RotToRot algorithm: combining a shift-0 level-0 key
-// with a master rotation key to produce a level-0 rotation key, then ring-switching
-// to R and verifying against a standard reference key.
+// testRotToRot tests the RotToRot algorithm: combining a shift-0 level-0 key with a master rotation key to produce a level-0 rotation key,
+// then ring-switching to R and verifying against a standard reference key.
 func testRotToRot(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -373,8 +381,7 @@ func testRotToRot(tc *testContext, t *testing.T) {
 	})
 }
 
-// testRotToRotMultiStep tests composing RotToRot twice:
-// shift0 + master(1) -> rot-1, then rot-1 + master(4) -> rot-5.
+// testRotToRotMultiStep tests composing RotToRot twice: shift0 + master(1) -> rot-1, then rot-1 + master(4) -> rot-5.
 func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -469,8 +476,7 @@ func testRotToRotMultiStep(tc *testContext, t *testing.T) {
 	})
 }
 
-// verifyDeriveRotation is a helper that compares a derived Galois key rotation
-// against a reference key generated directly from the eval secret key.
+// verifyDeriveRotation is a helper that compares a derived Galois key rotation against a reference key generated directly from the eval secret key.
 func verifyDeriveRotation(
 	t *testing.T,
 	paramsEval rlwe.Parameters,
@@ -553,8 +559,7 @@ func prepareTestCiphertext(t *testing.T, paramsEval rlwe.Parameters, skEval *rlw
 	return ct
 }
 
-// testDeriveGaloisKeys tests the full production API end-to-end:
-// NewParameters -> KeyGenerator -> TransmissionKeys -> NewLevelExpansion -> Derive -> FinalizeKey -> standard Automorphism.
+// testDeriveGaloisKeys tests the full production API end-to-end: NewParameters -> KeyGenerator -> TransmissionKeys -> NewLevelExpansion -> Derive -> FinalizeKey -> standard Automorphism.
 func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -590,8 +595,7 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 	})
 }
 
-// testDeriveGaloisKeysWithEvaluator tests the same end-to-end flow but uses
-// a pre-allocated hierkeys.Evaluator instead of the convenience function.
+// testDeriveGaloisKeysWithEvaluator tests the same end-to-end flow but uses a pre-allocated hierkeys.Evaluator instead of the convenience function.
 func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -627,8 +631,7 @@ func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
 	})
 }
 
-// testExpandAndFinalize verifies the two-phase approach (Expand +
-// FinalizeKeys) produces correct rotation keys end-to-end.
+// testExpandAndFinalize verifies the two-phase approach (Expand + FinalizeKeys) produces correct rotation keys end-to-end.
 func testExpandAndFinalize(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -668,8 +671,7 @@ func testExpandAndFinalize(tc *testContext, t *testing.T) {
 	})
 }
 
-// testIntermediateKeyReuse verifies that caching in Expand works
-// correctly: deriving {1,2,3,4,5} in one call should produce valid keys,
+// testIntermediateKeyReuse verifies that caching in Expand works correctly: deriving {1,2,3,4,5} in one call should produce valid keys,
 // and intermediate keys for shared prefixes should be computed once.
 func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 
@@ -689,8 +691,7 @@ func testIntermediateKeyReuse(tc *testContext, t *testing.T) {
 			require.True(t, ok, "missing intermediate key for rotation %d", rot)
 		}
 
-		// Derive each individually and verify functional equivalence:
-		// both should produce keys that decrypt correctly.
+		// Derive each individually and verify functional equivalence: both should produce keys that decrypt correctly.
 		paramsEval := params.Eval()
 		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
 
@@ -816,8 +817,7 @@ func testMasterRotationsForBase(t *testing.T) {
 	})
 }
 
-// testCKKSRotation verifies that derived rotation keys work end-to-end with
-// CKKS slot encoding/decoding, not just raw RLWE polynomials.
+// testCKKSRotation verifies that derived rotation keys work end-to-end with CKKS slot encoding/decoding, not just raw RLWE polynomials.
 func testCKKSRotation(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -852,7 +852,7 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 		decryptor := ckks.NewDecryptor(ckksParams, tc.skEval)
 		evaluator := ckks.NewEvaluator(ckksParams, evk)
 
-		// Build test vector: [1, 2, 3, ..., slots]
+		// Build test vector: [1, 2, 3, ..., slots].
 		want := make([]complex128, slots)
 		for i := range want {
 			want[i] = complex(float64(i+1), 0)
@@ -893,8 +893,7 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 		}
 
 		// With LogDefaultScale=45, we expect roughly 45 bits of precision.
-		// Allow generous threshold of 2^{-10} given the small parameters
-		// and potential extra noise from hierarchical key derivation.
+		// Allow generous threshold of 2^{-10} given the small parameters and potential extra noise from hierarchical key derivation.
 		threshold := math.Exp2(-10)
 		t.Logf("CKKS rotation by %d: maxErr=%.2e (threshold=%.2e)", rot, maxErr, threshold)
 		require.Less(t, maxErr, threshold,
@@ -902,101 +901,151 @@ func testCKKSRotation(tc *testContext, t *testing.T) {
 	})
 }
 
-// testDeriveGaloisKeysLargeN tests with LogN=14, closer to production scale.
-// Uses 8 Q primes + 1 P prime, base-4 master rotations.
-// Skipped in short mode.
-func testDeriveGaloisKeysLargeN(t *testing.T) {
+// productionScenarios returns testutil.Scenarios,
+// reduced to LogN=14 only in -short mode so PR-time CI stays fast while master pushes cover all sizes.
+func productionScenarios() []testutil.Scenario {
+	if testing.Short() {
+		return testutil.Scenarios[:1]
+	}
+	return testutil.Scenarios
+}
 
-	t.Run("DeriveGaloisKeys/LargeN", func(t *testing.T) {
+// kgplus3LevelMasters mirrors the benchmark convention: transmit {1, bigMaster} where bigMaster is the middle power of the base.
+// The server expands this pair at level 1 into the full base-p set, then derives targets at level 0.
+// Using the full base-p set at top would bypass the level-1 expansion entirely and inflate top-level GenGaloisKeyNew cost (expensive at LogN=15/16).
+func kgplus3LevelMasters(base, slots int) []int {
+	fullSet := hierkeys.MasterRotationsForBase(base, slots)
+	bigMaster := fullSet[len(fullSet)/2]
+	return []int{1, bigMaster}
+}
 
-		if testing.Short() {
-			t.Skip("skipped in -short mode")
-		}
+// TestDeriveGaloisKeys exercises the full client/server pipeline sequentially against each production scenario.
+// Mirrors BenchmarkDeriveGaloisKeys:
+//
+//   - transmit 2 masters {1, bigMaster} at top
+//   - expand to full base-p set at level 1
+//   - derive + finalize reduced target set at level 0
+func TestDeriveGaloisKeys(t *testing.T) {
+	for _, sc := range productionScenarios() {
+		t.Run(sc.Name, func(t *testing.T) {
+			params := buildParams(t, sc)
+			paramsEval := params.Eval()
+			slots := paramsEval.N() / 2
 
-		paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
-			LogN:    14,
-			Q:       testQi60[:8],
-			P:       testPi60[:1],
-			NTTFlag: true,
-		})
-		require.NoError(t, err)
+			k3Masters := kgplus3LevelMasters(sc.Base, slots)
+			fullBasePSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := testutil.ReducedTestTargets(slots)
+			t.Logf("LogN=%d, k3Masters=%v, base-p=%v, targets=%d",
+				paramsEval.LogN(), k3Masters, fullBasePSet, len(targetRots))
 
-		params, err := NewParameters(paramsEval, []int{61}, nil)
-		require.NoError(t, err)
-
-		t.Logf("Eval: LogN=%d, Q=%d primes, P=%d primes, N=%d",
-			paramsEval.LogN(), paramsEval.QCount(), paramsEval.PCount(), paramsEval.N())
-
-		// Client
-		kgenHK := rlwe.NewKeyGenerator(params.HomingKey())
-		sk := kgenHK.GenSecretKeyNew()
-		skEval, err := params.ProjectToEvalKey(sk)
-		require.NoError(t, err)
-
-		masterRots := hierkeys.MasterRotationsForBase(4, paramsEval.N()/2)
-		t.Logf("master rotations (base-4): %v (%d keys)", masterRots, len(masterRots))
-
-		sk1 := kgenHK.GenSecretKeyNew()
-		homingKey := kgenHK.GenEvaluationKeyNew(sk1, sk)
-
-		topParams := params.Top()
-		skExt := ConstructExtendedSecretKey(params.HomingKey(), topParams, sk, sk1)
-
-		pk := rlwe.NewKeyGenerator(topParams).GenPublicKeyNew(skExt)
-
-		kgenRP := rlwe.NewKeyGenerator(topParams)
-		masterKeys := make(map[int]*hierkeys.MasterKey)
-		for _, rot := range masterRots {
-			galEl := topParams.GaloisElement(rot)
-			gk := kgenRP.GenGaloisKeyNew(galEl, skExt)
-			mk, err := hierkeys.GaloisKeyToMasterKey(topParams, gk)
+			tc, err := newTestContext(params, k3Masters)
 			require.NoError(t, err)
-			masterKeys[rot] = mk
-		}
 
-		tk := &TransmissionKeys{
-			HomingKey:     homingKey,
-			PublicKey:     pk,
-			MasterRotKeys: masterKeys,
-		}
-
-		// Server: derive
-		targetRots := []int{1, 2, 3, 5, 7, 10, 17, 31, 64, 100, 255, 512, 1000}
-		hkEval := NewEvaluator(params)
-		intermediate, err := expandAll(hkEval, tk, targetRots)
-		require.NoError(t, err)
-		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
-		for r, mk := range intermediate.Keys {
-			intermediate.Keys[r] = nil
-			gk, err := hkEval.FinalizeKey(r, mk, tk.HomingKey)
+			// Level-1 expansion: {1, bigMaster} → full base-p set.
+			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
-			galoisKeys = append(galoisKeys, gk)
-		}
-		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-		t.Logf("derived %d evaluation keys", len(evk.GetGaloisKeysList()))
-
-		// Verify a subset
-		ringQ := paramsEval.RingQ()
-		encR := rlwe.NewEncryptor(paramsEval, skEval)
-
-		pt := rlwe.NewPlaintext(paramsEval, paramsEval.MaxLevel())
-		for m := range pt.Value.Coeffs {
-			for k := range pt.Value.Coeffs[m] {
-				pt.Value.Coeffs[m][k] = 0
+			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
+			lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+			for _, r := range fullBasePSet {
+				mk, err := expLvl1.Derive(r)
+				require.NoError(t, err)
+				lvl1Masters[r] = mk
 			}
-			pt.Value.Coeffs[m][0] = 42
-		}
-		ringQ.NTT(pt.Value, pt.Value)
-		pt.IsNTT = true
 
-		ct := rlwe.NewCiphertext(paramsEval, 1, paramsEval.MaxLevel())
-		require.NoError(t, encR.Encrypt(pt, ct))
+			// Level-0 derivation: base-p set → targets → finalize.
+			shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
+			require.NoError(t, err)
+			expLvl0 := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
+			galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
+			for _, r := range targetRots {
+				mk, err := expLvl0.Derive(r)
+				require.NoError(t, err)
+				gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+				require.NoError(t, err)
+				galoisKeys = append(galoisKeys, gk)
+			}
+			evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 
-		stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
+			stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			for _, rot := range targetRots {
+				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
+			}
+			runtime.GC()
+		})
+	}
+}
 
-		verifyRots := []int{1, 5, 17, 100, 1000}
-		for _, rot := range verifyRots {
-			verifyDeriveRotation(t, paramsEval, skEval, stdEval, ct, rot, float64(1<<30))
-		}
-	})
+// TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys but derives + finalizes targets concurrently across GOMAXPROCS workers.
+// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool buffers).
+// Run with -race in CI to catch regressions in the concurrent path.
+// Mirrors BenchmarkDeriveGaloisKeysConcurrent.
+func TestDeriveGaloisKeysConcurrent(t *testing.T) {
+	workers := runtime.GOMAXPROCS(0)
+	for _, sc := range productionScenarios() {
+		t.Run(sc.Name, func(t *testing.T) {
+			params := buildParams(t, sc)
+			paramsEval := params.Eval()
+			slots := paramsEval.N() / 2
+
+			k3Masters := kgplus3LevelMasters(sc.Base, slots)
+			fullBasePSet := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := testutil.ReducedTestTargets(slots)
+
+			tc, err := newTestContext(params, k3Masters)
+			require.NoError(t, err)
+
+			// Level-1 expansion is sequential (base for level 0),
+			// then level-0 targets are derived + finalized concurrently.
+			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
+			require.NoError(t, err)
+			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
+			lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+			for _, r := range fullBasePSet {
+				mk, err := expLvl1.Derive(r)
+				require.NoError(t, err)
+				lvl1Masters[r] = mk
+			}
+
+			shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
+			require.NoError(t, err)
+			exp := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
+
+			sem := make(chan struct{}, workers)
+			var wg sync.WaitGroup
+			results := make([]*rlwe.GaloisKey, len(targetRots))
+			errs := make([]error, len(targetRots))
+			for i, r := range targetRots {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(i, r int) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					mk, err := exp.Derive(r)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					results[i] = gk
+				}(i, r)
+			}
+			wg.Wait()
+			for i, err := range errs {
+				require.NoError(t, err, "target %d", targetRots[i])
+			}
+
+			evk := rlwe.NewMemEvaluationKeySet(nil, results...)
+			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
+			stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			for _, rot := range targetRots {
+				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
+			}
+			runtime.GC()
+		})
+	}
 }

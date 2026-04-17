@@ -6,12 +6,34 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"sync"
 	"testing"
 
 	hierkeys "github.com/butvinm/lattigo-hierkeys"
+	"github.com/butvinm/lattigo-hierkeys/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
+	"github.com/tuneinsight/lattigo/v6/ring"
 )
+
+// buildParams constructs LLKN 2-level parameters from a production scenario, using the given ring type.
+// Scenarios use LogNthRoot = LogN+2 (= 4N),
+// which satisfies both Standard (requires 2N) and ConjugateInvariant (requires 4N) NTT root-of-unity constraints.
+func buildParams(t *testing.T, sc testutil.Scenario, ringType ring.Type) Parameters {
+	t.Helper()
+	paramsEval, err := rlwe.NewParametersFromLiteral(rlwe.ParametersLiteral{
+		LogN:       sc.LogN,
+		LogQ:       sc.LogQ,
+		LogP:       sc.LogP,
+		NTTFlag:    true,
+		LogNthRoot: sc.LogN + 2,
+		RingType:   ringType,
+	})
+	require.NoError(t, err)
+	params, err := NewParameters(paramsEval, [][]int{sc.LogPHK})
+	require.NoError(t, err)
+	return params
+}
 
 func testString(params Parameters, opname string) string {
 	return fmt.Sprintf("%s/logN=%d/Qi=%d/Pi=%d/%d-level",
@@ -68,8 +90,8 @@ func newTestContext(params Parameters, masterRots []int) (*testContext, error) {
 	}, nil
 }
 
-// expandAll cascades NewLevelExpansion through all levels. Test-internal
-// helper used by tests that need level-0 IntermediateKeys.
+// expandAll cascades NewLevelExpansion through all levels.
+// Test-internal helper used by tests that need level-0 IntermediateKeys.
 func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierkeys.IntermediateKeys, error) {
 	k := eval.params.NumLevels()
 	masterRots := make([]int, 0, len(tk.MasterRotKeys))
@@ -112,19 +134,22 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 	return result, nil
 }
 
+// TestLLKN runs the unit-style test suite against the LogN=14 production scenario in both supported ring types (Standard and ConjugateInvariant).
+// Production-scale smoke coverage across all scenarios lives in TestDeriveGaloisKeys.
 func TestLLKN(t *testing.T) {
 
-	for _, paramsLit := range testInsecure {
+	fixtures := []struct {
+		name   string
+		params Parameters
+	}{
+		{"Standard", buildParams(t, testutil.Scenarios[0], ring.Standard)},
+		{"ConjugateInvariant", buildParams(t, testutil.Scenarios[0], ring.ConjugateInvariant)},
+	}
 
-		paramsEval, err := rlwe.NewParametersFromLiteral(paramsLit.ParametersLiteral)
-		require.NoError(t, err)
-
-		params, err := NewParameters(paramsEval, paramsLit.LogPLevels)
-		require.NoError(t, err)
-
+	for _, fix := range fixtures {
 		masterRots := []int{1, 4}
 
-		tc, err := newTestContext(params, masterRots)
+		tc, err := newTestContext(fix.params, masterRots)
 		require.NoError(t, err)
 
 		for _, testSet := range []func(*testContext, *testing.T){
@@ -140,6 +165,132 @@ func TestLLKN(t *testing.T) {
 	}
 
 	testMasterRotationsForBase(t)
+}
+
+// productionScenarios returns testutil.Scenarios,
+// reduced to LogN=14 only in -short mode so PR-time CI stays fast while master pushes cover all sizes.
+func productionScenarios() []testutil.Scenario {
+	if testing.Short() {
+		return testutil.Scenarios[:1]
+	}
+	return testutil.Scenarios
+}
+
+// TestDeriveGaloisKeys exercises the full client/server pipeline (MasterRotationsForBase → expandAll → FinalizeKey → rotation verification) sequentially against each production scenario.
+// Mirrors BenchmarkDeriveGaloisKeys.
+func TestDeriveGaloisKeys(t *testing.T) {
+	for _, sc := range productionScenarios() {
+		t.Run(sc.Name, func(t *testing.T) {
+			params := buildParams(t, sc, ring.Standard)
+			paramsEval := params.Eval()
+			slots := paramsEval.N() / 2
+
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := testutil.ReducedTestTargets(slots)
+			t.Logf("LogN=%d, masters=%d (%v), targets=%d",
+				paramsEval.LogN(), len(masterRots), masterRots, len(targetRots))
+
+			tc, err := newTestContext(params, masterRots)
+			require.NoError(t, err)
+
+			intermediate, err := expandAll(tc.eval, tc.tk, targetRots)
+			require.NoError(t, err)
+
+			galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
+			for _, r := range targetRots {
+				mk := intermediate.Keys[r]
+				intermediate.Keys[r] = nil
+				gk, err := tc.eval.FinalizeKey(mk)
+				require.NoError(t, err)
+				galoisKeys = append(galoisKeys, gk)
+			}
+			evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
+
+			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
+			stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			for _, rot := range targetRots {
+				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
+			}
+			runtime.GC()
+		})
+	}
+}
+
+// TestDeriveGaloisKeysConcurrent runs the same pipeline as TestDeriveGaloisKeys but derives + finalizes targets concurrently across GOMAXPROCS workers.
+// Exercises LevelExpansion.Derive's thread-safety (sync.Once dedup, pool buffers).
+// Run with -race in CI to catch regressions in the concurrent path.
+// Mirrors BenchmarkDeriveGaloisKeysConcurrent.
+func TestDeriveGaloisKeysConcurrent(t *testing.T) {
+	workers := runtime.GOMAXPROCS(0)
+	for _, sc := range productionScenarios() {
+		t.Run(sc.Name, func(t *testing.T) {
+			params := buildParams(t, sc, ring.Standard)
+			paramsEval := params.Eval()
+			slots := paramsEval.N() / 2
+
+			masterRots := hierkeys.MasterRotationsForBase(sc.Base, slots)
+			targetRots := testutil.ReducedTestTargets(slots)
+
+			tc, err := newTestContext(params, masterRots)
+			require.NoError(t, err)
+
+			k := params.NumLevels()
+			topLevel := k - 1
+			currentMasters := tc.tk.MasterRotKeys
+			for level := k - 2; level >= 1; level-- {
+				shift0Key, err := hierkeys.PubToRot(params.Levels()[level], params.Levels()[topLevel], tc.tk.PublicKey)
+				require.NoError(t, err)
+				exp := tc.eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
+				nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+				for _, r := range masterRots {
+					mk, err := exp.Derive(r)
+					require.NoError(t, err)
+					nextMasters[r] = mk
+				}
+				currentMasters = nextMasters
+			}
+
+			shift0Key, err := hierkeys.PubToRot(params.Levels()[0], params.Levels()[topLevel], tc.tk.PublicKey)
+			require.NoError(t, err)
+			exp := tc.eval.NewLevelExpansion(0, shift0Key, currentMasters, targetRots)
+
+			sem := make(chan struct{}, workers)
+			var wg sync.WaitGroup
+			results := make([]*rlwe.GaloisKey, len(targetRots))
+			errs := make([]error, len(targetRots))
+			for i, r := range targetRots {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(i, r int) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					mk, err := exp.Derive(r)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					gk, err := tc.eval.FinalizeKey(mk)
+					if err != nil {
+						errs[i] = err
+						return
+					}
+					results[i] = gk
+				}(i, r)
+			}
+			wg.Wait()
+			for i, err := range errs {
+				require.NoError(t, err, "target %d", targetRots[i])
+			}
+
+			evk := rlwe.NewMemEvaluationKeySet(nil, results...)
+			ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
+			stdEval := rlwe.NewEvaluator(paramsEval, evk)
+			for _, rot := range targetRots {
+				verifyDeriveRotation(t, paramsEval, tc.skEval, stdEval, ct, rot, float64(1<<30))
+			}
+			runtime.GC()
+		})
+	}
 }
 
 func testKeyGenerator(tc *testContext, t *testing.T) {
@@ -295,9 +446,8 @@ func testPubToRot(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "PubToRot"), func(t *testing.T) {
 
 		// The PublicKey in TransmissionKeys is at the top level.
-		// PubToRot is now integrated into the pipeline, so we verify
-		// that the full derive flow works with PubToRot-derived
-		// shift-0 keys at each level.
+		// PubToRot is now integrated into the pipeline,
+		// so we verify that the full derive flow works with PubToRot-derived shift-0 keys at each level.
 		k := params.NumLevels()
 		for level := 0; level < k-1; level++ {
 			t.Run(fmt.Sprintf("level=%d", level), func(t *testing.T) {
@@ -436,8 +586,7 @@ type automorphEvaluator interface {
 	Automorphism(ctIn *rlwe.Ciphertext, galEl uint64, opOut *rlwe.Ciphertext) error
 }
 
-// verifyDeriveRotation compares automorphism output from the given evaluator
-// against a reference automorphism computed using lattigo's own GenGaloisKeyNew.
+// verifyDeriveRotation compares automorphism output from the given evaluator against a reference automorphism computed using lattigo's own GenGaloisKeyNew.
 func verifyDeriveRotation(
 	t *testing.T,
 	paramsEval rlwe.Parameters,

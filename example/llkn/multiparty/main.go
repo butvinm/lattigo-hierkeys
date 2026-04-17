@@ -1,9 +1,7 @@
 // LLKN hierarchical rotation keys — N-out-of-N multiparty key generation.
 //
-// N parties collectively generate transmission keys without any single party
-// knowing the full secret key. The server derives evaluation keys exactly as
-// in the single-party case — it cannot distinguish multiparty keys from
-// single-party ones.
+// N parties collectively generate transmission keys without any single party knowing the full secret key.
+// The server derives evaluation keys exactly as in the single-party case — it cannot distinguish multiparty keys from single-party ones.
 //
 // Uses lattigo's standard multiparty protocols:
 //   - PublicKeyGenProtocol for the collective public key
@@ -53,11 +51,8 @@ func main() {
 	fmt.Printf("LLKN CKKS multiparty (N=%d, %d-level): LogN=%d, %d slots\n",
 		nParties, params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
-	// PARTIES: each generates a secret key independently
-	// =========================================================================
-	// All parties use the same parameters. Each sk_i is generated at the top
-	// (master) level, same as single-party GenSecretKeyNew.
+	// PARTIES: each generates a secret key independently All parties use the same parameters.
+	// Each sk_i is generated at the top (master) level, same as single-party GenSecretKeyNew.
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sks := make([]*rlwe.SecretKey, nParties)
@@ -65,8 +60,7 @@ func main() {
 		sks[i] = kgen.GenSecretKeyNew()
 	}
 
-	// Common Reference String (CRS) — shared by all parties for deterministic
-	// "a"-part generation in the multiparty protocols.
+	// Common Reference String (CRS) — shared by all parties for deterministic "a"-part generation in the multiparty protocols.
 	crs, err := sampling.NewPRNG()
 	if err != nil {
 		panic(err)
@@ -79,9 +73,7 @@ func main() {
 		topParams.RingQP().Add(skIdeal.Value, sk.Value, skIdeal.Value)
 	}
 
-	// =========================================================================
 	// PHASE 1: Collective public key
-	// =========================================================================
 	// Each party generates a share from their sk_i. The aggregated shares
 	// produce a public key for the ideal secret s = sum(s_i).
 	// This public key serves two purposes:
@@ -102,13 +94,10 @@ func main() {
 	cpkProto.GenPublicKey(cpkAgg, cpkCRP, collectivePK)
 	fmt.Println("Collective public key generated")
 
-	// =========================================================================
-	// PHASE 2: Collective master rotation keys
-	// =========================================================================
-	// Each party generates a GaloisKey share for each master rotation.
+	// PHASE 2: Collective master rotation keys Each party generates a GaloisKey share for each master rotation.
 	// GaloisKeyGenProtocol produces standard lattigo-convention GaloisKeys.
-	// GaloisKeyToMasterKey converts them for use with RotToRot — same as
-	// single-party, no multiparty-specific knowledge needed.
+	// GaloisKeyToMasterKey converts them for use with RotToRot — same as single-party,
+	// no multiparty-specific knowledge needed.
 	//
 	// Note: the accumulator's GaloisElement must be set before aggregation,
 	// otherwise AggregateShares returns a mismatch error.
@@ -145,9 +134,7 @@ func main() {
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(masterRots), masterRots)
 
-	// =========================================================================
 	// SERVER: derive evaluation keys (identical to single-party)
-	// =========================================================================
 
 	tk := &llkn.TransmissionKeys{PublicKey: collectivePK, MasterRotKeys: masterKeys}
 	fmt.Printf("TX size = %.1f MB\n", float64(tk.BinarySize())/(1024*1024))
@@ -182,9 +169,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Server: derived %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(skIdeal); err != nil {

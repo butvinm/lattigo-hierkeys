@@ -1,11 +1,10 @@
 // LLKN hierarchical rotation keys — concurrent derivation.
 //
-// Demonstrates concurrent key derivation using LevelExpansion.Derive from
-// goroutines. The evaluator is thread-safe — a single instance handles all
-// concurrent calls via pool-based scratch buffers (no ConcurrentCopy needed).
+// Demonstrates concurrent key derivation using LevelExpansion.Derive from goroutines.
+// The evaluator is thread-safe — a single instance handles all concurrent calls via pool-based scratch buffers (no ConcurrentCopy needed).
 //
-// The concurrency model is the same as lattigo v6.2: one evaluator, multiple
-// goroutines, each goroutine allocates its own output.
+// The concurrency model is the same as lattigo v6.2: one evaluator,
+// multiple goroutines, each goroutine allocates its own output.
 //
 // Uses 3-level to show two-phase expansion: intermediate level first (sequential),
 // then target rotations at level 0 (concurrent).
@@ -51,9 +50,7 @@ func main() {
 	fmt.Printf("LLKN concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
-	// =========================================================================
 	// CLIENT: generate keys (same as simple example)
-	// =========================================================================
 
 	kgen := rlwe.NewKeyGenerator(topParams)
 	sk := kgen.GenSecretKeyNew()
@@ -71,9 +68,7 @@ func main() {
 	tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
 	fmt.Printf("Client: %d master keys\n", len(k3Masters))
 
-	// =========================================================================
 	// SERVER: single evaluator, thread-safe
-	// =========================================================================
 
 	eval := llkn.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
@@ -97,8 +92,7 @@ func main() {
 
 	// Phase 2 (concurrent): derive target rotations at level 0.
 	// Create a LevelExpansion session and call Derive from goroutines.
-	// Each rotation is computed at most once — concurrent requests for the
-	// same rotation (as target or dependency) coordinate automatically.
+	// Each rotation is computed at most once — concurrent requests for the same rotation (as target or dependency) coordinate automatically.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
@@ -160,9 +154,7 @@ func main() {
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
 	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
-	// =========================================================================
 	// VERIFY
-	// =========================================================================
 
 	var skEval *rlwe.SecretKey
 	if skEval, err = params.ProjectToEvalKey(sk); err != nil {

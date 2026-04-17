@@ -8,16 +8,15 @@ import (
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
-// RotToRotFunc is the signature for a single RotToRot call, abstracting
-// over scheme-specific evaluator configuration.
+// RotToRotFunc is the signature for a single RotToRot call,
+// abstracting over scheme-specific evaluator configuration.
 type RotToRotFunc func(inputKey, masterKey *MasterKey, targetGalEl uint64) (*MasterKey, error)
 
-// LevelExpansion is a thread-safe session for deriving rotation keys at a
-// single hierarchy level. Each rotation is computed at most once; concurrent
-// calls to [LevelExpansion.Derive] coordinate via internal synchronization.
+// LevelExpansion is a thread-safe session for deriving rotation keys at a single hierarchy level.
+// Each rotation is computed at most once;
+// concurrent calls to [LevelExpansion.Derive] coordinate via internal synchronization.
 //
-// The library does not spawn goroutines — the caller controls concurrency
-// by calling Derive from their own goroutines.
+// The library does not spawn goroutines — the caller controls concurrency by calling Derive from their own goroutines.
 //
 // Create with [NewLevelExpansion].
 type LevelExpansion struct {
@@ -43,13 +42,14 @@ type expansionEntry struct {
 	done chan struct{}
 }
 
-// NewLevelExpansion creates a thread-safe expansion session at one hierarchy
-// level. shift0Key seeds rotation 0. masterKeys are from the level above.
+// NewLevelExpansion creates a thread-safe expansion session at one hierarchy level.
+// shift0Key seeds rotation 0.
+// masterKeys are from the level above.
 // rotToRot is called to compute each new rotation.
 //
-// targetRotations is the complete set of rotations that will be requested via
-// [LevelExpansion.Derive]. The session uses it to drop intermediate keys whose
-// chains have all completed, keeping peak live entries near len(targetRotations).
+// targetRotations is the complete set of rotations that will be requested via [LevelExpansion.Derive].
+// The session uses it to drop intermediate keys whose chains have all completed,
+// keeping peak live entries near len(targetRotations).
 // Calling Derive on a rotation outside targetRotations is undefined.
 func NewLevelExpansion(
 	rotToRot RotToRotFunc,
@@ -111,9 +111,9 @@ func (e *LevelExpansion) getOrCreate(rot int) *expansionEntry {
 	return entry
 }
 
-// Derive computes the key for the given rotation, walking the decomposition
-// chain and blocking on dependencies as needed. Thread-safe: each rotation
-// is computed at most once.
+// Derive computes the key for the given rotation,
+// walking the decomposition chain and blocking on dependencies as needed.
+// Thread-safe: each rotation is computed at most once.
 func (e *LevelExpansion) Derive(rot int) (*MasterKey, error) {
 	normalized := ((rot % e.nSlots) + e.nSlots) % e.nSlots
 	if normalized == 0 {
@@ -165,14 +165,12 @@ func (e *LevelExpansion) Derive(rot int) (*MasterKey, error) {
 	return key, err
 }
 
-// releaseRef decrements the future-use counter for rot. When it reaches zero
-// the map entry is dropped so the GC can collect its MasterKey. Goroutines
-// still holding a local pointer keep the key alive until they finish.
+// releaseRef decrements the future-use counter for rot.
+// When it reaches zero the map entry is dropped so the GC can collect its MasterKey.
+// Goroutines still holding a local pointer keep the key alive until they finish.
 //
-// The refcount for each rotation includes both internal chain-step consumers
-// and (for targets) +1 for the caller's Derive return. This means targets are
-// protected until the caller has fetched the key AND all chain consumers are
-// done — no separate target-set protection is needed.
+// The refcount for each rotation includes both internal chain-step consumers and (for targets) +1 for the caller's Derive return.
+// This means targets are protected until the caller has fetched the key AND all chain consumers are done — no separate target-set protection is needed.
 func (e *LevelExpansion) releaseRef(rot int) {
 	if rot == 0 {
 		return
