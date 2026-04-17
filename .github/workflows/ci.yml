@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch: # manual run from Actions UI (pick a branch to run full suite)
 
 jobs:
   build-test:
@@ -34,16 +35,23 @@ jobs:
         working-directory: example
         run: go build ./...
 
-      - name: test (short)
-        run: go test -short -count=1 ./...
+      # PR path: -short only. Race scoped to concurrent test (the only code
+      # path that spawns goroutines). -skip avoids running the concurrent
+      # test twice.
+      - name: test (short, skip concurrent)
+        if: github.event_name == 'pull_request'
+        run: go test -short -count=1 -skip TestDeriveGaloisKeysConcurrent ./...
 
-      - name: test (concurrent with race)
+      - name: test (concurrent with race, short)
+        if: github.event_name == 'pull_request'
         run: go test -race -short -count=1 -run TestDeriveGaloisKeysConcurrent ./...
 
-      - name: test (full, master only)
-        if: github.ref == 'refs/heads/master'
-        run: go test -count=1 ./...
+      # Full path: master push OR manual dispatch on a PR branch (run before
+      # merge via "Run workflow" in the Actions UI).
+      - name: test (full, skip concurrent)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: go test -count=1 -skip TestDeriveGaloisKeysConcurrent ./...
 
-      - name: test (concurrent with race, full, master only)
-        if: github.ref == 'refs/heads/master'
+      - name: test (concurrent with race, full)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: go test -race -count=1 -run TestDeriveGaloisKeysConcurrent ./...
