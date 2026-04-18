@@ -1,13 +1,12 @@
-// LLKN hierarchical rotation keys — concurrent derivation.
+// LLKN hierarchical rotation keys — concurrent streaming derivation.
 //
-// Demonstrates concurrent key derivation using LevelExpansion.Derive from goroutines.
-// The evaluator is thread-safe — a single instance handles all concurrent calls via pool-based scratch buffers (no ConcurrentCopy needed).
+// Demonstrates concurrent key derivation. The evaluator is thread-safe — a
+// single instance handles all concurrent calls via pool-based scratch buffers.
 //
-// The concurrency model is the same as lattigo v6.2: one evaluator,
-// multiple goroutines, each goroutine allocates its own output.
-//
-// Uses 3-level to show two-phase expansion: intermediate level first (sequential),
-// then target rotations at level 0 (concurrent).
+// 2-level LLKN: no intermediate-level expansion; targets derive directly from
+// the transmitted master set. Each goroutine runs Derive + FinalizeKey in a
+// single pass and writes the finalized key to a pre-sized []*rlwe.GaloisKey
+// at its own index — no shared map, no mutex.
 package main
 
 import (
@@ -24,7 +23,7 @@ import (
 func main() {
 	var err error
 
-	// --- CKKS + LLKN parameters ---
+	// --- CKKS + LLKN parameters --- 128-bit secure (FHE Security Guidelines 2024, LogN=14, Q_max=430).
 	var ckksParams ckks.Parameters
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
 		LogN:            14,
@@ -35,18 +34,16 @@ func main() {
 		panic(err)
 	}
 
-	// 3-level to demonstrate two-phase expansion.
+	// LLKN 2-level: one extra level of P primes for master keys.
 	var params llkn.Parameters
 	if params, err = llkn.NewParameters(ckksParams.Parameters, [][]int{
-		{55}, // P for level 1
-		{55}, // P for level 2 (top)
+		{55}, // P for master level
 	}); err != nil {
 		panic(err)
 	}
 
 	slots := ckksParams.MaxSlots()
 	topParams := params.Top()
-	topLevel := params.NumLevels() - 1
 	fmt.Printf("LLKN concurrent (%d-level): LogN=%d, %d slots\n",
 		params.NumLevels(), ckksParams.LogN(), slots)
 
@@ -56,9 +53,9 @@ func main() {
 	sk := kgen.GenSecretKeyNew()
 	pk := kgen.GenPublicKeyNew(sk)
 
-	k3Masters := []int{1, 4}
-	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
-	for _, rot := range k3Masters {
+	masterRots := hierkeys.MasterRotationsForBase(4, slots)
+	masterKeys := make(map[int]*hierkeys.MasterKey, len(masterRots))
+	for _, rot := range masterRots {
 		gk := kgen.GenGaloisKeyNew(topParams.GaloisElement(rot), sk)
 		if masterKeys[rot], err = hierkeys.GaloisKeyToMasterKey(topParams, gk); err != nil {
 			panic(err)
@@ -66,46 +63,26 @@ func main() {
 	}
 
 	tk := &llkn.TransmissionKeys{PublicKey: pk, MasterRotKeys: masterKeys}
-	fmt.Printf("Client: %d master keys\n", len(k3Masters))
+	fmt.Printf("Client: %d master keys, TX = %.1f MB\n",
+		len(masterRots), float64(tk.BinarySize())/(1024*1024))
 
-	// SERVER: single evaluator, thread-safe
+	// SERVER: concurrent streaming derive + finalize.
+	// Each rotation is computed at most once — concurrent Derive calls for the
+	// same rotation (as a target or a chain dependency) coordinate automatically
+	// via LevelExpansion's internal sync.Once per rotation.
 
 	eval := llkn.NewEvaluator(params)
-	masterRots := hierkeys.MasterRotationsForBase(4, slots)
-
-	// Phase 1 (sequential): expand {1,4} → full base-4 set at level 1.
-	// This is typically done once during an offline phase.
-	var shift0L1 *hierkeys.MasterKey
-	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Levels()[topLevel], tk.PublicKey); err != nil {
-		panic(err)
-	}
-	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
-	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
-	for _, r := range masterRots {
-		mk, err := exp1.Derive(r)
-		if err != nil {
-			panic(err)
-		}
-		level1Keys[r] = mk
-	}
-	fmt.Printf("Phase 1 (sequential): %d intermediate keys at level 1\n", len(level1Keys))
-
-	// Phase 2 (concurrent): derive target rotations at level 0.
-	// Create a LevelExpansion session and call Derive from goroutines.
-	// Each rotation is computed at most once — concurrent requests for the same rotation (as target or dependency) coordinate automatically.
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	var shift0L0 *hierkeys.MasterKey
-	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Levels()[topLevel], tk.PublicKey); err != nil {
+	var shift0 *hierkeys.MasterKey
+	if shift0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
+	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRots)
 
-	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
-
-	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 	errs := make([]error, len(targetRots))
+	var wg sync.WaitGroup
 	for i, rot := range targetRots {
 		wg.Add(1)
 		go func(idx, r int) {
@@ -115,44 +92,19 @@ func main() {
 				errs[idx] = err
 				return
 			}
-			mu.Lock()
-			level0Keys.Keys[r] = mk
-			mu.Unlock()
+			galoisKeys[idx], errs[idx] = eval.FinalizeKey(mk)
 		}(i, rot)
 	}
 	wg.Wait()
-
 	for i, e := range errs {
 		if e != nil {
-			panic(fmt.Sprintf("derive rotation %d: %v", targetRots[i], e))
-		}
-	}
-
-	fmt.Printf("Phase 2 (concurrent): %d level-0 keys from %d goroutines\n",
-		len(level0Keys.Keys), len(targetRots))
-
-	// Phase 3 (concurrent): finalize — convert each key in parallel.
-	// FinalizeKey is thread-safe.
-	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
-	finalizeErrs := make([]error, len(targetRots))
-	for i, rot := range targetRots {
-		wg.Add(1)
-		go func(idx, r int) {
-			defer wg.Done()
-			mk := level0Keys.Keys[r]
-			galoisKeys[idx], finalizeErrs[idx] = eval.FinalizeKey(mk)
-		}(i, rot)
-	}
-	wg.Wait()
-
-	for i, e := range finalizeErrs {
-		if e != nil {
-			panic(fmt.Sprintf("finalize rotation %d: %v", targetRots[i], e))
+			panic(fmt.Sprintf("derive/finalize rotation %d: %v", targetRots[i], e))
 		}
 	}
 
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	fmt.Printf("Server: derived + finalized %d evaluation keys (%d goroutines)\n",
+		len(evk.GetGaloisKeysList()), len(targetRots))
 
 	// VERIFY
 
