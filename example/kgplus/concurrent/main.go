@@ -4,9 +4,8 @@
 // The evaluator is thread-safe — pool-based scratch buffers for both RotToRot and RingSwitchGaloisKey operations.
 //
 // Uses 3-level with per-level expansion:
-//   - Phase 1 (sequential): expand {1,4} → full base-4 set at R' level 1
-//   - Phase 2 (concurrent): derive target rotations at R' level 0
-//   - Phase 3: ring-switch + finalize
+//   - Phase 1 (sequential): expand {1, bigMaster} → full base-4 set at R' level 1
+//   - Phase 2 (concurrent streaming): derive + ring-switch + finalize each target in one goroutine
 package main
 
 import (
@@ -61,7 +60,7 @@ func main() {
 	kgenRP := rlwe.NewKeyGenerator(topParams)
 	pk := kgenRP.GenPublicKeyNew(skExt)
 
-	k3Masters := []int{1, 4}
+	k3Masters := []int{1, 64}
 	masterKeys := make(map[int]*hierkeys.MasterKey, len(k3Masters))
 	for _, rot := range k3Masters {
 		gk := kgenRP.GenGaloisKeyNew(topParams.GaloisElement(rot), skExt)
@@ -82,36 +81,36 @@ func main() {
 	eval := kgplus.NewEvaluator(params)
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 
-	// Phase 1 (sequential): expand at intermediate R' level.
+	// Phase 1 (sequential): expand at intermediate R' level into IntermediateKeys.
 	var shift0L1 *hierkeys.MasterKey
 	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
-	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
+	level1 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 	for _, r := range masterRots {
 		mk, err := exp1.Derive(r)
 		if err != nil {
 			panic(err)
 		}
-		level1Keys[r] = mk
+		level1.Keys[r] = mk
 	}
-	fmt.Printf("Phase 1 (sequential): %d intermediate keys in R'\n", len(level1Keys))
+	fmt.Printf("Phase 1 (sequential): %d intermediate keys in R'\n", len(level1.Keys))
 
-	// Phase 2 (concurrent): derive target rotations at R' level 0.
+	// Phase 2 (concurrent streaming): derive + finalize each target in one goroutine.
+	// Pre-sized slice with indexed writes — no mutex, no shared map. FinalizeKey
+	// is thread-safe (pool-based scratch buffers).
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
 	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
+	exp := eval.NewLevelExpansion(0, shift0L0, level1.Keys, targetRots)
 
-	exp := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
-
-	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
 	errs := make([]error, len(targetRots))
+	var wg sync.WaitGroup
 	for i, rot := range targetRots {
 		wg.Add(1)
 		go func(idx, r int) {
@@ -121,43 +120,18 @@ func main() {
 				errs[idx] = err
 				return
 			}
-			mu.Lock()
-			level0Keys.Keys[r] = mk
-			mu.Unlock()
+			galoisKeys[idx], errs[idx] = eval.FinalizeKey(r, mk, tk.HomingKey)
 		}(i, rot)
 	}
 	wg.Wait()
-
 	for i, e := range errs {
 		if e != nil {
-			panic(fmt.Sprintf("derive rotation %d: %v", targetRots[i], e))
-		}
-	}
-
-	fmt.Printf("Phase 2 (concurrent): %d level-0 keys in R'\n", len(level0Keys.Keys))
-
-	// Phase 3 (concurrent): ring-switch R' → R and convert each key in parallel.
-	// FinalizeKey is thread-safe (pool-based scratch buffers).
-	galoisKeys := make([]*rlwe.GaloisKey, len(targetRots))
-	finalizeErrs := make([]error, len(targetRots))
-	for i, rot := range targetRots {
-		wg.Add(1)
-		go func(idx, r int) {
-			defer wg.Done()
-			mk := level0Keys.Keys[r]
-			galoisKeys[idx], finalizeErrs[idx] = eval.FinalizeKey(r, mk, tk.HomingKey)
-		}(i, rot)
-	}
-	wg.Wait()
-
-	for i, e := range finalizeErrs {
-		if e != nil {
-			panic(fmt.Sprintf("finalize rotation %d: %v", targetRots[i], e))
+			panic(fmt.Sprintf("derive/finalize rotation %d: %v", targetRots[i], e))
 		}
 	}
 
 	evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-	fmt.Printf("Phase 3 (concurrent): finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
+	fmt.Printf("Phase 2 (concurrent streaming): derived + finalized %d evaluation keys\n", len(evk.GetGaloisKeysList()))
 
 	// VERIFY
 
