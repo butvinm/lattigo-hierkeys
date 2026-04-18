@@ -160,7 +160,6 @@ func TestKGPlus(t *testing.T) {
 		testRotToRot,
 		testRotToRotMultiStep,
 		testDeriveGaloisKeys,
-		testDeriveGaloisKeysWithEvaluator,
 		testExpandAndFinalize,
 		testIntermediateKeyReuse,
 		testSerialization,
@@ -560,6 +559,8 @@ func prepareTestCiphertext(t *testing.T, paramsEval rlwe.Parameters, skEval *rlw
 }
 
 // testDeriveGaloisKeys tests the full production API end-to-end: NewParameters -> KeyGenerator -> TransmissionKeys -> NewLevelExpansion -> Derive -> FinalizeKey -> standard Automorphism.
+// Level-1 expansion is cascaded via expandAll (into IntermediateKeys at each
+// intermediate level); last level streams derive + finalize in one pass.
 func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 
 	params := tc.params
@@ -567,48 +568,33 @@ func testDeriveGaloisKeys(tc *testContext, t *testing.T) {
 	t.Run(testString(params, "DeriveGaloisKeys"), func(t *testing.T) {
 
 		targetRots := []int{1, 2, 3, 4, 5}
+		k := params.NumLevels()
 
-		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
-		require.NoError(t, err)
-		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
-		for r, mk := range intermediate.Keys {
-			intermediate.Keys[r] = nil
-			gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
+		// Cascade through intermediate levels (produces IntermediateKeys at
+		// the level above eval).
+		masterRots := tc.masterRots
+		currentMasters := tc.tk.MasterRotKeys
+		for level := k - 2; level >= 1; level-- {
+			shift0, err := hierkeys.PubToRot(params.Levels()[level], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
-			galoisKeys = append(galoisKeys, gk)
-		}
-		evk := rlwe.NewMemEvaluationKeySet(nil, galoisKeys...)
-		require.Equal(t, len(targetRots), len(evk.GetGaloisKeysList()))
-
-		paramsEval := params.Eval()
-		eval := rlwe.NewEvaluator(paramsEval, evk)
-		ct := prepareTestCiphertext(t, paramsEval, tc.skEval)
-
-		threshold := float64(1 << 25)
-		if params.NumLevels() > 2 {
-			threshold = float64(1 << 35)
+			exp := tc.hkEval.NewLevelExpansion(level, shift0, currentMasters, masterRots)
+			next := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
+			for _, r := range masterRots {
+				mk, err := exp.Derive(r)
+				require.NoError(t, err)
+				next.Keys[r] = mk
+			}
+			currentMasters = next.Keys
 		}
 
-		for _, rot := range targetRots {
-			verifyDeriveRotation(t, paramsEval, tc.skEval, eval, ct, rot, threshold)
-		}
-	})
-}
-
-// testDeriveGaloisKeysWithEvaluator tests the same end-to-end flow but uses a pre-allocated hierkeys.Evaluator instead of the convenience function.
-func testDeriveGaloisKeysWithEvaluator(tc *testContext, t *testing.T) {
-
-	params := tc.params
-
-	t.Run(testString(params, "DeriveGaloisKeys/WithEvaluator"), func(t *testing.T) {
-
-		targetRots := []int{1, 2, 3, 4, 5}
-
-		intermediate, err := expandAll(tc.hkEval, tc.tk, targetRots)
+		// Stream derive + finalize at level 0.
+		shift0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
 		require.NoError(t, err)
-		galoisKeys := make([]*rlwe.GaloisKey, 0, len(intermediate.Keys))
-		for r, mk := range intermediate.Keys {
-			intermediate.Keys[r] = nil
+		exp0 := tc.hkEval.NewLevelExpansion(0, shift0, currentMasters, targetRots)
+		galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
+		for _, r := range targetRots {
+			mk, err := exp0.Derive(r)
+			require.NoError(t, err)
 			gk, err := tc.hkEval.FinalizeKey(r, mk, tc.tk.HomingKey)
 			require.NoError(t, err)
 			galoisKeys = append(galoisKeys, gk)
