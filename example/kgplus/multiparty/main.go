@@ -157,7 +157,7 @@ func main() {
 	}
 	fmt.Printf("Collective master keys generated: %d keys for rotations %v\n", len(k3Masters), k3Masters)
 
-	// SERVER: per-level expansion (identical to single-party leveled example)
+	// SERVER: per-level expansion (identical to single-party simple example)
 
 	tk := &kgplus.TransmissionKeys{
 		HomingKey:     homingKey,
@@ -174,39 +174,31 @@ func main() {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
-	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
+	level1 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 	for _, r := range masterRots {
 		mk, err := exp1.Derive(r)
 		if err != nil {
 			panic(err)
 		}
-		level1Keys[r] = mk
+		level1.Keys[r] = mk
 	}
-	fmt.Printf("\nServer (inactive): derived %d intermediate keys in R'\n", len(level1Keys))
+	fmt.Printf("\nServer: derived %d intermediate keys in R'\n", len(level1.Keys))
 
+	// Level 0: derive + finalize in one pass (streaming).
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
-	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1.Keys, targetRots)
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
 	for _, r := range targetRots {
 		mk, err := exp0.Derive(r)
 		if err != nil {
 			panic(err)
 		}
-		level0Keys.Keys[r] = mk
-	}
-	fmt.Printf("Server (active): derived %d level-0 keys in R'\n", len(level0Keys.Keys))
-
-	// Finalize per key, releasing R' MasterKey references for GC.
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
-	for _, r := range targetRots {
-		mk := level0Keys.Keys[r]
-		level0Keys.Keys[r] = nil
-		var gk *rlwe.GaloisKey
-		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+		gk, err := eval.FinalizeKey(r, mk, tk.HomingKey)
+		if err != nil {
 			panic(err)
 		}
 		galoisKeys = append(galoisKeys, gk)

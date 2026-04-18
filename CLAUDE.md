@@ -87,10 +87,9 @@ Same key generation and server-side paths as KG+ (without ring switching).
 
 ### Examples
 
-Each scheme has four examples in `example/<scheme>/`:
+Each scheme has three examples in `example/<scheme>/`:
 
-- `simple/` — minimal leveled derivation (PubToRot + NewLevelExpansion + FinalizeKey)
-- `leveled/` — per-level `NewLevelExpansion` with inactive/active pattern
+- `simple/` — sequential server-side derivation (PubToRot + NewLevelExpansion + FinalizeKey)
 - `concurrent/` — `NewLevelExpansion` + goroutines for concurrent derivation
 - `multiparty/` — N-out-of-N collective key generation via lattigo `GaloisKeyGenProtocol`
 

@@ -24,8 +24,8 @@ Initial release.
   pool-based scratch buffers.
 - Single-party and N-out-of-N multiparty key generation support via
   lattigo's `rlwe.KeyGenerator` and `GaloisKeyGenProtocol`.
-- Examples: `simple`, `leveled`, `concurrent`, `multiparty` for each
-  scheme under `example/`.
+- Examples: `simple`, `concurrent`, `multiparty` for each scheme
+  under `example/`.
 - Benchmarks for key sizes, transmission-key generation, and server
   derivation (sequential and concurrent) at LogN=14/15/16.
 

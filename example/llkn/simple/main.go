@@ -83,27 +83,20 @@ func main() {
 	// PubToRot derives a shift-0 (identity) key from the public key.
 	// NewLevelExpansion + Derive combine it with master keys to produce all target rotations.
 	// FinalizeKey converts each to a standard lattigo GaloisKey.
+	// Stream derive + finalize in one pass so peak memory stays low.
 	var shift0 *hierkeys.MasterKey
 	if shift0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp := eval.NewLevelExpansion(0, shift0, tk.MasterRotKeys, targetRots)
-	level0 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
 	for _, r := range targetRots {
 		mk, err := exp.Derive(r)
 		if err != nil {
 			panic(err)
 		}
-		level0.Keys[r] = mk
-	}
-
-	// Finalize per key, releasing the level-0 MasterKey reference for GC.
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0.Keys))
-	for _, r := range targetRots {
-		mk := level0.Keys[r]
-		level0.Keys[r] = nil
-		var gk *rlwe.GaloisKey
-		if gk, err = eval.FinalizeKey(mk); err != nil {
+		gk, err := eval.FinalizeKey(mk)
+		if err != nil {
 			panic(err)
 		}
 		galoisKeys = append(galoisKeys, gk)

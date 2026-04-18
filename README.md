@@ -76,17 +76,17 @@ KG+ uses an extension ring R' (degree 2N) and ring switching. The client generat
 
 See `example/kgplus/simple` for the complete flow.
 
+## Parameter Tuning
+
+**Hierarchy P prime bit-size must be ≥ max(eval Q prime, eval P prime) bit-size.** Typically 50–60 bits matching the eval primes. Violating this rule silently breaks noise bounds — do not follow the "many small P primes" optimization from the papers.
+
+**Why.** Lattigo implements gadget decomposition count-based ([`BaseRNSDecompositionVectorSize`](https://github.com/tuneinsight/lattigo/blob/v6.2.0/core/rlwe/params.go): `dnum = ceil(QCount / PCount)`) — each digit contains exactly `PCount` consecutive Q primes regardless of their bit sizes. When hierarchy P primes are smaller than eval Q primes, each digit holds more bits than total P, and `GadgetProduct` noise grows by `2^(max_digit_bits − P_bits)` per call. The LLKN/KG+ papers assume a bit-balanced decomposition in which this doesn't happen; lattigo does not implement that, and there is no API to override `dnum`.
+
 ## Benchmarks
 
 256 target rotation keys, base-4. All parameter sets are **128-bit secure** (h=N/2 sparse ternary, σ=3.2, Q_max from Mono et al., AFRICACRYPT 2023, matching LLKN/KG+ papers).
 
-Convention: q₀=55b, qᵢ=40b (Δ=2⁴⁰), Pᵢ=55b (eval), hierarchy P primes also 55b.
-
-**Critical**: hierarchy P prime size must be ≥ max eval prime size. Lattigo's gadget
-decomposition is count-based (`dnum = ceil(QCount/PCount)`) with each digit holding
-exactly PCount consecutive Q primes. Smaller hierarchy P primes cause noise to blow
-up by `2^(max_digit_bits − P_bits)` per RotToRot. See CLAUDE.md "Noise from
-GadgetProduct".
+Conventional CKKS params choice: Δ=2⁴⁰, q₀=55b, qᵢ=40b, Pᵢ=55b.
 
 **Scheme configurations:**
 
@@ -180,11 +180,9 @@ go test -v -count=1 -short ./llkn/...
 ```bash
 cd example
 go run ./llkn/simple/       # minimal 2-level derivation
-go run ./llkn/leveled/      # per-level NewLevelExpansion (inactive/active pattern)
 go run ./llkn/concurrent/   # concurrent derivation with goroutines
 go run ./llkn/multiparty/   # N-out-of-N multiparty
 go run ./kgplus/simple/     # 3-level derivation with ring switching
-go run ./kgplus/leveled/    # per-level NewLevelExpansion with ring switching
 go run ./kgplus/concurrent/ # concurrent derivation with ring switching
 go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 ```

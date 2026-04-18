@@ -1,4 +1,4 @@
-// KG+ hierarchical rotation keys — leveled server-side derivation example.
+// KG+ hierarchical rotation keys — sequential server-side derivation example.
 //
 // KG+ uses ring switching (extension ring R' of degree 2N) to further reduce transmission key sizes compared to LLKN.
 // The trade-off: only supports Standard ring type, and primes must satisfy q ≡ 1 mod 4N.
@@ -94,44 +94,39 @@ func main() {
 	masterRots := hierkeys.MasterRotationsForBase(4, slots)
 	targetRots := []int{1, 2, 3, 5, 7, 10, 50, 100}
 
-	// Level 1: expand {1,64} masters into the full base-4 set at intermediate level.
+	// Level 1: expand {1, bigMaster} into the full base-4 set at intermediate level.
+	// IntermediateKeys is the serializable container for server-side derivation state;
+	// a user wanting an offline/online split can persist this between phases.
 	var shift0L1 *hierkeys.MasterKey
 	if shift0L1, err = hierkeys.PubToRot(params.Levels()[1], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
 	exp1 := eval.NewLevelExpansion(1, shift0L1, tk.MasterRotKeys, masterRots)
-	level1Keys := make(map[int]*hierkeys.MasterKey, len(masterRots))
+	level1 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 	for _, r := range masterRots {
 		mk, err := exp1.Derive(r)
 		if err != nil {
 			panic(err)
 		}
-		level1Keys[r] = mk
+		level1.Keys[r] = mk
 	}
 
-	// Level 0: derive target rotations from the expanded set.
+	// Level 0: derive + finalize in the same pass (streaming). Each FinalizeKey
+	// ring-switches R' → R and converts to lattigo convention. Streaming keeps
+	// peak memory low — keys are released as soon as they are finalized.
 	var shift0L0 *hierkeys.MasterKey
 	if shift0L0, err = hierkeys.PubToRot(params.Levels()[0], params.Top(), tk.PublicKey); err != nil {
 		panic(err)
 	}
-	exp0 := eval.NewLevelExpansion(0, shift0L0, level1Keys, targetRots)
-	level0Keys := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(targetRots))}
+	exp0 := eval.NewLevelExpansion(0, shift0L0, level1.Keys, targetRots)
+	galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
 	for _, r := range targetRots {
 		mk, err := exp0.Derive(r)
 		if err != nil {
 			panic(err)
 		}
-		level0Keys.Keys[r] = mk
-	}
-
-	// Finalize each key: ring-switch R' → R, convert to lattigo convention.
-	// Release the R' MasterKey reference per iteration so the GC can reclaim it before the next FinalizeKey allocates its scratch buffers.
-	galoisKeys := make([]*rlwe.GaloisKey, 0, len(level0Keys.Keys))
-	for _, r := range targetRots {
-		mk := level0Keys.Keys[r]
-		level0Keys.Keys[r] = nil
-		var gk *rlwe.GaloisKey
-		if gk, err = eval.FinalizeKey(r, mk, tk.HomingKey); err != nil {
+		gk, err := eval.FinalizeKey(r, mk, tk.HomingKey)
+		if err != nil {
 			panic(err)
 		}
 		galoisKeys = append(galoisKeys, gk)
