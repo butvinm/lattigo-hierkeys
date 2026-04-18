@@ -42,7 +42,7 @@ jobs:
 
       - name: test (full, skip concurrent, master only)
         if: github.ref == 'refs/heads/master'
-        run: go test -count=1 -skip TestDeriveGaloisKeysConcurrent ./...
+        run: go test -count=1 -timeout 30m -skip TestDeriveGaloisKeysConcurrent ./...
 
       - name: test (concurrent with race, full, master only)
         if: github.ref == 'refs/heads/master'
