@@ -108,15 +108,15 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 			return nil, err
 		}
 		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
-		nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+		next := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 		for _, r := range masterRots {
 			mk, err := exp.Derive(r)
 			if err != nil {
 				return nil, err
 			}
-			nextMasters[r] = mk
+			next.Keys[r] = mk
 		}
-		currentMasters = nextMasters
+		currentMasters = next.Keys
 	}
 	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Levels()[topLevel], tk.PublicKey)
 	if err != nil {
@@ -245,13 +245,13 @@ func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 			shift0Key, err := hierkeys.PubToRot(params.Levels()[level], params.Levels()[topLevel], tc.tk.PublicKey)
 			require.NoError(t, err)
 			exp := tc.eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
-			nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+			next := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 			for _, r := range masterRots {
 				mk, err := exp.Derive(r)
 				require.NoError(t, err)
-				nextMasters[r] = mk
+				next.Keys[r] = mk
 			}
-			currentMasters = nextMasters
+			currentMasters = next.Keys
 		}
 
 		shift0Key, err := hierkeys.PubToRot(params.Levels()[0], params.Levels()[topLevel], tc.tk.PublicKey)
@@ -474,13 +474,13 @@ func testPubToRot(tc *testContext, t *testing.T) {
 						shift0, err := hierkeys.PubToRot(params.Levels()[lvl], params.Top(), tc.tk.PublicKey)
 						require.NoError(t, err)
 						expDown := eval.NewLevelExpansion(lvl, shift0, currentMasters, masterRots)
-						nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+						next := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 						for _, r := range masterRots {
 							mk, err := expDown.Derive(r)
 							require.NoError(t, err)
-							nextMasters[r] = mk
+							next.Keys[r] = mk
 						}
-						currentMasters = nextMasters
+						currentMasters = next.Keys
 					}
 				}
 

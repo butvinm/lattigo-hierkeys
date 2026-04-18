@@ -117,15 +117,15 @@ func expandAll(eval *Evaluator, tk *TransmissionKeys, targetRots []int) (*hierke
 			return nil, err
 		}
 		exp := eval.NewLevelExpansion(level, shift0Key, currentMasters, masterRots)
-		nextMasters := make(map[int]*hierkeys.MasterKey, len(masterRots))
+		next := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(masterRots))}
 		for _, r := range masterRots {
 			mk, err := exp.Derive(r)
 			if err != nil {
 				return nil, err
 			}
-			nextMasters[r] = mk
+			next.Keys[r] = mk
 		}
-		currentMasters = nextMasters
+		currentMasters = next.Keys
 	}
 	shift0Key0, err := hierkeys.PubToRot(eval.params.Levels()[0], eval.params.Top(), tk.PublicKey)
 	if err != nil {
@@ -941,21 +941,21 @@ func TestDeriveGaloisKeys(t *testing.T) {
 			tc, err := newTestContext(params, k3Masters)
 			require.NoError(t, err)
 
-			// Level-1 expansion: {1, bigMaster} → full base-p set.
+			// Level-1 expansion: {1, bigMaster} → full base-p set, stored as IntermediateKeys.
 			shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
 			expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
-			lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+			lvl1 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(fullBasePSet))}
 			for _, r := range fullBasePSet {
 				mk, err := expLvl1.Derive(r)
 				require.NoError(t, err)
-				lvl1Masters[r] = mk
+				lvl1.Keys[r] = mk
 			}
 
-			// Level-0 derivation: base-p set → targets → finalize.
+			// Level-0 derivation: base-p set → targets → finalize (streamed).
 			shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
 			require.NoError(t, err)
-			expLvl0 := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
+			expLvl0 := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1.Keys, targetRots)
 			galoisKeys := make([]*rlwe.GaloisKey, 0, len(targetRots))
 			for _, r := range targetRots {
 				mk, err := expLvl0.Derive(r)
@@ -999,21 +999,21 @@ func TestDeriveGaloisKeysConcurrent(t *testing.T) {
 		tc, err := newTestContext(params, k3Masters)
 		require.NoError(t, err)
 
-		// Level-1 expansion is sequential (base for level 0),
-		// then level-0 targets are derived + finalized concurrently.
+		// Level-1 expansion is sequential (base for level 0), stored as IntermediateKeys.
+		// Level-0 targets are then derived + finalized concurrently.
 		shift0Lvl1, err := hierkeys.PubToRot(params.Levels()[1], params.Top(), tc.tk.PublicKey)
 		require.NoError(t, err)
 		expLvl1 := tc.hkEval.NewLevelExpansion(1, shift0Lvl1, tc.tk.MasterRotKeys, fullBasePSet)
-		lvl1Masters := make(map[int]*hierkeys.MasterKey, len(fullBasePSet))
+		lvl1 := &hierkeys.IntermediateKeys{Keys: make(map[int]*hierkeys.MasterKey, len(fullBasePSet))}
 		for _, r := range fullBasePSet {
 			mk, err := expLvl1.Derive(r)
 			require.NoError(t, err)
-			lvl1Masters[r] = mk
+			lvl1.Keys[r] = mk
 		}
 
 		shift0Lvl0, err := hierkeys.PubToRot(params.Levels()[0], params.Top(), tc.tk.PublicKey)
 		require.NoError(t, err)
-		exp := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1Masters, targetRots)
+		exp := tc.hkEval.NewLevelExpansion(0, shift0Lvl0, lvl1.Keys, targetRots)
 
 		sem := make(chan struct{}, workers)
 		var wg sync.WaitGroup
