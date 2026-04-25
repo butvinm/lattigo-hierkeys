@@ -1,7 +1,7 @@
 # Hierarchical Rotation Keys
 
 [![Go](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://go.dev)
-[![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 > **Status: research / experimental.** Not independently audited. Functional correctness is covered by tests; no third-party cryptographic review has been performed. Use at your own risk and do not rely on this code for production deployments without independent review.
 
@@ -189,4 +189,4 @@ go run ./kgplus/multiparty/ # N-out-of-N multiparty with ring switching
 
 ## License
 
-Apache 2.0
+MIT
