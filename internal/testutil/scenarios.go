@@ -82,6 +82,21 @@ var Scenarios = []Scenario{
 		LogPHK3:   buildLogQ(6, 55),
 		LogPExtra: buildLogQ(25, 55),
 	},
+	{
+		// LogN=16: Q_max=1714, Q_max(2N)=3428.
+		// depth=15, dnum_eval=3 (P=6×55, fits 16 Q primes / 6 P).
+		// LLKN: PHK = 11×55 (fits in margin=729b after eval QP=985), QCount_master=22, dnum_master=2.
+		// QP_master = 985+605 = 1590 / 1714 (124 b spare).
+		// KG+ k=3: PHK3 = 6×55 (dnum_int = ⌈22/6⌉=4), PExtra sized for dnum_top=2.
+		Name:      "LogN16_D15_P6",
+		LogN:      16,
+		LogQ:      append([]int{55}, buildLogQ(15, 40)...),
+		LogP:      buildLogQ(6, 55),
+		LogPHK:    buildLogQ(11, 55),
+		Base:      4,
+		LogPHK3:   buildLogQ(6, 55),
+		LogPExtra: buildLogQ(14, 55),
+	},
 }
 
 // ReducedTestTargets returns a small set of target rotations that exercise different decomposition chain lengths.
